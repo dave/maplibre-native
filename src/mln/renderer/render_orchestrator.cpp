@@ -234,7 +234,10 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
                                   .tileLodMode = updateParameters->tileLodMode,
                                   .dynamicTextureAtlas = dynamicTextureAtlas,
                                   .globalState = globalState,
-                                  .captureRenderedFeatures = updateParameters->captureRenderedFeatures};
+                                  .captureRenderedFeatures = updateParameters->captureRenderedFeatures,
+                                  .getRenderSource = [this](const std::string& sourceID) {
+                                      return getRenderSource(sourceID);
+                                  }};
 
     glyphManager->setURL(updateParameters->glyphURL);
     glyphManager->setFontFaces(updateParameters->fontFaces);

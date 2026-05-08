@@ -453,6 +453,7 @@ list(APPEND INCLUDE_FILES
     ${PROJECT_SOURCE_DIR}/include/mln/util/indexed_tuple.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/instrumentation.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/interpolate.hpp
+    ${PROJECT_SOURCE_DIR}/include/mln/util/listener_set.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/logging.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/lru_cache.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/math.hpp
