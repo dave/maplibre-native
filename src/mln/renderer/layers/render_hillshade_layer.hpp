@@ -44,6 +44,7 @@ private:
     void prepare(const LayerPrepareParameters&) override;
 
     void addRenderTarget(const RenderTargetPtr&, UniqueChangeRequestVec&);
+    void removeRenderTarget(const RenderTargetPtr&, UniqueChangeRequestVec&);
     void removeRenderTargets(UniqueChangeRequestVec&);
 
     // Paint properties
