@@ -494,6 +494,8 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/intervals.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/isolines.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/isolines.hpp
+    ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/smoothing.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/smoothing.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/units.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/units.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/update_renderables.hpp
