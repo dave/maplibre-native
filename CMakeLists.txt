@@ -402,6 +402,7 @@ list(APPEND INCLUDE_FILES
     ${PROJECT_SOURCE_DIR}/include/mln/style/property_value.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/style/rotation.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/style/source.hpp
+    ${PROJECT_SOURCE_DIR}/include/mln/style/sources/contour_source.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/style/sources/custom_geometry_source.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/style/sources/custom_vector_source.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/style/sources/geojson_source.hpp
@@ -856,6 +857,9 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/style/source_impl.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/source_impl.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/source_observer.hpp
+    ${PROJECT_SOURCE_DIR}/src/mln/style/sources/contour_source.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/style/sources/contour_source_impl.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/style/sources/contour_source_impl.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/sources/custom_geometry_source.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/sources/custom_geometry_source_impl.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/sources/custom_geometry_source_impl.hpp
