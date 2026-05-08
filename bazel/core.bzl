@@ -123,6 +123,8 @@ MLN_CORE_SOURCE = [
     "src/mln/algorithm/contour/intervals.hpp",
     "src/mln/algorithm/contour/isolines.cpp",
     "src/mln/algorithm/contour/isolines.hpp",
+    "src/mln/algorithm/contour/smoothing.cpp",
+    "src/mln/algorithm/contour/smoothing.hpp",
     "src/mln/algorithm/contour/units.cpp",
     "src/mln/algorithm/contour/units.hpp",
     "src/mln/algorithm/update_renderables.hpp",
