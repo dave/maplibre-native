@@ -486,6 +486,8 @@ list(APPEND INCLUDE_FILES
 list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/actor/mailbox.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/actor/scheduler.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/isolines.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/algorithm/contour/isolines.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/update_renderables.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/algorithm/update_tile_masks.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/annotation/annotation_manager.cpp
