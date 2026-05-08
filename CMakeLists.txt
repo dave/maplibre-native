@@ -665,6 +665,8 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/renderer_impl.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/renderer_impl.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/renderer_state.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/renderer/sources/render_contour_source.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/renderer/sources/render_contour_source.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/sources/render_custom_geometry_source.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/sources/render_custom_geometry_source.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/renderer/sources/render_custom_vector_source.cpp
@@ -919,6 +921,8 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/text/shaping.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/text/tagged_string.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/text/tagged_string.hpp
+    ${PROJECT_SOURCE_DIR}/src/mln/tile/contour_tile.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/tile/contour_tile.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/tile/custom_geometry_tile.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/tile/custom_geometry_tile.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/tile/custom_vector_tile.cpp
