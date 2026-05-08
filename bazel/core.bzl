@@ -857,6 +857,7 @@ MLN_CORE_HEADERS = [
     "include/mln/util/indexed_tuple.hpp",
     "include/mln/util/instrumentation.hpp",
     "include/mln/util/interpolate.hpp",
+    "include/mln/util/listener_set.hpp",
     "include/mln/util/logging.hpp",
     "include/mln/util/lru_cache.hpp",
     "include/mln/util/math.hpp",

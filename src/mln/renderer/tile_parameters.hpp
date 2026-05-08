@@ -4,13 +4,16 @@
 #include <mln/actor/scheduler.hpp>
 #include <mln/util/feature.hpp>
 
+#include <functional>
 #include <memory>
 #include <numbers>
+#include <string>
 
 #include <mapbox/std/weak.hpp>
 
 namespace mln {
 
+class RenderSource;
 class TransformState;
 class FileSource;
 class AnnotationManager;
@@ -43,6 +46,12 @@ public:
     std::shared_ptr<const GlobalStateMap> globalState = nullptr;
     bool isUpdateSynchronous = false;
     bool captureRenderedFeatures = false;
+    // Cross-source lookup: a render source can resolve another source by ID
+    // during update(). Used by ContourSource to find its upstream
+    // raster-dem source and subscribe to tile-load events. Empty / returning
+    // nullptr means "not available" (e.g. when constructing tile parameters
+    // outside the orchestrator's update loop, as in tests).
+    std::function<RenderSource*(const std::string&)> getRenderSource;
 };
 
 } // namespace mln
