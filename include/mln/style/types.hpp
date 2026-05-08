@@ -16,7 +16,8 @@ enum class SourceType : uint8_t {
     Annotations,
     Image,
     CustomVector,
-    CustomMVTVector
+    CustomMVTVector,
+    Contour
 };
 
 enum class VisibilityType : bool {
