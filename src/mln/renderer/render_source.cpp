@@ -3,6 +3,7 @@
 #include <mln/annotation/render_annotation_source.hpp>
 #include <mln/layermanager/layer_manager.hpp>
 #include <mln/renderer/render_source_observer.hpp>
+#include <mln/renderer/sources/render_contour_source.hpp>
 #include <mln/renderer/sources/render_custom_geometry_source.hpp>
 #include <mln/renderer/sources/render_custom_vector_source.hpp>
 #include <mln/renderer/sources/render_geojson_source.hpp>
@@ -12,6 +13,7 @@
 #include <mln/renderer/sources/render_vector_source.hpp>
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/renderer/update_parameters.hpp>
+#include <mln/style/sources/contour_source_impl.hpp>
 #include <mln/tile/tile.hpp>
 #include <mln/util/constants.hpp>
 
@@ -54,11 +56,8 @@ std::unique_ptr<RenderSource> RenderSource::create(const Immutable<Source::Impl>
             return std::make_unique<RenderCustomVectorSource>(staticImmutableCast<CustomVectorSource::Impl>(impl),
                                                               threadPool);
         case SourceType::Contour:
-            // RenderContourSource not implemented yet; until it lands the
-            // source object is constructible from style JSON
-            // but produces no rendered output.
-            assert(false);
-            return nullptr;
+            return std::make_unique<RenderContourSource>(staticImmutableCast<style::ContourSource::Impl>(impl),
+                                                         threadPool);
     }
 
     // Not reachable, but placate GCC.
