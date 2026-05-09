@@ -586,6 +586,19 @@ TEST(TileCover, CoveringZoomLevelRoundsForRasterSources) {
     EXPECT_EQ(6, util::coveringZoomLevel(4.6, style::SourceType::RasterDEM, 256));
 }
 
+TEST(TileCover, CoveringZoomLevelContourMatchesRasterDEM) {
+    // A contour source builds its tiles from the raster-dem tiles it reads,
+    // looked up by tile ID, so both must cover the same zoom level.
+    for (const double zoom : {4.4, 4.5, 4.6, 12.6, 13.6}) {
+        for (const uint16_t size : {uint16_t{256}, uint16_t{512}}) {
+            EXPECT_EQ(util::coveringZoomLevel(zoom, style::SourceType::RasterDEM, size),
+                      util::coveringZoomLevel(zoom, style::SourceType::Contour, size))
+                << "zoom " << zoom << ", tile size " << size;
+        }
+    }
+    EXPECT_EQ(5, util::coveringZoomLevel(4.6, style::SourceType::Contour, util::tileSize_I));
+}
+
 TEST(TileCover, DISABLED_FuzzPoly) {
     while (true) {
         std::srand(static_cast<uint32_t>(time(nullptr)));
