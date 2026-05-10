@@ -58,8 +58,16 @@ inline double ratio(double a, double threshold, double b) {
     return (threshold - a) / (b - a);
 }
 
-inline void edgePosition(const Edge edge, int c, int r, double tl, double tr, double bl, double br,
-                         double threshold, double& outX, double& outY) {
+inline void edgePosition(const Edge edge,
+                         int c,
+                         int r,
+                         double tl,
+                         double tr,
+                         double bl,
+                         double br,
+                         double threshold,
+                         double& outX,
+                         double& outY) {
     if (edge.u == 0) {
         outX = static_cast<double>(c - 1);
         outY = static_cast<double>(r) - ratio(bl, threshold, tl);
@@ -145,7 +153,6 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
 
     const double interval = thresholds.interval;
     const double multiplier = static_cast<double>(thresholds.extent) / static_cast<double>(width - 1);
-    const int buffer = thresholds.buffer;
 
     // Per-threshold polyline accumulators. We key by level rounded to the
     // nearest interval-step, expressed as a signed integer multiple, to avoid
@@ -159,13 +166,13 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
         return static_cast<double>(heights[y * width + x]);
     };
 
-    const int cMin = 1 - buffer;
-    const int cMax = width + buffer;
-    const int rMin = 1 - buffer;
-    const int rMax = height + buffer;
-
-    for (int r = rMin; r < rMax; r++) {
-        for (int c = cMin; c < cMax; c++) {
+    // Iterate cells in [1, width) × [1, height): each cell at (c, r)
+    // samples corners at (c-1, r-1), (c, r-1), (c-1, r), (c, r), so this
+    // covers all (width-1) × (height-1) cells exactly once. Skirts beyond
+    // the grid edge are the caller's responsibility (e.g. by passing a
+    // border-padded height grid).
+    for (int r = 1; r < height; r++) {
+        for (int c = 1; c < width; c++) {
             const double tl = sample(c - 1, r - 1);
             const double tr = sample(c, r - 1);
             const double bl = sample(c - 1, r);
@@ -180,11 +187,12 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
             const double endLevel = std::floor(maxV / interval) * interval;
 
             for (double level = startLevel; level <= endLevel + 0.5 * interval; level += interval) {
-                const int idx = (tl > level ? 8 : 0) | (tr > level ? 4 : 0) | (br > level ? 2 : 0) | (bl > level ? 1 : 0);
+                const int idx = (tl > level ? 8 : 0) | (tr > level ? 4 : 0) | (br > level ? 2 : 0) |
+                                (bl > level ? 1 : 0);
                 const int nSegments = SEGMENT_COUNT[idx];
                 if (nSegments == 0) continue;
 
-                const long long levelKey = static_cast<long long>(std::llround(level / interval));
+                const long long levelKey = std::llround(level / interval);
                 LevelState& state = levels[levelKey];
 
                 for (int s = 0; s < nSegments; s++) {
