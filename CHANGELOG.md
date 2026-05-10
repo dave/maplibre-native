@@ -11,6 +11,7 @@
 - [ios] Add `MLNStyle.globalState` / `-[MLNStyle setGlobalStateValue:forProperty:]` and `NSExpression` support (`mgl_globalState:`) for the [`global-state`](https://maplibre.org/maplibre-style-spec/expressions/#global-state) expression ([#3302](https://github.com/maplibre/maplibre-native/issues/3302)).
 - [node] Add `map.setGlobalStateProperty` / `map.getGlobalState` for the [`global-state`](https://maplibre.org/maplibre-style-spec/expressions/#global-state) expression ([#3302](https://github.com/maplibre/maplibre-native/issues/3302)).
 - [core] Locally rasterized CJK glyphs now render at 2x texture resolution, preserving fine strokes. Mirrors [maplibre-gl-js#3006](https://github.com/maplibre/maplibre-gl-js/pull/3006).
+- [core] Add native `contour` source type for in-process generation of elevation contour-line vector tiles from a shared `raster-dem` source. Implements [maplibre-style-spec#583](https://github.com/maplibre/maplibre-style-spec/issues/583) ([#4284](https://github.com/maplibre/maplibre-native/pull/4284)).
 - [core] Added new map observer events: onPreCompileShader, onPostCompileShader, onShaderCompileFailed, onGlyphsLoaded, onGlyphsError, onGlyphsRequested, onTileAction, onSpriteLoaded, onSpriteError, onSpriteRequested ([#2694](https://github.com/maplibre/maplibre-native/pull/2694)).
 - [core] Add WebP image decoding support to default platform (Linux, Windows)
 - [core] All CMake properties are now prefixed `MLN_*` [1054](https://github.com/maplibre/maplibre-native/pull/1054).
