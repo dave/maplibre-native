@@ -21,6 +21,7 @@
 #include <mln/renderer/image_manager.hpp>
 #include <mln/geometry/line_atlas.hpp>
 #include <mln/style/source_impl.hpp>
+#include <mln/style/sources/contour_source_impl.hpp>
 #include <mln/style/transition_options.hpp>
 #include <mln/text/glyph_manager.hpp>
 #include <mln/tile/tile.hpp>
@@ -31,6 +32,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <unordered_set>
 
 namespace mln {
 
@@ -405,13 +407,38 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     // Track which layers are flagged for rendering
     std::vector<bool> updateList(orderedLayers.size());
 
+    // Cross-source dependency pre-pass. Some source types consume other
+    // sources internally (currently: ContourSource reads tiles from an
+    // upstream RasterDEMSource). The main loop below decides whether a
+    // source needs to load tiles by checking layer.source ==
+    // sourceImpl->id, which misses the indirect contour→DEM dependency.
+    // Build a set of source IDs that must be loaded as upstream
+    // dependencies of a contour source whose own layers are visible.
+    std::unordered_set<std::string> implicitSourceNeedsRendering;
+    for (const auto& sourceImpl : *sourceImpls) {
+        if (sourceImpl->type != SourceType::Contour) continue;
+        bool contourSourceNeedsRendering = false;
+        for (const auto& layerRef : orderedLayers) {
+            const RenderLayer& layer = layerRef.get();
+            if (layer.baseImpl->source != sourceImpl->id) continue;
+            if (layer.baseImpl->visibility == style::VisibilityType::None) continue;
+            if (!layer.supportsZoom(zoomHistory.lastZoom)) continue;
+            contourSourceNeedsRendering = true;
+            break;
+        }
+        if (contourSourceNeedsRendering) {
+            const auto& contourImpl = static_cast<const style::ContourSource::Impl&>(*sourceImpl);
+            implicitSourceNeedsRendering.insert(contourImpl.getOptions().sourceID);
+        }
+    }
+
     // Update all sources and initialize renderItems.
     for (const auto& sourceImpl : *sourceImpls) {
         MLN_TRACE_ZONE(update source);
         MLN_ZONE_STR(sourceImpl->id);
 
         RenderSource* source = renderSources.at(sourceImpl->id).get();
-        bool sourceNeedsRendering = false;
+        bool sourceNeedsRendering = implicitSourceNeedsRendering.contains(sourceImpl->id);
         bool sourceNeedsRelayout = false;
 
         for (std::size_t index = 0; index < orderedLayers.size(); ++index) {
