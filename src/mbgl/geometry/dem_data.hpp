@@ -21,7 +21,7 @@ public:
     /// two interior columns/rows, which lets adjacent prepare outputs
     /// share an identical edge value and eliminates the visible 1-pixel
     /// step (seam) at overzoomed tile boundaries.
-    static constexpr int32_t border = 2;
+    static constexpr int32_t border = 3;
 
     DEMData(const PremultipliedImage& image, Tileset::RasterEncoding encoding);
     void backfillBorder(const DEMData& borderTileData, int8_t dx, int8_t dy);

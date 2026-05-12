@@ -257,7 +257,7 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             // DEM samples. This eliminates the visible 1-pixel step at
             // tile boundaries when the hillshade is overzoomed past the
             // raster-dem source's maxzoom.
-            const uint16_t tilesize = static_cast<uint16_t>(bucket.getDEMData().dim + 1);
+            const uint16_t tilesize = static_cast<uint16_t>(bucket.getDEMData().dim + 3);
             auto renderTarget = context.createRenderTarget({tilesize, tilesize},
                                                            gfx::TextureChannelDataType::UnsignedByte);
             if (!renderTarget) {

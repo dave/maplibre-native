@@ -18,9 +18,9 @@ void main() {
     gl_Position = u_matrix * vec4(a_pos, 0, 1);
 
     // u_dimension is the DEM buffer stride (interior + 2 * border).
-    // The buffer has `border = 2` so stride = dim + 4.
+    // The buffer has `border = 3` so stride = dim + 6.
     //
-    // Render target is (dim+1) × (dim+1). Output pixel i (i ∈ [0, dim])
+    // Render target is (dim+3) × (dim+3). Output pixel i (i ∈ [0, dim+2])
     // computes the Sobel-derived slope centred on buffer texel index i+2
     // (the first interior cell at i=0 through the second-east-border
     // cell at i=dim). The east-border cells hold the eastern neighbour's
