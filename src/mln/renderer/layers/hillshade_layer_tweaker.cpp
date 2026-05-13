@@ -2,6 +2,7 @@
 
 #include <mln/gfx/context.hpp>
 #include <mln/gfx/drawable.hpp>
+#include <mln/gfx/hillshade_prepare_drawable_data.hpp>
 #include <mln/renderer/layer_group.hpp>
 #include <mln/renderer/paint_parameters.hpp>
 #include <mln/renderer/render_tree.hpp>
@@ -166,7 +167,7 @@ void HillshadeLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParam
 #endif
 
     visitLayerGroupDrawables(layerGroup, [&](gfx::Drawable& drawable) {
-        if (!drawable.getTileID() || !checkTweakDrawable(drawable)) {
+        if (!drawable.getTileID() || !drawable.getData() || !checkTweakDrawable(drawable)) {
             return;
         }
 
@@ -175,12 +176,23 @@ void HillshadeLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParam
         const auto matrix = getTileMatrix(
             tileID, parameters, {0.f, 0.f}, TranslateAnchorType::Viewport, false, false, drawable, true);
 
+        // The hillshade vertex shader samples the prepare-pass output (sized
+        // (dim+3)²) and needs the texture dimensions to inset its sampler
+        // into the inner texels. We stash stride (= dim+6) on the drawable
+        // via HillshadePrepareDrawableData; the render-target width is
+        // stride - 3 = dim + 3.
+        const auto& drawableData = static_cast<const gfx::HillshadePrepareDrawableData&>(*drawable.getData());
+        const float texW = static_cast<float>(drawableData.stride - 3);
+
 #if MLN_UBO_CONSOLIDATION
         drawableUBOVector[i] = {
 #else
         const HillshadeDrawableUBO drawableUBO = {
 #endif
-            /* .matrix = */ util::cast<float>(matrix)
+            /* .matrix    = */ util::cast<float>(matrix),
+            /* .dimension = */ {texW, texW},
+            /* .pad0      = */ 0.0f,
+            /* .pad1      = */ 0.0f,
         };
 
 #if MLN_UBO_CONSOLIDATION
