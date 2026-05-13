@@ -269,8 +269,14 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             if (bucket.renderTarget) {
                 removeRenderTarget(bucket.renderTarget, changes);
             }
-            // Set up tile render target.
-            const uint16_t tilesize = bucket.getDEMData().dim;
+            // Set up tile render target. We render past the tile interior on
+            // each side (output is (dim+3)²) so adjacent tiles'
+            // boundary-aligned output pixels coincide in absolute world
+            // space and compute identical Sobel values from the same source
+            // DEM samples. This eliminates the visible 1-pixel step at
+            // tile boundaries when the hillshade is overzoomed past the
+            // raster-dem source's maxzoom.
+            const uint16_t tilesize = static_cast<uint16_t>(bucket.getDEMData().dim + 3);
             auto renderTarget = context.createRenderTarget({tilesize, tilesize},
                                                            gfx::TextureChannelDataType::UnsignedByte);
             if (!renderTarget) {
@@ -400,6 +406,14 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
         for (auto& drawable : hillshadeBuilder->clearDrawables()) {
             drawable->setTileID(tileID);
             drawable->setLayerTweaker(layerTweaker);
+            // Stash the prepare-pass render target size so the tweaker can
+            // populate HillshadeDrawableUBO::dimension. The vertex shader
+            // needs it to inset the sampler into the inner texels of the
+            // (dim+3)² target (see shaders/hillshade.vertex.glsl). We pass
+            // it via HillshadePrepareDrawableData since the only field we
+            // actually need is stride; encoding/maxzoom are ignored here.
+            drawable->setData(std::make_unique<gfx::HillshadePrepareDrawableData>(
+                bucket.getDEMData().stride, bucket.getDEMData().encoding, maxzoom));
 
             tileLayerGroup->addDrawable(renderPass, tileID, std::move(drawable));
             ++stats.drawablesAdded;
