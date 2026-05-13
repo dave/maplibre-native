@@ -80,8 +80,7 @@ constexpr const char* kStyleJSON = R"({
 
 // Read the raw terrain tile bytes from the integration-tile fixtures.
 std::string readTerrainTile(uint32_t x, uint32_t y) {
-    std::string path = "metrics/integration/tiles/12-" + std::to_string(x) + "-" +
-                       std::to_string(y) + ".terrain.png";
+    std::string path = "metrics/integration/tiles/12-" + std::to_string(x) + "-" + std::to_string(y) + ".terrain.png";
     return util::read_file(path);
 }
 
@@ -123,11 +122,10 @@ public:
     util::RunLoop loop;
     HeadlessFrontend frontend{Size{256, 256}, 1.0};
     std::shared_ptr<StubFileSource> fileSource = std::make_shared<StubFileSource>();
-    MapAdapter map{
-        frontend,
-        MapObserver::nullObserver(),
-        fileSource,
-        MapOptions().withMapMode(MapMode::Static).withSize(frontend.getSize()).withPixelRatio(1.0)};
+    MapAdapter map{frontend,
+                   MapObserver::nullObserver(),
+                   fileSource,
+                   MapOptions().withMapMode(MapMode::Static).withSize(frontend.getSize()).withPixelRatio(1.0)};
 
     HillshadeSeamTest() {
         // Serve the four z=12 terrain tiles that the chosen viewport
@@ -228,10 +226,8 @@ TEST(HillshadeRendering, NoOverzoomCornerSeam) {
     // seam (around 1.8×), while leaving comfortable margin for the
     // fixed renderer where the boundary row is actually quieter
     // than the average row (<1.0× of control).
-    EXPECT_LE(seamH, 1.25 * ctrlH)
-        << "horizontal hillshade seam at y=" << cy << ": diff=" << seamH
-        << ", control mean=" << ctrlH;
-    EXPECT_LE(seamV, 1.25 * ctrlV)
-        << "vertical hillshade seam at x=" << cx << ": diff=" << seamV
-        << ", control mean=" << ctrlV;
+    EXPECT_LE(seamH, 1.25 * ctrlH) << "horizontal hillshade seam at y=" << cy << ": diff=" << seamH
+                                   << ", control mean=" << ctrlH;
+    EXPECT_LE(seamV, 1.25 * ctrlV) << "vertical hillshade seam at x=" << cx << ": diff=" << seamV
+                                   << ", control mean=" << ctrlV;
 }
