@@ -7,9 +7,17 @@ async function run() {
   const run_id = process.env.TEST_RUN_ID;
   if (!run_id) throw new Error("TEST_RUN_ID not set");
 
+  // GITHUB_REPOSITORY is "<owner>/<repo>". Hardcoding
+  // maplibre/maplibre-native here used to 404 when this workflow ran on
+  // a fork.
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!repository) throw new Error("GITHUB_REPOSITORY not set");
+  const [owner, repo] = repository.split('/');
+  if (!owner || !repo) throw new Error(`GITHUB_REPOSITORY is not "<owner>/<repo>": ${repository}`);
+
   const { data } = await octokit.rest.actions.listJobsForWorkflowRun({
-    owner: 'maplibre',
-    repo: 'maplibre-native',
+    owner,
+    repo,
     run_id: parseInt(run_id)
   });
 
