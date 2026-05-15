@@ -192,7 +192,7 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
                 const int nSegments = SEGMENT_COUNT[idx];
                 if (nSegments == 0) continue;
 
-                const long long levelKey = static_cast<long long>(std::llround(level / interval));
+                const long long levelKey = std::llround(level / interval);
                 LevelState& state = levels[levelKey];
 
                 for (int s = 0; s < nSegments; s++) {
