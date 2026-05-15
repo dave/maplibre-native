@@ -48,7 +48,7 @@ public:
     // raster-dem source and subscribe to tile-load events. Empty / returning
     // nullptr means "not available" (e.g. when constructing tile parameters
     // outside the orchestrator's update loop, as in tests).
-    std::function<RenderSource*(const std::string&)> getRenderSource;
+    std::function<RenderSource*(const std::string&)> getRenderSource = {};
 };
 
 } // namespace mbgl
