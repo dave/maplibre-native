@@ -239,7 +239,8 @@ ContourTile::ContourTile(const OverscaledTileID& id_,
                          std::string sourceID_,
                          const TileParameters& parameters,
                          TileObserver* observer_)
-    : GeometryTile(id_, std::move(sourceID_), parameters, observer_) {}
+    : GeometryTile(id_, std::move(sourceID_), parameters, observer_),
+      threadPool(parameters.threadPool) {}
 
 void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
                                   double intervalDisplayUnits,
@@ -287,8 +288,8 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
     // `toFeatures`.
     const double intervalMeters = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
 
-    Scheduler::GetBackground()->scheduleAndReplyValue(
-        util::SimpleIdentity::Empty,
+    const std::uint64_t generation = ++requestedGeneration;
+    threadPool.scheduleAndReplyValue(
         [heights, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit]() {
             algorithm::contour::ContourThresholds thresholds;
             thresholds.interval = intervalMeters;
@@ -336,8 +337,17 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
             }
             return toFeatures(shifted, unit, intervalDisplayUnits, majorMultiplier);
         },
-        [self = weakFactory.makeWeakPtr(), this](mapbox::feature::feature_collection<std::int16_t> features) {
+        [self = weakFactory.makeWeakPtr(), this, generation](
+            mapbox::feature::feature_collection<std::int16_t> features) {
             if (auto guard = self.lock(); self) {
+                // A later call (e.g. after a neighbour's border backfill)
+                // supersedes this one; the jobs run in parallel and can
+                // finish in either order, so drop an older result rather
+                // than let it replace a newer one.
+                if (generation != requestedGeneration) {
+                    return;
+                }
+                appliedGeneration = generation;
                 setData(std::make_unique<GeoJSONTileData>(std::move(features)));
             }
         });

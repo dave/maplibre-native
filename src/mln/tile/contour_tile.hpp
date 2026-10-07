@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mln/actor/scheduler.hpp>
 #include <mln/algorithm/contour/units.hpp>
 #include <mln/tile/geometry_tile.hpp>
 
@@ -40,12 +41,24 @@ public:
     // to a single positive integer per the tile's zoom by the caller; lines
     // at elevations divisible by `intervalDisplayUnits × majorMultiplier`
     // get `major: true`. `unit` controls the metres↔display conversion.
+    //
+    // Each call starts a new generation. The work runs on the tile's thread
+    // pool, so calls can finish in any order; only the newest generation's
+    // result is applied (see `populatedGeneration`).
     void populateFromDEM(const RasterDEMTile& demTile,
                          double intervalDisplayUnits,
                          std::int64_t majorMultiplier,
                          const algorithm::contour::UnitConfig& unit);
 
+    // The generation of the last result applied to the tile: 0 before any
+    // result, otherwise the number of the `populateFromDEM` call it came from.
+    std::uint64_t populatedGeneration() const { return appliedGeneration; }
+
 private:
+    TaggedScheduler threadPool;
+    std::uint64_t requestedGeneration = 0;
+    std::uint64_t appliedGeneration = 0;
+
     mapbox::base::WeakPtrFactory<ContourTile> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`.
 };
