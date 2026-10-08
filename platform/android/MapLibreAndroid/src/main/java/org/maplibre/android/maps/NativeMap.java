@@ -287,6 +287,10 @@ interface NativeMap {
 
   double getTileLodZoomShift();
 
+  void setNoFadeInSources(String[] sourceIds);
+
+  String[] getNoFadeInSources();
+
   void setGestureInProgress(boolean inProgress);
 
   float getPixelRatio();
