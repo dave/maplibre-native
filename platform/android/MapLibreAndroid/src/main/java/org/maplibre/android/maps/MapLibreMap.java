@@ -465,6 +465,25 @@ public final class MapLibreMap {
     return nativeMapView.getTileLodZoomShift();
   }
 
+  /**
+   * Symbols of these sources appear at full opacity when first placed, with
+   * no fade-in. Fade-out and every other source are unchanged.
+   *
+   * @param sourceIds the source ids
+   */
+  public void setNoFadeInSources(@NonNull String[] sourceIds) {
+    nativeMapView.setNoFadeInSources(sourceIds);
+  }
+
+  /**
+   * @return the sources whose symbols appear with no fade-in
+   * @see MapLibreMap#setNoFadeInSources(String[])
+   */
+  @NonNull
+  public String[] getNoFadeInSources() {
+    return nativeMapView.getNoFadeInSources();
+  }
+
   //
   // MinZoom
   //
