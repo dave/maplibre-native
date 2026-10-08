@@ -921,6 +921,22 @@ final class NativeMapView implements NativeMap {
     }
     return nativeGetTileLodZoomShift();
   }
+
+  @Override
+  public void setNoFadeInSources(String[] sourceIds) {
+    if (checkState("setNoFadeInSources")) {
+      return;
+    }
+    nativeSetNoFadeInSources(sourceIds);
+  }
+
+  @Override
+  public String[] getNoFadeInSources() {
+    if (checkState("getNoFadeInSources")) {
+      return new String[0];
+    }
+    return nativeGetNoFadeInSources();
+  }
   // Runtime style Api
 
   @Override
@@ -1855,6 +1871,12 @@ final class NativeMapView implements NativeMap {
 
   @Keep
   private native double nativeGetTileLodZoomShift();
+
+  @Keep
+  private native void nativeSetNoFadeInSources(String[] sourceIds);
+
+  @Keep
+  private native String[] nativeGetNoFadeInSources();
 
   @Override
   public long getNativePtr() {

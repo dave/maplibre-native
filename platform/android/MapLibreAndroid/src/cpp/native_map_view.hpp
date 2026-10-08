@@ -340,6 +340,10 @@ public:
 
     jni::jdouble getTileLodZoomShift(JNIEnv&);
 
+    void setNoFadeInSources(JNIEnv&, const jni::Array<jni::String>&);
+
+    jni::Local<jni::Array<jni::String>> getNoFadeInSources(JNIEnv&);
+
     mln::Map& getMap();
 
     void triggerRepaint(JNIEnv&);

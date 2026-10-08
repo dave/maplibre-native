@@ -1327,6 +1327,25 @@ jni::jdouble NativeMapView::getTileLodZoomShift(JNIEnv&) {
     return jni::jdouble(map->getTileLodZoomShift());
 }
 
+void NativeMapView::setNoFadeInSources(JNIEnv& env, const jni::Array<jni::String>& jIds) {
+    std::set<std::string> ids;
+    const std::size_t size = jIds.Length(env);
+    for (std::size_t i = 0; i < size; i++) {
+        ids.insert(jni::Make<std::string>(env, jIds.Get(env, i)));
+    }
+    map->setNoFadeInSources(std::move(ids));
+}
+
+jni::Local<jni::Array<jni::String>> NativeMapView::getNoFadeInSources(JNIEnv& env) {
+    const auto& ids = map->getNoFadeInSources();
+    auto jIds = jni::Array<jni::String>::New(env, ids.size());
+    uint32_t index = 0;
+    for (const auto& id : ids) {
+        jIds.Set(env, index++, jni::Make<jni::String>(env, id));
+    }
+    return jIds;
+}
+
 mln::Map& NativeMapView::getMap() {
     return *map;
 }
@@ -1489,6 +1508,8 @@ void NativeMapView::registerNative(jni::JNIEnv& env) {
         METHOD(&NativeMapView::getTileLodPitchThreshold, "nativeGetTileLodPitchThreshold"),
         METHOD(&NativeMapView::setTileLodZoomShift, "nativeSetTileLodZoomShift"),
         METHOD(&NativeMapView::getTileLodZoomShift, "nativeGetTileLodZoomShift"),
+        METHOD(&NativeMapView::setNoFadeInSources, "nativeSetNoFadeInSources"),
+        METHOD(&NativeMapView::getNoFadeInSources, "nativeGetNoFadeInSources"),
         METHOD(&NativeMapView::triggerRepaint, "nativeTriggerRepaint"),
         METHOD(&NativeMapView::isRenderingStatsViewEnabled, "nativeIsRenderingStatsViewEnabled"),
         METHOD(&NativeMapView::enableRenderingStatsView, "nativeEnableRenderingStatsView"),
