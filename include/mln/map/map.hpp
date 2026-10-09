@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -207,6 +208,11 @@ public:
     double getTileLodZoomShift() const;
     void setTileLodMode(TileLodMode mode);
     TileLodMode getTileLodMode() const;
+
+    /// Symbols of these sources appear at full opacity when first placed,
+    /// with no fade-in. Fade-out and every other source are unchanged.
+    void setNoFadeInSources(std::set<std::string> sourceIDs);
+    const std::set<std::string>& getNoFadeInSources() const;
 
     ClientOptions getClientOptions() const;
 

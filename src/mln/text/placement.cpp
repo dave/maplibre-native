@@ -100,6 +100,8 @@ public:
     float pixelsToTileUnits;
     float scale;
     float pixelRatio;
+    // The bucket's source is in UpdateParameters::noFadeInSources.
+    bool noFadeIn = false;
 
     bool rotateTextWithMap = getLayout().get<TextRotationAlignment>() == AlignmentType::Map;
     bool pitchTextWithMap = getLayout().get<TextPitchAlignment>() == AlignmentType::Map;
@@ -243,6 +245,7 @@ void Placement::placeSymbolBucket(const BucketPlacementData& params, std::set<ui
                          placementZoom,
                          collisionGroups.get(params.sourceId),
                          getAvoidEdges(symbolBucket, renderTile.matrix)};
+    ctx.noFadeIn = updateParameters->noFadeInSources.contains(params.sourceId);
     for (const SymbolInstance& symbol : getSortedSymbols(params, ctx.pixelRatio)) {
         if (!symbol.check(SYM_GUARD_LOC)) continue;
         if (seenCrossTileIDs.contains(symbol.getCrossTileID())) continue;
@@ -636,7 +639,9 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
     }
 
     JointPlacement result(
-        placeText || ctx.alwaysShowText, placeIcon || ctx.alwaysShowIcon, offscreen || bucket.justReloaded);
+        placeText || ctx.alwaysShowText,
+        placeIcon || ctx.alwaysShowIcon,
+        offscreen || bucket.justReloaded || ctx.noFadeIn);
     placements.emplace(symbolInstance.getCrossTileID(), result);
     newSymbolPlaced(symbolInstance, ctx, result, ctx.placementType, textBoxes, iconBoxes);
     return result;

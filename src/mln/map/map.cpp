@@ -612,6 +612,15 @@ TileLodMode Map::getTileLodMode() const {
     return impl->tileLodMode;
 }
 
+void Map::setNoFadeInSources(std::set<std::string> sourceIDs) {
+    impl->noFadeInSources = std::move(sourceIDs);
+    impl->onUpdate();
+}
+
+const std::set<std::string>& Map::getNoFadeInSources() const {
+    return impl->noFadeInSources;
+}
+
 ClientOptions Map::getClientOptions() const {
     return impl->fileSource ? impl->fileSource->getClientOptions() : ClientOptions();
 }
