@@ -12,6 +12,8 @@
 #include <mln/util/immutable.hpp>
 
 #include <numbers>
+#include <set>
+#include <string>
 #include <vector>
 
 #include <mapbox/std/weak.hpp>
@@ -61,6 +63,10 @@ public:
     double tileLodPitchThreshold = (60.0 / 180.0) * std::numbers::pi;
     double tileLodZoomShift = 0;
     TileLodMode tileLodMode = TileLodMode::Default;
+
+    // Sources whose symbols appear at full opacity when first placed (no
+    // fade-in). A symbol a later placement drops still fades out.
+    std::set<std::string> noFadeInSources;
 };
 
 } // namespace mln
