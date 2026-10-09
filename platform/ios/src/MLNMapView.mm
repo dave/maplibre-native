@@ -3227,6 +3227,22 @@ static void *windowScreenContext = &windowScreenContext;
   return _mbglMap->getTileLodZoomShift();
 }
 
+- (void)setNoFadeInSourceIdentifiers:(NSSet<NSString *> *)identifiers {
+  std::set<std::string> ids;
+  for (NSString *identifier in identifiers) {
+    ids.insert(identifier.UTF8String);
+  }
+  _mbglMap->setNoFadeInSources(std::move(ids));
+}
+
+- (NSSet<NSString *> *)noFadeInSourceIdentifiers {
+  NSMutableSet<NSString *> *set = [NSMutableSet set];
+  for (const auto &identifier : _mbglMap->getNoFadeInSources()) {
+    [set addObject:@(identifier.c_str())];
+  }
+  return set;
+}
+
 - (void)setFrustumOffset:(UIEdgeInsets)frustumOffset {
   _mbglMap->setFrustumOffset(MLNEdgeInsetsFromNSEdgeInsets(frustumOffset));
 }

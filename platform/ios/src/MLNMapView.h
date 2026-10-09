@@ -533,6 +533,12 @@ MLN_EXPORT
 @property (nonatomic, assign) double tileLodZoomShift;
 
 /**
+ The identifiers of the sources whose symbols appear at full opacity when
+ first placed, with no fade-in. Fade-out and other sources are unchanged.
+ */
+@property (nonatomic, copy) NSSet<NSString *> *noFadeInSourceIdentifiers;
+
+/**
  Frustum offset used to disable rendering of elements at the edge of the screen
 
  Offset applied to camera frustum and scissor rectangle. The camrea frustum is modified
