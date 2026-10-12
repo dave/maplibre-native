@@ -1268,3 +1268,70 @@ TEST(Camera, SetOrientationWithRollNoPitch) {
     EXPECT_NEAR(pitch, pitch_, 1.0e-9);
     EXPECT_NEAR(0.0, roll_, 1.0e-9);
 }
+
+// The glide end helpers: an app predicts where a fling or a zoom animation
+// stops. Each must give exactly (==, not near) the camera the real call ends at.
+
+namespace {
+void expectSameCamera(const CameraOptions& predicted, const Transform& transform) {
+    EXPECT_EQ(*predicted.zoom, transform.getZoom());
+    EXPECT_EQ(predicted.center->latitude(), transform.getLatLng().latitude());
+    EXPECT_EQ(predicted.center->longitude(), transform.getLatLng().longitude());
+    EXPECT_EQ(*predicted.bearing, transform.getCameraOptions(std::nullopt).bearing);
+    EXPECT_EQ(*predicted.pitch, transform.getCameraOptions(std::nullopt).pitch);
+}
+} // namespace
+
+TEST(Transform, MoveByEndIsWhereMoveByStops) {
+    // Gesture in progress picks easeTo, otherwise moveBy runs through flyTo;
+    // pitch 0 skips the horizon clamp, pitch 60 uses it.
+    for (const bool gesture : {false, true}) {
+        for (const double pitch : {0.0, 60.0}) {
+            for (const bool animated : {false, true}) {
+                Transform transform;
+                transform.resize({1000, 800});
+                transform.jumpTo(
+                    CameraOptions().withCenter(LatLng{-53.16, -70.9}).withZoom(12.3).withPitch(pitch).withBearing(17.0));
+                transform.setGestureInProgress(gesture);
+                const ScreenCoordinate offset = {240.5, -4130.25};
+                AnimationOptions animation;
+                if (animated) {
+                    animation.duration.emplace(Milliseconds(400));
+                    animation.easing.emplace(util::UnitBezier{0.1, 0.4, 0.35, 1.0});
+                }
+
+                const CameraOptions predicted = transform.moveByEnd(offset, animation);
+                const LatLng before = transform.getLatLng();
+                ASSERT_FALSE(transform.inTransition());
+                ASSERT_EQ(before, transform.getLatLng()); // the helper moved nothing
+
+                transform.moveBy(offset, animation);
+                if (animated) {
+                    ASSERT_TRUE(transform.inTransition());
+                    transform.updateTransitions(transform.getTransitionStart() + Milliseconds(100));
+                    transform.updateTransitions(transform.getTransitionStart() + transform.getTransitionDuration());
+                }
+                ASSERT_FALSE(transform.inTransition());
+                ASSERT_NE(before, transform.getLatLng());
+                expectSameCamera(predicted, transform);
+            }
+        }
+    }
+}
+
+TEST(Transform, ZoomAroundEndIsWhatSetZoomAboutTheAnchorGives) {
+    for (const double zoom : {11.37, 8.0, 30.0}) { // 30 is past the max zoom, so it is clamped
+        Transform transform;
+        transform.resize({1000, 800});
+        transform.jumpTo(CameraOptions().withCenter(LatLng{-45.57, -72.07}).withZoom(10.0).withBearing(-30.0));
+        const ScreenCoordinate anchor = {300, 620};
+
+        const CameraOptions predicted = transform.zoomAroundEnd(zoom, anchor);
+        ASSERT_EQ(10.0, transform.getZoom()); // the helper moved nothing
+
+        // As NativeMapView::setZoom with duration 0.
+        transform.easeTo(CameraOptions().withZoom(zoom).withAnchor(anchor), AnimationOptions{Milliseconds(0)});
+        ASSERT_NE(10.0, transform.getZoom());
+        expectSameCamera(predicted, transform);
+    }
+}

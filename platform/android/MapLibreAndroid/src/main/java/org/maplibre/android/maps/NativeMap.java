@@ -54,6 +54,14 @@ interface NativeMap {
 
   void moveBy(double deltaX, double deltaY, long duration);
 
+  /** The camera moveBy(deltaX, deltaY, duration) would end at, from the camera now. Moves nothing. */
+  @NonNull
+  CameraPosition getCameraForMoveBy(double deltaX, double deltaY, long duration);
+
+  /** The camera setZoom(zoom, focalPoint, 0) would give, from the camera now. Moves nothing. */
+  @NonNull
+  CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint);
+
   @NonNull
   CameraPosition getCameraPosition();
 

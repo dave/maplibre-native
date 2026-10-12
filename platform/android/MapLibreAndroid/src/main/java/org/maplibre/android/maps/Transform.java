@@ -309,6 +309,16 @@ public class Transform implements MapView.OnCameraDidChangeListener {
     }
   }
 
+  @NonNull
+  CameraPosition getCameraForMoveBy(double offsetX, double offsetY, long duration) {
+    return nativeMap.getCameraForMoveBy(offsetX, offsetY, duration);
+  }
+
+  @NonNull
+  CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint) {
+    return nativeMap.getCameraForZoomAround(zoom, focalPoint);
+  }
+
   void moveBy(double offsetX, double offsetY, long duration) {
     if (duration > 0) {
       mapView.addOnCameraDidChangeListener(moveByChangeListener);

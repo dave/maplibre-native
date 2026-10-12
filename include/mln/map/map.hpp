@@ -76,6 +76,10 @@ public:
     void easeTo(const CameraOptions&, const AnimationOptions&);
     void flyTo(const CameraOptions&, const AnimationOptions&);
     void moveBy(const ScreenCoordinate&, const AnimationOptions& = {});
+    /** The camera moveBy(offset, animation) would end at, from the camera now. Moves nothing. */
+    CameraOptions cameraForMoveBy(const ScreenCoordinate& offset, const AnimationOptions& = {}) const;
+    /** The camera an immediate zoom to `zoom` about `anchor` would give, from the camera now. Moves nothing. */
+    CameraOptions cameraForZoomAround(double zoom, const ScreenCoordinate& anchor) const;
     void scaleBy(double scale, const std::optional<ScreenCoordinate>& anchor, const AnimationOptions& animation = {});
     void pitchBy(double pitch, const AnimationOptions& animation = {});
     void rotateBy(const ScreenCoordinate& first, const ScreenCoordinate& second, const AnimationOptions& = {});

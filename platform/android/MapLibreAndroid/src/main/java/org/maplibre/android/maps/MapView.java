@@ -1685,6 +1685,16 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
     }
 
     @Override
+    public void onAddCameraGlideListener(MapLibreMap.OnCameraGlideListener listener) {
+      mapGestureDetector.addOnCameraGlideListener(listener);
+    }
+
+    @Override
+    public void onRemoveCameraGlideListener(MapLibreMap.OnCameraGlideListener listener) {
+      mapGestureDetector.removeOnCameraGlideListener(listener);
+    }
+
+    @Override
     public void onAddMoveListener(MapLibreMap.OnMoveListener listener) {
       mapGestureDetector.addOnMoveListener(listener);
     }

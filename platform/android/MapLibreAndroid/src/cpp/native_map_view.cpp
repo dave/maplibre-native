@@ -297,13 +297,32 @@ void NativeMapView::setGestureInProgress(jni::JNIEnv&, jni::jboolean inProgress)
     map->setGestureInProgress(inProgress);
 }
 
-void NativeMapView::moveBy(jni::JNIEnv&, jni::jdouble dx, jni::jdouble dy, jni::jlong duration) {
+// One place for the moveBy animation, so moveBy and getCameraForMoveBy agree.
+static mln::AnimationOptions moveByAnimation(jni::jlong duration) {
     mln::AnimationOptions animationOptions;
     if (duration > 0) {
         animationOptions.duration.emplace(mln::Milliseconds(duration));
         animationOptions.easing.emplace(mln::util::UnitBezier{0.1, 0.4, 0.35, 1.0});
     }
-    map->moveBy({dx, dy}, animationOptions);
+    return animationOptions;
+}
+
+void NativeMapView::moveBy(jni::JNIEnv&, jni::jdouble dx, jni::jdouble dy, jni::jlong duration) {
+    map->moveBy({dx, dy}, moveByAnimation(duration));
+}
+
+jni::Local<jni::Object<CameraPosition>> NativeMapView::getCameraForMoveBy(jni::JNIEnv& env,
+                                                                         jni::jdouble dx,
+                                                                         jni::jdouble dy,
+                                                                         jni::jlong duration) {
+    return CameraPosition::New(env, map->cameraForMoveBy({dx, dy}, moveByAnimation(duration)), pixelRatio);
+}
+
+jni::Local<jni::Object<CameraPosition>> NativeMapView::getCameraForZoomAround(jni::JNIEnv& env,
+                                                                             jni::jdouble zoom,
+                                                                             jni::jdouble x,
+                                                                             jni::jdouble y) {
+    return CameraPosition::New(env, map->cameraForZoomAround(zoom, mln::ScreenCoordinate{x, y}), pixelRatio);
 }
 
 void NativeMapView::jumpTo(jni::JNIEnv& env,
@@ -1411,6 +1430,8 @@ void NativeMapView::registerNative(jni::JNIEnv& env) {
         METHOD(&NativeMapView::cancelTransitions, "nativeCancelTransitions"),
         METHOD(&NativeMapView::setGestureInProgress, "nativeSetGestureInProgress"),
         METHOD(&NativeMapView::moveBy, "nativeMoveBy"),
+        METHOD(&NativeMapView::getCameraForMoveBy, "nativeGetCameraForMoveBy"),
+        METHOD(&NativeMapView::getCameraForZoomAround, "nativeGetCameraForZoomAround"),
         METHOD(&NativeMapView::jumpTo, "nativeJumpTo"),
         METHOD(&NativeMapView::easeTo, "nativeEaseTo"),
         METHOD(&NativeMapView::flyTo, "nativeFlyTo"),
