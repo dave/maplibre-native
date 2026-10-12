@@ -67,6 +67,12 @@ public:
         @param offset The distance to pan the map by, measured in pixels from
             top to bottom and from left to right. */
     void moveBy(const ScreenCoordinate& offset, const AnimationOptions& = {});
+    /** The camera moveBy(offset, animation) ends at, from the current state.
+        Changes nothing: the move runs on a copy of the state. */
+    CameraOptions moveByEnd(const ScreenCoordinate& offset, const AnimationOptions& = {}) const;
+    /** The camera an immediate easeTo(zoom, anchor) gives from the current
+        state. Changes nothing: the zoom runs on a copy of the state. */
+    CameraOptions zoomAroundEnd(double zoom, const ScreenCoordinate& anchor) const;
     LatLng getLatLng(LatLng::WrapMode = LatLng::Wrapped) const;
 
     // Bounds

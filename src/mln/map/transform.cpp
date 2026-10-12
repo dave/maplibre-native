@@ -428,6 +428,27 @@ void Transform::moveBy(const ScreenCoordinate& offset, const AnimationOptions& a
     easeTo(CameraOptions().withCenter(screenCoordinateToLatLng(pointOnScreen, LatLng::Unwrapped)), animation);
 }
 
+CameraOptions Transform::moveByEnd(const ScreenCoordinate& offset, const AnimationOptions& animation) const {
+    // Run the same moveBy on a copy of the state to its last frame, so the
+    // answer is bit-for-bit where the real one stops.
+    Transform target(state);
+    AnimationOptions quiet; // no caller callbacks: the copy must not report frames
+    quiet.duration = animation.duration;
+    if (animation.easing) quiet.easing.emplace(*animation.easing);
+    target.moveBy(offset, quiet);
+    if (target.inTransition()) {
+        target.updateTransitions(target.getTransitionStart() + target.getTransitionDuration());
+    }
+    return target.getCameraOptions(std::nullopt);
+}
+
+CameraOptions Transform::zoomAroundEnd(double zoom, const ScreenCoordinate& anchor) const {
+    // The same immediate easeTo on a copy of the state, as moveByEnd.
+    Transform target(state);
+    target.easeTo(CameraOptions().withZoom(zoom).withAnchor(anchor));
+    return target.getCameraOptions(std::nullopt);
+}
+
 LatLng Transform::getLatLng(LatLng::WrapMode wrap) const {
     return state.getLatLng(wrap);
 }
