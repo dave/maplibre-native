@@ -2020,6 +2020,24 @@ public final class MapLibreMap {
   }
 
   /**
+   * Adds a callback that's invoked when a gesture hands the camera to a glide whose end is known.
+   *
+   * @param listener The callback that's invoked with the camera the glide ends at.
+   */
+  public void addOnCameraGlideListener(@NonNull OnCameraGlideListener listener) {
+    onGesturesManagerInteractionListener.onAddCameraGlideListener(listener);
+  }
+
+  /**
+   * Removes a callback added with {@link #addOnCameraGlideListener(OnCameraGlideListener)}.
+   *
+   * @param listener The callback to remove.
+   */
+  public void removeOnCameraGlideListener(@NonNull OnCameraGlideListener listener) {
+    onGesturesManagerInteractionListener.onRemoveCameraGlideListener(listener);
+  }
+
+  /**
    * Adds a callback that's invoked when the map is moved.
    *
    * @param listener The callback that's invoked when the map is moved.
@@ -2362,6 +2380,35 @@ public final class MapLibreMap {
   }
 
   /**
+   * The kind of a gesture glide.
+   */
+  public enum GlideKind {
+    /** A pan fling: the centre moves, zoom, bearing and tilt stay. */
+    PAN,
+    /** A zoom animation about a fixed screen point: a scale fling, a double tap, a two-finger tap or a key. */
+    ZOOM
+  }
+
+  /**
+   * Interface definition for a callback to be invoked when a gesture starts a glide whose end is known.
+   * <p>
+   * Called on the main thread, just before the glide's first frame. Nothing is reported for a rotate
+   * glide, or when a pan and a zoom or rotate glide start at the same lift (they interrupt each other).
+   * The glide can still be cut short (a touch, or any camera change); the next camera idle tells.
+   * </p>
+   *
+   * @see MapLibreMap#addOnCameraGlideListener(OnCameraGlideListener)
+   */
+  public interface OnCameraGlideListener {
+    /**
+     * @param target     the camera the glide ends at, if nothing stops it
+     * @param durationMs how long the glide runs
+     * @param kind       pan or zoom
+     */
+    void onCameraGlide(@NonNull CameraPosition target, long durationMs, @NonNull GlideKind kind);
+  }
+
+  /**
    * Interface definition for a callback to be invoked when the map is moved.
    *
    * @see MapLibreMap#addOnMoveListener(OnMoveListener)
@@ -2509,6 +2556,10 @@ public final class MapLibreMap {
     void onAddFlingListener(OnFlingListener listener);
 
     void onRemoveFlingListener(OnFlingListener listener);
+
+    void onAddCameraGlideListener(OnCameraGlideListener listener);
+
+    void onRemoveCameraGlideListener(OnCameraGlideListener listener);
 
     void onAddMoveListener(OnMoveListener listener);
 

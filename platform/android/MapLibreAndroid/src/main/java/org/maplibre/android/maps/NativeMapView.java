@@ -346,6 +346,30 @@ final class NativeMapView implements NativeMap {
   }
 
   @Override
+  @NonNull
+  public CameraPosition getCameraForMoveBy(double dx, double dy, long duration) {
+    if (checkState("getCameraForMoveBy")) {
+      return new CameraPosition.Builder().build();
+    }
+    return withEdgeInsets(nativeGetCameraForMoveBy(dx / pixelRatio, dy / pixelRatio, duration));
+  }
+
+  @Override
+  @NonNull
+  public CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint) {
+    if (checkState("getCameraForZoomAround")) {
+      return new CameraPosition.Builder().build();
+    }
+    return withEdgeInsets(nativeGetCameraForZoomAround(zoom, focalPoint.x / pixelRatio, focalPoint.y / pixelRatio));
+  }
+
+  // As getCameraPosition: the padding comes from the Java-side insets when set.
+  @NonNull
+  private CameraPosition withEdgeInsets(@NonNull CameraPosition position) {
+    return edgeInsets != null ? new CameraPosition.Builder(position).padding(edgeInsets).build() : position;
+  }
+
+  @Override
   public void setZoom(double zoom, @NonNull PointF focalPoint, long duration) {
     if (checkState("setZoom")) {
       return;
@@ -1524,6 +1548,12 @@ final class NativeMapView implements NativeMap {
 
   @Keep
   private native void nativeMoveBy(double dx, double dy, long duration);
+
+  @Keep
+  private native CameraPosition nativeGetCameraForMoveBy(double dx, double dy, long duration);
+
+  @Keep
+  private native CameraPosition nativeGetCameraForZoomAround(double zoom, double cx, double cy);
 
   @Keep
   private native void nativeSetLatLng(double latitude, double longitude, double[] padding, long duration);
