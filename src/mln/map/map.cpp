@@ -169,6 +169,14 @@ void Map::moveBy(const ScreenCoordinate& point, const AnimationOptions& animatio
     impl->onUpdate();
 }
 
+CameraOptions Map::cameraForMoveBy(const ScreenCoordinate& offset, const AnimationOptions& animation) const {
+    return impl->transform.moveByEnd(offset, animation);
+}
+
+CameraOptions Map::cameraForZoomAround(double zoom, const ScreenCoordinate& anchor) const {
+    return impl->transform.zoomAroundEnd(zoom, anchor);
+}
+
 void Map::pitchBy(double pitch, const AnimationOptions& animation) {
     easeTo(CameraOptions().withPitch(util::rad2deg(impl->transform.getPitch()) - pitch), animation);
 }
