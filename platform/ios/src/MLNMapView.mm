@@ -3958,22 +3958,27 @@ static void *windowScreenContext = &windowScreenContext;
 }
 
 - (void)setZoomLevel:(double)zoomLevel
-    aroundAnchorPoint:(CGPoint)anchorPoint
-             animated:(BOOL)animated {
-  MLNLogDebug(@"Setting zoomLevel: %f around: %@ animated: %@", zoomLevel,
-              NSStringFromCGPoint(anchorPoint), MLNStringFromBOOL(animated));
+          aroundAnchorPoint:(CGPoint)anchorPoint
+                   duration:(NSTimeInterval)duration
+    animationTimingFunction:(nullable CAMediaTimingFunction *)function {
+  MLNLogDebug(@"Setting zoomLevel: %f around: %@ duration: %f", zoomLevel,
+              NSStringFromCGPoint(anchorPoint), duration);
   if (zoomLevel == self.zoomLevel) return;
   [self cancelTransitions];
 
   self.cameraChangeReasonBitmask |= MLNCameraChangeReasonProgrammatic;
 
-  CGFloat duration = animated ? MLNAnimationDuration : 0;
-
   // The same anchored easeTo as the double-tap and two-finger-tap gestures,
-  // to the exact zoom level given.
+  // to the exact zoom level given, on the given curve: the zoom follows the
+  // eased time and the anchor's coordinate is put back under it each frame.
   mln::ScreenCoordinate anchor(anchorPoint.x, anchorPoint.y);
+  mln::AnimationOptions animationOptions;
+  if (duration > 0) {
+    animationOptions.duration.emplace(MLNDurationFromTimeInterval(duration));
+    animationOptions.easing.emplace(MLNUnitBezierForMediaTimingFunction(function));
+  }
   self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
-                      MLNDurationFromTimeInterval(duration));
+                      animationOptions);
 }
 
 - (void)setMinimumZoomLevel:(double)minimumZoomLevel {
