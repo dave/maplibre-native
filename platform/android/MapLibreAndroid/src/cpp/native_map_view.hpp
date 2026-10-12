@@ -93,6 +93,13 @@ public:
 
     void moveBy(jni::JNIEnv&, jni::jdouble, jni::jdouble, jni::jlong);
 
+    jni::Local<jni::Object<CameraPosition>> getCameraForMoveBy(jni::JNIEnv&, jni::jdouble, jni::jdouble, jni::jlong);
+
+    jni::Local<jni::Object<CameraPosition>> getCameraForZoomAround(jni::JNIEnv&,
+                                                                   jni::jdouble,
+                                                                   jni::jdouble,
+                                                                   jni::jdouble);
+
     void jumpTo(jni::JNIEnv&,
                 jni::jdouble,
                 jni::jdouble,

@@ -23,6 +23,7 @@ import org.maplibre.android.gestures.ShoveGestureDetector;
 import org.maplibre.android.gestures.StandardGestureDetector;
 import org.maplibre.android.gestures.StandardScaleGestureDetector;
 import org.maplibre.android.R;
+import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.constants.MapLibreConstants;
 import org.maplibre.android.log.Logger;
 import org.maplibre.android.utils.MathUtils;
@@ -64,6 +65,15 @@ final class MapGestureDetector {
 
   private final CopyOnWriteArrayList<MapLibreMap.OnFlingListener> onFlingListenerList
     = new CopyOnWriteArrayList<>();
+
+  private final CopyOnWriteArrayList<MapLibreMap.OnCameraGlideListener> onCameraGlideListenerList
+    = new CopyOnWriteArrayList<>();
+
+  /**
+   * True from a fling to the end of the ACTION_UP that caused it. A zoom glide that starts at
+   * the same lift cuts the fling short, so neither end is known and neither is reported.
+   */
+  private boolean flingStartedAtThisLift;
 
   private final CopyOnWriteArrayList<MapLibreMap.OnMoveListener> onMoveListenerList
     = new CopyOnWriteArrayList<>();
@@ -244,9 +254,11 @@ final class MapGestureDetector {
           }
           scheduledAnimators.clear();
         }
+        flingStartedAtThisLift = false;
         break;
 
       case MotionEvent.ACTION_CANCEL:
+        flingStartedAtThisLift = false;
         scheduledAnimators.clear();
         transform.setGestureInProgress(false);
         doubleTapFinished();
@@ -264,6 +276,10 @@ final class MapGestureDetector {
     cancelAnimator(rotateAnimator);
 
     dispatchCameraIdle();
+  }
+
+  private boolean isScheduledOrStarted(@Nullable Animator animator) {
+    return animator != null && (animator.isStarted() || scheduledAnimators.contains(animator));
   }
 
   private void cancelAnimator(@Nullable Animator animator) {
@@ -458,6 +474,14 @@ final class MapGestureDetector {
       transform.cancelTransitions();
       notifyOnFlingListeners();
       cameraChangeDispatcher.onCameraMoveStarted(REASON_API_GESTURE);
+
+      // A scale or rotate glide from this lift starts after this and cuts the fling short.
+      flingStartedAtThisLift = true;
+      if (!onCameraGlideListenerList.isEmpty()
+        && !isScheduledOrStarted(scaleAnimator) && !isScheduledOrStarted(rotateAnimator)) {
+        notifyOnCameraGlideListeners(transform.getCameraForMoveBy(offsetX, offsetY, animationTime),
+          animationTime, MapLibreMap.GlideKind.PAN);
+      }
 
       // update transformation
       transform.moveBy(offsetX, offsetY, animationTime);
@@ -912,8 +936,12 @@ final class MapGestureDetector {
   }
 
   private Animator createScaleAnimator(double currentZoom, double zoomAddition,
-                                       @NonNull final PointF animationFocalPoint, long animationTime) {
-    ValueAnimator animator = ValueAnimator.ofFloat((float) currentZoom, (float) (currentZoom + zoomAddition));
+                                       @NonNull final PointF animationFocalPoint, final long animationTime) {
+    final float startZoom = (float) currentZoom;
+    final float targetZoom = (float) (currentZoom + zoomAddition);
+    // The value ValueAnimator.ofFloat gives at fraction 1: first + 1 * (last - first), in float.
+    final float endZoom = startZoom + (targetZoom - startZoom);
+    ValueAnimator animator = ValueAnimator.ofFloat(startZoom, targetZoom);
     animator.setDuration(animationTime);
     animator.setInterpolator(new DecelerateInterpolator());
     animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
@@ -930,6 +958,12 @@ final class MapGestureDetector {
       public void onAnimationStart(Animator animation) {
         transform.cancelTransitions();
         cameraChangeDispatcher.onCameraMoveStarted(REASON_API_GESTURE);
+        // Each frame zooms about the same point, so the end is one zoom about it from here.
+        if (!onCameraGlideListenerList.isEmpty()
+          && !flingStartedAtThisLift && !isScheduledOrStarted(rotateAnimator)) {
+          notifyOnCameraGlideListeners(transform.getCameraForZoomAround(endZoom, animationFocalPoint),
+            animationTime, MapLibreMap.GlideKind.ZOOM);
+        }
       }
 
       @Override
@@ -1030,6 +1064,13 @@ final class MapGestureDetector {
     }
   }
 
+  void notifyOnCameraGlideListeners(@NonNull CameraPosition target, long durationMs,
+                                    @NonNull MapLibreMap.GlideKind kind) {
+    for (MapLibreMap.OnCameraGlideListener listener : onCameraGlideListenerList) {
+      listener.onCameraGlide(target, durationMs, kind);
+    }
+  }
+
   void notifyOnMoveBeginListeners(@NonNull MoveGestureDetector detector) {
     for (MapLibreMap.OnMoveListener listener : onMoveListenerList) {
       listener.onMoveBegin(detector);
@@ -1124,6 +1165,14 @@ final class MapGestureDetector {
 
   void removeOnFlingListener(MapLibreMap.OnFlingListener onFlingListener) {
     onFlingListenerList.remove(onFlingListener);
+  }
+
+  void addOnCameraGlideListener(MapLibreMap.OnCameraGlideListener listener) {
+    onCameraGlideListenerList.add(listener);
+  }
+
+  void removeOnCameraGlideListener(MapLibreMap.OnCameraGlideListener listener) {
+    onCameraGlideListenerList.remove(listener);
   }
 
   void addOnMoveListener(MapLibreMap.OnMoveListener listener) {
