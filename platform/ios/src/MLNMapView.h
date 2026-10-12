@@ -1066,6 +1066,24 @@ of north, the map will automatically snap to exact north.
 - (void)setZoomLevel:(double)zoomLevel animated:(BOOL)animated;
 
 /**
+ Changes the zoom level of the map, keeping the coordinate under `anchorPoint`
+ at that point for the whole change, and optionally animates the change.
+
+ This is the anchored change the double-tap and two-finger-tap gestures make,
+ with their duration, but to exactly `zoomLevel` (the gestures go to the
+ nearest whole level plus or minus one).
+
+ @param zoomLevel The new zoom level for the map.
+ @param anchorPoint The point in this view's coordinate system that stays
+    fixed on the screen.
+ @param animated Specify `YES` to animate the change over the gestures'
+    duration, or `NO` to display the new zoom level immediately.
+ */
+- (void)setZoomLevel:(double)zoomLevel
+    aroundAnchorPoint:(CGPoint)anchorPoint
+             animated:(BOOL)animated;
+
+/**
  * The minimum zoom level at which the map can be shown.
  *
  * Depending on the map view’s aspect ratio, the map view may be prevented
