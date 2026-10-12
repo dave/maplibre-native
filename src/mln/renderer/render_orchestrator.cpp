@@ -573,19 +573,21 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     if (isMapModeContinuous) {
         MLN_TRACE_ZONE(placement);
 
-        std::optional<Duration> placementUpdatePeriodOverride;
-        if (symbolBucketsAdded && !tiltedView) {
-            // If the view is not tilted, we want *the new* symbols to show up
-            // faster, however simple setting `placementChanged` to `true` would
-            // initiate placement too often as new buckets usually come from
-            // several rendered tiles in a row within a short period of time.
-            // Instead, we squeeze placement update period to coalesce buckets
-            // updates from several tiles. On contrary, with the tilted view
-            // it's more important to make placement rarely for performance
-            // reasons and as the new symbols are normally "far away" and the
-            // user is not that interested to see them ASAP.
-            placementUpdatePeriodOverride = std::optional<Duration>(Milliseconds(30));
-        }
+        // If the view is not tilted, we want *the new* symbols to show up
+        // faster, however simple setting `placementChanged` to `true` would
+        // initiate placement too often as new buckets usually come from
+        // several rendered tiles in a row within a short period of time.
+        // Instead, we squeeze placement update period to coalesce buckets
+        // updates from several tiles. On contrary, with the tilted view
+        // it's more important to make placement rarely for performance
+        // reasons and as the new symbols are normally "far away" and the
+        // user is not that interested to see them ASAP.
+        // The squeeze lasts until a placement runs (PlacementController::
+        // updatePeriodOverride), not only for the frame that added the buckets:
+        // a frame within the last placement's period skipped the placement,
+        // and the new symbols then waited the full period.
+        const std::optional<Duration> placementUpdatePeriodOverride = placementController.updatePeriodOverride(
+            symbolBucketsAdded, tiltedView);
 
         renderTreeParameters->placementChanged = !placementController.placementIsRecent(
             updateParameters->timePoint,

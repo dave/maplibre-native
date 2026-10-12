@@ -103,9 +103,18 @@ public:
     bool placementIsRecent(TimePoint now, float zoom, std::optional<Duration> periodOverride = std::nullopt) const;
     bool hasTransitions(TimePoint now) const;
 
+    /**
+     * The placement update period override for this frame. Symbol buckets
+     * added in an earlier frame keep the short period until a placement
+     * has run, so new symbols wait at most 30 ms for it.
+     */
+    std::optional<Duration> updatePeriodOverride(bool bucketsAddedThisFrame, bool tiltedView);
+
 private:
     Immutable<Placement> placement;
     bool stale = false;
+    /** Symbol buckets were added since the last placement; cleared by setPlacement. */
+    bool bucketsAddedSincePlacement = false;
 };
 
 class Placement {

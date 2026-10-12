@@ -157,6 +157,19 @@ PlacementController::PlacementController()
 void PlacementController::setPlacement(Immutable<Placement> placement_) {
     placement = std::move(placement_);
     stale = false;
+    bucketsAddedSincePlacement = false;
+}
+
+std::optional<Duration> PlacementController::updatePeriodOverride(bool bucketsAddedThisFrame, bool tiltedView) {
+    // The short period used to apply only in the frame that added the
+    // buckets. When that frame fell within the period of the last placement,
+    // the placement was skipped, and the next frame (no new buckets) took the
+    // full ~300 ms period: new symbols then waited ~300 ms (measured on a
+    // Pixel 7: one move in four to seven). The flag keeps the short period
+    // until a placement runs.
+    bucketsAddedSincePlacement = bucketsAddedSincePlacement || bucketsAddedThisFrame;
+    if (!bucketsAddedSincePlacement || tiltedView) return std::nullopt;
+    return std::optional<Duration>(Milliseconds(30));
 }
 
 bool PlacementController::placementIsRecent(TimePoint now,

@@ -85,6 +85,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/text/formatted.test.cpp
     ${PROJECT_SOURCE_DIR}/test/text/get_anchors.test.cpp
     ${PROJECT_SOURCE_DIR}/test/text/glyph_manager.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/text/placement_controller.test.cpp
     ${PROJECT_SOURCE_DIR}/test/text/glyph_pbf.test.cpp
     ${PROJECT_SOURCE_DIR}/test/text/language_tag.test.cpp
     ${PROJECT_SOURCE_DIR}/test/text/local_glyph_rasterizer.test.cpp
