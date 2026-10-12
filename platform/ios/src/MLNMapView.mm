@@ -3957,6 +3957,25 @@ static void *windowScreenContext = &windowScreenContext;
                       MLNDurationFromTimeInterval(duration));
 }
 
+- (void)setZoomLevel:(double)zoomLevel
+    aroundAnchorPoint:(CGPoint)anchorPoint
+             animated:(BOOL)animated {
+  MLNLogDebug(@"Setting zoomLevel: %f around: %@ animated: %@", zoomLevel,
+              NSStringFromCGPoint(anchorPoint), MLNStringFromBOOL(animated));
+  if (zoomLevel == self.zoomLevel) return;
+  [self cancelTransitions];
+
+  self.cameraChangeReasonBitmask |= MLNCameraChangeReasonProgrammatic;
+
+  CGFloat duration = animated ? MLNAnimationDuration : 0;
+
+  // The same anchored easeTo as the double-tap and two-finger-tap gestures,
+  // to the exact zoom level given.
+  mln::ScreenCoordinate anchor(anchorPoint.x, anchorPoint.y);
+  self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
+                      MLNDurationFromTimeInterval(duration));
+}
+
 - (void)setMinimumZoomLevel:(double)minimumZoomLevel {
   MLNLogDebug(@"Setting minimumZoomLevel: %f", minimumZoomLevel);
   self.mbglMap.setBounds(mln::BoundOptions().withMinZoom(minimumZoomLevel));
