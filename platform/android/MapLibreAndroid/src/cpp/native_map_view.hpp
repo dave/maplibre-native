@@ -230,6 +230,15 @@ public:
 
     void latLngsForPixels(JNIEnv&, const jni::Array<jdouble>&, jni::Array<jdouble>&, jfloat);
 
+    void latLngsForPixelsAtCamera(JNIEnv&,
+                                  const jni::Array<jdouble>&,
+                                  jni::Array<jdouble>&,
+                                  jni::jdouble,
+                                  jni::jdouble,
+                                  jni::jdouble,
+                                  jni::jdouble,
+                                  jni::jdouble);
+
     jni::Local<jni::Array<jlong>> addPolylines(JNIEnv&, const jni::Array<jni::Object<Polyline>>&);
 
     jni::Local<jni::Array<jlong>> addPolygons(JNIEnv&, const jni::Array<jni::Object<Polygon>>&);

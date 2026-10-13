@@ -306,6 +306,31 @@ TEST(Map, LatLngsToCameraWithBearingAndPitchMinMax) {
     ASSERT_DOUBLE_EQ(*test.map.getBounds().maxPitch, 60);
 }
 
+TEST(Map, LatLngsForPixelsAtCamera) {
+    MapTest<> test;
+    test.map.jumpTo(CameraOptions()
+                        .withCenter(LatLng{-46.15, -72.18})
+                        .withZoom(12.4)
+                        .withBearing(23.0)
+                        .withPitch(30.0)
+                        .withPadding(EdgeInsets{40, 10, 120, 0}));
+    const Size size = test.map.getMapOptions().size();
+    const double w = size.width;
+    const double h = size.height;
+    const std::vector<ScreenCoordinate> corners = {{0, 0}, {w, 0}, {w, h}, {0, h}, {w / 2, h / 2}};
+
+    // At the camera the map has: exactly the map's own answer.
+    EXPECT_EQ(test.map.latLngsForPixels(corners), test.map.latLngsForPixelsAtCamera(test.map.getCameraOptions(), corners));
+
+    // At another: exactly what the map answers once it is there, and the map does not move to ask.
+    const CameraOptions before = test.map.getCameraOptions();
+    const CameraOptions other = CameraOptions().withCenter(LatLng{-46.0, -72.0}).withZoom(13.37);
+    const std::vector<LatLng> predicted = test.map.latLngsForPixelsAtCamera(other, corners);
+    EXPECT_EQ(before, test.map.getCameraOptions());
+    test.map.jumpTo(other);
+    EXPECT_EQ(test.map.latLngsForPixels(corners), predicted);
+}
+
 TEST(Map, CameraToLatLngBounds) {
     MapTest<> test;
 

@@ -127,6 +127,10 @@ public:
     std::vector<ScreenCoordinate> pixelsForLatLngs(const std::vector<LatLng>&) const;
     std::vector<LatLng> latLngsForPixels(const std::vector<ScreenCoordinate>&,
                                          LatLng::WrapMode = LatLng::Wrapped) const;
+    /** latLngsForPixels as the map would answer with its camera at the given one. Moves nothing. */
+    std::vector<LatLng> latLngsForPixelsAtCamera(const CameraOptions&,
+                                                 const std::vector<ScreenCoordinate>&,
+                                                 LatLng::WrapMode = LatLng::Wrapped) const;
 
     // Transform
     TransformState getTransformState() const;

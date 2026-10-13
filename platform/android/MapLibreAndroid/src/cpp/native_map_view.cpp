@@ -768,6 +768,37 @@ jni::Local<jni::Object<LatLng>> NativeMapView::latLngForPixel(JNIEnv& env, jfloa
     return LatLng::New(env, map->latLngForPixel(mln::ScreenCoordinate(x, y)));
 }
 
+void NativeMapView::latLngsForPixelsAtCamera(JNIEnv& env,
+                                             const jni::Array<jdouble>& input,
+                                             jni::Array<jdouble>& output,
+                                             jni::jdouble latitude,
+                                             jni::jdouble longitude,
+                                             jni::jdouble zoom,
+                                             jni::jdouble bearing,
+                                             jni::jdouble pitch) {
+    jni::NullCheck(env, &input);
+    std::size_t len = input.Length(env);
+    std::vector<mln::ScreenCoordinate> coordinates;
+    coordinates.reserve(len / 2);
+    // Already divided by the pixel ratio, in float, as latLngForPixel's are.
+    for (std::size_t i = 0; i + 1 < len; i += 2) {
+        coordinates.emplace_back(input.Get(env, i), input.Get(env, i + 1));
+    }
+    const auto camera = mln::CameraOptions()
+                            .withCenter(mln::LatLng(latitude, longitude))
+                            .withZoom(zoom)
+                            .withBearing(bearing)
+                            .withPitch(pitch);
+    std::vector<mln::LatLng> latLngs = map->latLngsForPixelsAtCamera(camera, coordinates);
+    std::vector<jdouble> buffer;
+    buffer.reserve(len);
+    for (const auto& latLng : latLngs) {
+        buffer.push_back(latLng.latitude());
+        buffer.push_back(latLng.longitude());
+    }
+    output.SetRegion<std::vector<jdouble>>(env, 0, buffer);
+}
+
 void NativeMapView::latLngsForPixels(JNIEnv& env,
                                      const jni::Array<jdouble>& input,
                                      jni::Array<jdouble>& output,
@@ -1479,6 +1510,7 @@ void NativeMapView::registerNative(jni::JNIEnv& env) {
         METHOD(&NativeMapView::latLngForProjectedMeters, "nativeLatLngForProjectedMeters"),
         METHOD(&NativeMapView::latLngForPixel, "nativeLatLngForPixel"),
         METHOD(&NativeMapView::latLngsForPixels, "nativeLatLngsForPixels"),
+        METHOD(&NativeMapView::latLngsForPixelsAtCamera, "nativeLatLngsForPixelsAtCamera"),
         METHOD(&NativeMapView::addPolylines, "nativeAddPolylines"),
         METHOD(&NativeMapView::addPolygons, "nativeAddPolygons"),
         METHOD(&NativeMapView::updatePolyline, "nativeUpdatePolyline"),
