@@ -530,6 +530,12 @@ void GeometryTileWorker::parse() {
         }
     }
 
+    // Both dependency sets are pending before either request goes out. On a
+    // synchronous source the parent answers inside the request: glyphs already
+    // at hand came back before the image request was made, and the layout
+    // finalized then with no icons, and the image answer found nothing left
+    // to lay out (cards drawn as bare text).
+    pendingImageDependencies = imageDependencies;
     requestNewGlyphs(glyphDependencies);
     requestNewImages(imageDependencies);
 
