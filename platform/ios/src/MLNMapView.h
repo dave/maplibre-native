@@ -1195,6 +1195,17 @@ of north, the map will automatically snap to exact north.
 @property (nonatomic) MLNCoordinateBounds visibleCoordinateBounds;
 
 /**
+ The coordinate bounds `visibleCoordinateBounds` would give with the map's
+ camera at the given one: the same four corners of the view, converted on a
+ copy of the map's state moved there. The map does not move, and its padding
+ is kept. For the end of a glide (`-mapView:willGlideToCenter:...`).
+ */
+- (MLNCoordinateBounds)visibleCoordinateBoundsAtCenter:(CLLocationCoordinate2D)center
+                                             zoomLevel:(double)zoomLevel
+                                             direction:(CLLocationDirection)direction
+                                                 pitch:(CGFloat)pitch;
+
+/**
  Changes the receiver’s viewport to fit the given coordinate bounds,
  optionally animating the change.
 
