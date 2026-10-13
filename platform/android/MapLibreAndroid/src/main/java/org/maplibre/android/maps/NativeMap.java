@@ -246,6 +246,13 @@ interface NativeMap {
 
   void latLngsForPixels(@NonNull double[] input, @NonNull double[] output);
 
+  /**
+   * As {@link #latLngForPixel(PointF)} for each screen pixel pair in [input] (x0, y0, x1, y1, ...),
+   * answered as if the camera were at [camera]'s target, zoom, bearing and tilt (the padding stays
+   * the map's). [output] gets lat, lng pairs. Moves nothing.
+   */
+  void latLngsForPixelsAtCamera(@NonNull CameraPosition camera, @NonNull double[] input, @NonNull double[] output);
+
   //
   // Utils API
   //

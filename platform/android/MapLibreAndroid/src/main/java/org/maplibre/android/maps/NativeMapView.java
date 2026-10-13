@@ -783,6 +783,25 @@ final class NativeMapView implements NativeMap {
     }
   }
 
+  @Override
+  public void latLngsForPixelsAtCamera(@NonNull CameraPosition camera, @NonNull double[] input,
+                                       @NonNull double[] output) {
+    if (checkState("latLngsForPixelsAtCamera")) {
+      return;
+    }
+    // Divided in float, as latLngForPixel divides, so a corner here is the
+    // same point getVisibleRegion's fromScreenLocation asks for.
+    double[] points = new double[input.length];
+    for (int i = 0; i < input.length; i++) {
+      points[i] = (float) input[i] / pixelRatio;
+    }
+    if (camera.target == null) {
+      throw new IllegalArgumentException("latLngsForPixelsAtCamera: a camera with no target");
+    }
+    nativeLatLngsForPixelsAtCamera(points, output, camera.target.getLatitude(), camera.target.getLongitude(),
+      camera.zoom, camera.bearing, camera.tilt);
+  }
+
 
   @Override
   public double getTopOffsetPixelsForAnnotationSymbol(String symbolName) {
@@ -1716,6 +1735,10 @@ final class NativeMapView implements NativeMap {
 
   @Keep
   private native void nativeLatLngsForPixels(double[] input, double[] output, float pixelRatio);
+
+  @Keep
+  private native void nativeLatLngsForPixelsAtCamera(double[] input, double[] output, double latitude,
+                                                     double longitude, double zoom, double bearing, double pitch);
 
   @Keep
   private native double nativeGetTopOffsetPixelsForAnnotationSymbol(String symbolName);
