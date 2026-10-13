@@ -463,6 +463,21 @@ std::vector<LatLng> Map::latLngsForPixels(const std::vector<ScreenCoordinate>& s
     return ret;
 }
 
+std::vector<LatLng> Map::latLngsForPixelsAtCamera(const CameraOptions& camera,
+                                                  const std::vector<ScreenCoordinate>& screenCoords,
+                                                  LatLng::WrapMode wrapMode) const {
+    // The same conversion on a copy of the state moved to [camera], as
+    // latLngBoundsForCamera does: the map itself does not move.
+    Transform shallow{impl->transform.getState()};
+    shallow.jumpTo(camera);
+    std::vector<LatLng> ret;
+    ret.reserve(screenCoords.size());
+    for (const auto& point : screenCoords) {
+        ret.emplace_back(shallow.screenCoordinateToLatLng(point, wrapMode));
+    }
+    return ret;
+}
+
 // MARK: - Transform
 
 TransformState Map::getTransformState() const {
