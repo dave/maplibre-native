@@ -6,6 +6,7 @@ import androidx.annotation.FloatRange;
 import androidx.annotation.NonNull;
 
 import org.maplibre.geojson.Point;
+import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.constants.GeometryConstants;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.geometry.LatLngBounds;
@@ -160,6 +161,42 @@ public class Projection {
     LatLng bottomRight = fromScreenLocation(new PointF(right, bottom));
     LatLng bottomLeft = fromScreenLocation(new PointF(left, bottom));
 
+    return visibleRegion(center, topLeft, topRight, bottomRight, bottomLeft);
+  }
+
+  /**
+   * The region {@link #getVisibleRegion()} would give with the camera at [camera]'s target, zoom,
+   * bearing and tilt, the map's padding ignored as there: the same screen corners, read by the map
+   * as if it were there, into the same bounds. The map does not move.
+   *
+   * @param camera the camera to read the region at; it must have a target
+   * @return the visible region at that camera
+   */
+  @NonNull
+  public VisibleRegion getVisibleRegionAt(@NonNull CameraPosition camera) {
+    float left = 0;
+    float right = mapView.getWidth();
+    float top = 0;
+    float bottom = mapView.getHeight();
+    // The order getVisibleRegion asks in: centre, then the four corners.
+    double[] pixels = {
+      left + (right - left) / 2, top + (bottom - top) / 2,
+      left, top,
+      right, top,
+      right, bottom,
+      left, bottom,
+    };
+    double[] out = new double[pixels.length];
+    nativeMapView.latLngsForPixelsAtCamera(camera, pixels, out);
+    return visibleRegion(
+      new LatLng(out[0], out[1]), new LatLng(out[2], out[3]), new LatLng(out[4], out[5]),
+      new LatLng(out[6], out[7]), new LatLng(out[8], out[9]));
+  }
+
+  /** The visible region with these corners round [center]: the bounds wrap the antimeridian when they cross it. */
+  @NonNull
+  private static VisibleRegion visibleRegion(@NonNull LatLng center, @NonNull LatLng topLeft, @NonNull LatLng topRight,
+                                             @NonNull LatLng bottomRight, @NonNull LatLng bottomLeft) {
     List<LatLng> latLngs = new ArrayList<>();
     latLngs.add(topRight);
     latLngs.add(bottomRight);
