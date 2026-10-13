@@ -2245,17 +2245,22 @@ public:
       MLNMapCamera *toCamera = [self cameraByPanningWithTranslation:offset panGesture:pan];
 
       if ([self _shouldChangeFromCamera:oldCamera toCamera:toCamera]) {
+        mln::ScreenCoordinate glide;
         switch (self.panScrollingMode) {
           case MLNPanScrollingModeVertical:
-            self.mbglMap.moveBy({0, offset.y}, MLNDurationFromTimeInterval(self.decelerationRate));
+            glide = {0, offset.y};
             break;
           case MLNPanScrollingModeHorizontal:
-            self.mbglMap.moveBy({offset.x, 0}, MLNDurationFromTimeInterval(self.decelerationRate));
+            glide = {offset.x, 0};
             break;
           default:
-            self.mbglMap.moveBy({offset.x, offset.y},
-                                MLNDurationFromTimeInterval(self.decelerationRate));
+            glide = {offset.x, offset.y};
         }
+        mln::AnimationOptions animation(MLNDurationFromTimeInterval(self.decelerationRate));
+        // Where the fling stops, from the same moveBy on a copy of the state.
+        [self reportGlideToCamera:self.mbglMap.cameraForMoveBy(glide, animation)
+                         duration:self.decelerationRate];
+        self.mbglMap.moveBy(glide, animation);
       }
     }
 
@@ -2344,8 +2349,10 @@ public:
       drift = NO;
     } else {
       if (drift) {
-        self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoom).withAnchor(
-                                mln::ScreenCoordinate{centerPoint.x, centerPoint.y}),
+        mln::ScreenCoordinate anchor{centerPoint.x, centerPoint.y};
+        // Where the zoom fling stops, from the same zoom on a copy of the state.
+        [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoom, anchor) duration:duration];
+        self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoom).withAnchor(anchor),
                             MLNDurationFromTimeInterval(duration));
       }
     }
@@ -3976,6 +3983,8 @@ static void *windowScreenContext = &windowScreenContext;
   if (duration > 0) {
     animationOptions.duration.emplace(MLNDurationFromTimeInterval(duration));
     animationOptions.easing.emplace(MLNUnitBezierForMediaTimingFunction(function));
+    // Where the zoom stops, from the same zoom on a copy of the state.
+    [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoomLevel, anchor) duration:duration];
   }
   self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
                       animationOptions);
@@ -4034,6 +4043,47 @@ static void *windowScreenContext = &windowScreenContext;
 
 - (MLNCoordinateBounds)visibleCoordinateBounds {
   return [self convertRect:self.bounds toCoordinateBoundsFromView:self];
+}
+
+- (MLNCoordinateBounds)visibleCoordinateBoundsAtCenter:(CLLocationCoordinate2D)center
+                                             zoomLevel:(double)zoomLevel
+                                             direction:(CLLocationDirection)direction
+                                                 pitch:(CGFloat)pitch {
+  // The corners `convertRect:toLatLngBoundsFromView:` asks for
+  // `visibleCoordinateBounds`, in its order, each wrapped as
+  // `convertPoint:toLatLngFromView:` does, on a copy of the state.
+  CGRect rect = self.bounds;
+  std::vector<mln::ScreenCoordinate> corners = {
+      {CGRectGetMinX(rect), CGRectGetMinY(rect)},
+      {CGRectGetMaxX(rect), CGRectGetMinY(rect)},
+      {CGRectGetMaxX(rect), CGRectGetMaxY(rect)},
+      {CGRectGetMinX(rect), CGRectGetMaxY(rect)},
+  };
+  mln::CameraOptions camera = mln::CameraOptions()
+                                  .withCenter(MLNLatLngFromLocationCoordinate2D(center))
+                                  .withZoom(zoomLevel)
+                                  .withBearing(direction)
+                                  .withPitch(pitch);
+  auto bounds = mln::LatLngBounds::empty();
+  for (const auto &latLng : self.mbglMap.latLngsForPixelsAtCamera(camera, corners)) {
+    bounds.extend(latLng.wrapped());
+  }
+  return MLNCoordinateBoundsFromLatLngBounds(bounds);
+}
+
+/// Tells the delegate where a glide that starts now ends
+/// (`-mapView:willGlideToCenter:...`).
+- (void)reportGlideToCamera:(const mln::CameraOptions &)end duration:(NSTimeInterval)duration {
+  if (![self.delegate respondsToSelector:@selector(mapView:
+                                            willGlideToCenter:zoomLevel:direction:pitch:duration:)]) {
+    return;
+  }
+  [self.delegate mapView:self
+       willGlideToCenter:MLNLocationCoordinate2DFromLatLng(end.center.value_or(mln::LatLng()))
+               zoomLevel:end.zoom.value_or(0)
+               direction:end.bearing.value_or(0)
+                   pitch:end.pitch.value_or(0)
+                duration:duration];
 }
 
 - (void)setVisibleCoordinateBounds:(MLNCoordinateBounds)bounds {
