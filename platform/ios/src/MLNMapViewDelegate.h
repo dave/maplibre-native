@@ -190,12 +190,15 @@ NS_ASSUME_NONNULL_BEGIN
  fling, and `-setZoomLevel:aroundAnchorPoint:duration:animationTimingFunction:`
  with a duration. Nothing is reported for a rotation. The end camera is the
  one the glide stops at: the same move run on a copy of the map's state to
- its last frame. The map's padding is unchanged by a glide.
+ its last frame. The map's padding is unchanged by a glide. The glide can
+ still be cut short (a touch, a pinch's snap to north, or any other camera
+ change); the next camera idle tells.
 
  @param mapView The map view about to glide.
  @param center The center coordinate the glide ends at.
  @param zoomLevel The zoom level the glide ends at.
- @param direction The heading the glide ends at.
+ @param direction The heading the glide ends at, in [0, 360) as
+ `MLNMapView.direction`.
  @param pitch The pitch the glide ends at.
  @param duration The glide's duration, in seconds.
  */

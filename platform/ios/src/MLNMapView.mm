@@ -4049,24 +4049,32 @@ static void *windowScreenContext = &windowScreenContext;
                                              zoomLevel:(double)zoomLevel
                                              direction:(CLLocationDirection)direction
                                                  pitch:(CGFloat)pitch {
-  // The corners `convertRect:toLatLngBoundsFromView:` asks for
-  // `visibleCoordinateBounds`, in its order, each wrapped as
-  // `convertPoint:toLatLngFromView:` does, on a copy of the state.
+  // What `convertRect:toLatLngBoundsFromView:` does for
+  // `visibleCoordinateBounds`, on a copy of the state: the four corners in
+  // its order, each wrapped as `convertPoint:toLatLngFromView:` does, then
+  // unwrapped toward the view's middle, so a view across the antimeridian
+  // extends beyond ±180° instead of spanning the world.
   CGRect rect = self.bounds;
-  std::vector<mln::ScreenCoordinate> corners = {
+  std::vector<mln::ScreenCoordinate> pixels = {
       {CGRectGetMinX(rect), CGRectGetMinY(rect)},
       {CGRectGetMaxX(rect), CGRectGetMinY(rect)},
       {CGRectGetMaxX(rect), CGRectGetMaxY(rect)},
       {CGRectGetMinX(rect), CGRectGetMaxY(rect)},
+      {CGRectGetMidX(rect), CGRectGetMidY(rect)},
   };
   mln::CameraOptions camera = mln::CameraOptions()
                                   .withCenter(MLNLatLngFromLocationCoordinate2D(center))
                                   .withZoom(zoomLevel)
                                   .withBearing(direction)
                                   .withPitch(pitch);
+  std::vector<mln::LatLng> latLngs = self.mbglMap.latLngsForPixelsAtCamera(camera, pixels);
+  const mln::LatLng middle = latLngs.back().wrapped();
+  latLngs.pop_back();
   auto bounds = mln::LatLngBounds::empty();
-  for (const auto &latLng : self.mbglMap.latLngsForPixelsAtCamera(camera, corners)) {
-    bounds.extend(latLng.wrapped());
+  for (const auto &latLng : latLngs) {
+    mln::LatLng corner = latLng.wrapped();
+    corner.unwrapForShortestPath(middle);
+    bounds.extend(corner);
   }
   return MLNCoordinateBoundsFromLatLngBounds(bounds);
 }
@@ -4081,7 +4089,9 @@ static void *windowScreenContext = &windowScreenContext;
   [self.delegate mapView:self
        willGlideToCenter:MLNLocationCoordinate2DFromLatLng(end.center.value_or(mln::LatLng()))
                zoomLevel:end.zoom.value_or(0)
-               direction:end.bearing.value_or(0)
+               // Wrapped to [0, 360) as the `direction` getter does: the
+               // camera holds it in [-180, 180).
+               direction:mln::util::wrap(end.bearing.value_or(0), 0., 360.)
                    pitch:end.pitch.value_or(0)
                 duration:duration];
 }
