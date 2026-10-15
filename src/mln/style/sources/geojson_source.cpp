@@ -101,27 +101,53 @@ void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData, uin
 }
 
 uint64_t GeoJSONSource::landingGeneration(uint64_t generation) {
-    // A body made off the calling thread lands after a later generation was
-    // given out (a layer change on the source, `markLayersChanged`): it takes
-    // a new one, so the source's generation never goes back and the newest
-    // one covers both the body and the layers.
-    return generation > impl().getDataGeneration() ? generation : nextDataGeneration();
+    if (pendingBody && generation == pendingBody) {
+        // The newest body asked for lands: it covers every generation given
+        // out since (layer changes made while it was pending), so it takes
+        // the latest.
+        pendingBody = 0;
+        return dataGeneration;
+    }
+    if (generation < pendingBody) {
+        // An older body, while a newer one is still pending: its own
+        // generation, below the pending one, so no wait for the newer body
+        // takes it.
+        return generation;
+    }
+    // No body pending (a second, different answer for a URL that already
+    // landed): a new body, with a new generation.
+    return ++dataGeneration;
 }
 
 uint64_t GeoJSONSource::markLayersChanged() {
-    baseImpl = makeMutable<Impl>(impl(), impl().getData().lock(), nextDataGeneration());
-    return impl().getDataGeneration();
+    ++dataGeneration;
+    if (!pendingBody) {
+        baseImpl = makeMutable<Impl>(impl(), impl().getData().lock(), dataGeneration);
+    }
+    // While a body is pending, the tiles hold the old body: no generation as
+    // new as this one may be reported until that body lands, which takes it.
+    return dataGeneration;
 }
 
 uint64_t GeoJSONSource::nextDataGeneration() {
-    return ++dataGeneration;
+    pendingBody = ++dataGeneration;
+    return pendingBody;
 }
 
 uint64_t GeoJSONSource::getDataGeneration() const {
     return impl().getDataGeneration();
 }
 
+uint64_t GeoJSONSource::getLatestGeneration() const {
+    return dataGeneration;
+}
+
 void GeoJSONSource::setGeoJSONError(uint64_t generation, const std::string& message) {
+    if (generation == pendingBody) {
+        // The newest body will not land: later layer changes move the
+        // generation again. The source keeps the body it holds.
+        pendingBody = 0;
+    }
     observer->onSourceError(
         *this,
         std::make_exception_ptr(std::runtime_error("GeoJSON body " + std::to_string(generation) + ": " + message)));
