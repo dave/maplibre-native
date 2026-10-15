@@ -27,6 +27,7 @@
 #include <mln/style/conversion/json.hpp>
 #include <mln/style/layers/circle_layer.hpp>
 #include <mln/style/layers/circle_layer_impl.hpp>
+#include <mln/style/layers/symbol_layer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/style/style.hpp>
@@ -45,6 +46,11 @@
 #include <stdexcept>
 #include <thread>
 
+#if defined(__APPLE__)
+extern "C" void* objc_autoreleasePoolPush(void);
+extern "C" void objc_autoreleasePoolPop(void*);
+#endif
+
 using namespace mln;
 using namespace mln::style;
 
@@ -52,13 +58,29 @@ namespace {
 
 constexpr auto kBound = std::chrono::seconds(30);
 
+/**
+ * One turn of the loop, on Apple inside an autorelease pool: the headless
+ * Metal backend's command buffers are autoreleased, and with no pool drained
+ * the queue's 64 run out and a frame waits for ever (see
+ * test/api/label_lane_real_data.test.cpp).
+ */
+void turn(util::RunLoop& loop) {
+#if defined(__APPLE__)
+    void* pool = objc_autoreleasePoolPush();
+    loop.runOnce();
+    objc_autoreleasePoolPop(pool);
+#else
+    loop.runOnce();
+#endif
+}
+
 /** Runs the loop until `done()`. False, with a failure, if it has not come within the bound. */
 bool runUntil(util::RunLoop& loop, const std::function<bool()>& done, const std::string& what) {
     bool late = false;
     util::Timer watchdog;
     watchdog.start(kBound, Duration::zero(), [&] { late = true; });
     while (!done() && !late) {
-        loop.runOnce();
+        turn(loop);
     }
     EXPECT_FALSE(late) << what << ": not within " << kBound.count() << " s";
     return !late;
@@ -512,7 +534,12 @@ public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut.emplace_back(sourceID, generation);
     }
-    void onDidFinishRenderingFrame(const RenderFrameStatus&) override { ++frames; }
+    void onDidFinishRenderingFrame(const RenderFrameStatus&) override {
+        ++frames;
+        if (onFrame) onFrame();
+    }
+    // Called at the end of each frame, inside it (as an app's delegate is).
+    std::function<void()> onFrame;
     bool has(const std::string& sourceID, uint64_t generation) const {
         return std::ranges::find(laidOut, std::make_pair(sourceID, generation)) != laidOut.end();
     }
@@ -1039,4 +1066,86 @@ TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
     Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
     ASSERT_TRUE(runOneFrame(test, "the frame the lane's layouts bring"));
     EXPECT_EQ(1u, drawnCircles(test)) << "a frame drew a layout older than the inline one";
+}
+
+// ios-names' repro (PlacementLabelLaneThreadTests, 2026-10-16), as the iOS
+// test builds it: a lane source made with no body and then given a URL, two
+// points near (46, 7) at zoom 12, a synchronous overlay source with a text
+// layer and a circle layer, both filters set in one turn, and the drawn
+// circles counted at the end of each frame, inside it.
+TEST(LabelLane, IOSReproAFilterChangeOnALaneSourceIsDrawnInTheFirstFrame) {
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    const std::string dots = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"id": "p1"}, "geometry": {"type": "Point", "coordinates": [7, 46]}},
+        {"type": "Feature", "properties": {"id": "p2"}, "geometry": {"type": "Point", "coordinates": [7.004, 46.004]}}]})";
+    fileSource->sourceResponse = [dots](const Resource&) {
+        Response response;
+        response.data = std::make_shared<std::string>(dots);
+        return response;
+    };
+    fileSource->glyphsResponse = [](const Resource&) {
+        Response response;
+        response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+        return response;
+    };
+    LaidOutObserver observer;
+    HeadlessFrontend frontend{Size{300, 600}, 3.0f};
+    MapAdapter map{frontend,
+                   observer,
+                   fileSource,
+                   MapOptions().withMapMode(MapMode::Continuous).withSize(frontend.getSize()).withPixelRatio(3.0f)};
+    map.getStyle().loadJSON(R"({"version": 8, "glyphs": "http://glyphs/{fontstack}/{range}.pbf", "sources": {},
+        "layers": []})");
+    map.jumpTo(CameraOptions().withCenter(LatLng{46, 7}).withZoom(12));
+
+    auto overlayOwned = std::make_unique<GeoJSONSource>("overlay", syncOptions());
+    auto& overlay = *overlayOwned;
+    map.getStyle().addSource(std::move(overlayOwned));
+    auto overlayText = std::make_unique<SymbolLayer>("overlay-text", "overlay");
+    overlayText->setTextField(expression::Formatted("x"));
+    overlayText->setTextFont({{"Test Stack"}});
+    map.getStyle().addLayer(std::move(overlayText));
+    auto overlayCircles = std::make_unique<CircleLayer>("overlay-circles", "overlay");
+    map.getStyle().addLayer(std::move(overlayCircles));
+    conversion::Error error;
+    overlay.setGeoJSON(*conversion::parseGeoJSON(
+        R"({"type": "Feature", "properties": {"id": "dot"}, "geometry": {"type": "Point", "coordinates": [7, 46]}})",
+        error));
+
+    auto laneOwned = std::make_unique<GeoJSONSource>("lane", laneOptions());
+    auto& lane = *laneOwned;
+    map.getStyle().addSource(std::move(laneOwned));
+    map.getStyle().addLayer(std::make_unique<CircleLayer>("lane-circles", "lane"));
+    const uint64_t body = lane.setURL("http://bodies/diag.geojson");
+
+    const auto drawn = [&](const std::string& layer) {
+        RenderedQueryOptions options;
+        options.layerIDs = std::vector<std::string>{layer};
+        return frontend.getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {300, 600}}, options).size();
+    };
+    ASSERT_TRUE(runUntil(
+        loop,
+        [&] { return observer.has("lane", body) && observer.has("overlay", overlay.getDataGeneration()); },
+        "both sources laid out"));
+    // Let the frames settle, as the iOS test sleeps 500 ms.
+    for (int i = 0; i < 5; ++i) {
+        const int before = observer.frames;
+        util::Timer settle;
+        bool done = false;
+        settle.start(Milliseconds(50), Duration::zero(), [&] { done = true; });
+        while (!done) turn(loop);
+        (void)before;
+    }
+    ASSERT_EQ(2u, drawn("lane-circles")) << "precondition";
+    ASSERT_EQ(1u, drawn("overlay-circles")) << "precondition";
+
+    std::vector<std::pair<std::size_t, std::size_t>> seen;
+    observer.onFrame = [&] { seen.emplace_back(drawn("lane-circles"), drawn("overlay-circles")); };
+    map.getStyle().getLayer("lane-circles")->setFilter(*filterFrom(R"(["==", ["get", "id"], "none"])"));
+    map.getStyle().getLayer("overlay-circles")->setFilter(*filterFrom(R"(["==", ["get", "id"], "none"])"));
+    ASSERT_TRUE(runUntil(loop, [&] { return !seen.empty(); }, "a frame after the turn"));
+    observer.onFrame = nullptr;
+    EXPECT_EQ(std::make_pair(std::size_t{0}, std::size_t{0}), seen.front())
+        << "the first frame after the turn drew lane " << seen.front().first << ", overlay " << seen.front().second;
 }
