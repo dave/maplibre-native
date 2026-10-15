@@ -88,6 +88,21 @@
     XCTAssertEqual([NSSet setWithArray:self.laidOut].count, self.laidOut.count);
 }
 
+/// A filter change on a layer of the source moves its generation at once,
+/// read from the core (so a second object for the same source agrees), and
+/// it is reported laid out.
+- (void)testAFilterChangeMovesTheGenerationAndIsReportedLaidOut {
+    MLNShapeSource *source = [self addSource:@"lane-filter" options:@{MLNShapeSourceOptionLabelLane : @YES}];
+    [self waitForLaidOut:source];
+    uint64_t before = source.dataGeneration;
+    MLNStyleLayer *layer = [self.mapView.style layerWithIdentifier:@"lane-filter-layer"];
+    ((MLNVectorStyleLayer *)layer).predicate = [NSPredicate predicateWithFormat:@"kind != 'x'"];
+    XCTAssertGreaterThan(source.dataGeneration, before, @"the filter change takes a generation at once");
+    MLNShapeSource *again = (MLNShapeSource *)[self.mapView.style sourceWithIdentifier:@"lane-filter"];
+    XCTAssertEqual(again.dataGeneration, source.dataGeneration, @"every object for the source answers the same");
+    [self waitForLaidOut:source];
+}
+
 - (void)testAPlainSourceIsReportedToo {
     MLNShapeSource *source = [self addSource:@"plain" options:nil];
     [self waitForLaidOut:source];

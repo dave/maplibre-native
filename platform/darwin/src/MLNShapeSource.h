@@ -373,11 +373,15 @@ MLN_EXPORT
 @property (nonatomic, copy, nullable) NSURL *URL;
 
 /**
- The data generation of the body last given by `shape` or `URL`: each new body
- gets the next number, counting from 1, and 0 before the first. The map view's
- delegate is told when every tile in view is laid out with a generation
- (`-mapView:sourceDidLayOut:generation:`). For a URL body, the generation is
- that body's once it has loaded.
+ The latest data generation the source gave out: each new body set by `shape`
+ or `URL` gets the next number, counting from 1, and so does each change of a
+ filter or layout property of a layer on this source; 0 before the first.
+ Read it right after such a change. The map view's delegate is told when
+ every tile in view is laid out with a generation
+ (`-mapView:sourceDidLayOut:generation:`): wait for the value read, or a later
+ one. A URL body takes its generation when it is set, and it is reported once
+ it has loaded. Read from the core source, so every object for the same source
+ answers the same.
  */
 @property (nonatomic, readonly) uint64_t dataGeneration;
 

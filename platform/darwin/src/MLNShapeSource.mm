@@ -282,8 +282,7 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
 - (void)setURL:(NSURL *)url {
   MLNAssertStyleSourceIsValid();
   if (url) {
-    _dataGeneration =
-        self.rawSource->setURL(url.mgl_URLByStandardizingScheme.absoluteString.UTF8String);
+    self.rawSource->setURL(url.mgl_URLByStandardizingScheme.absoluteString.UTF8String);
     _shape = nil;
   } else {
     self.shape = nil;
@@ -292,8 +291,15 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
 
 - (void)setShape:(MLNShape *)shape {
   MLNAssertStyleSourceIsValid();
-  _dataGeneration = self.rawSource->setGeoJSON({shape.geoJSONObject});
+  self.rawSource->setGeoJSON({shape.geoJSONObject});
   _shape = shape;
+}
+
+- (uint64_t)dataGeneration {
+  MLNAssertStyleSourceIsValid();
+  // The core's, not an ivar: the core keeps only a weak link to this object,
+  // so a source looked up again may be a new object.
+  return self.rawSource->getLatestGeneration();
 }
 
 + (void)setRecordsLabelSteps:(BOOL)recording {
