@@ -125,6 +125,11 @@ std::optional<GeoJSONOptions> Converter<GeoJSONOptions>::operator()(const Conver
         error.message = "GeoJSON source labelLane cannot be set with synchronousUpdate";
         return std::nullopt;
     }
+    // Supercluster cuts its tiles on the render thread: the lane cannot cover it.
+    if (options.labelLane && options.cluster) {
+        error.message = "GeoJSON source labelLane cannot be set with cluster";
+        return std::nullopt;
+    }
 
     const auto clusterProperties = objectMember(value, "clusterProperties");
     if (clusterProperties) {

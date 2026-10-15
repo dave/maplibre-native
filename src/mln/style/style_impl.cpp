@@ -25,6 +25,7 @@
 #include <mln/util/string.hpp>
 
 #include <algorithm>
+#include <mln/style/sources/geojson_source.hpp>
 #include <sstream>
 
 namespace mln {
@@ -499,6 +500,18 @@ void Style::Impl::onSpriteRequested(const std::optional<style::Sprite>& sprite) 
 
 void Style::Impl::onLayerChanged(Layer& layer) {
     layer.reevaluateVisibility(*globalState);
+    // A filter or layout change on a GeoJSON source's layer moves the
+    // source's generation, in the same update as the layer, so the renderer
+    // reports it laid out once the tiles hold the new layers.
+    const auto& before = layers.getImpls();
+    const auto it = std::ranges::find_if(*before, [&](const auto& impl) { return impl->id == layer.getID(); });
+    if (it != before->end() && (*it)->getTypeInfo() == layer.baseImpl->getTypeInfo() &&
+        (*it)->hasLayoutDifference(*layer.baseImpl)) {
+        if (auto* source = sources.get(layer.getSourceID()); source && source->is<GeoJSONSource>()) {
+            source->as<GeoJSONSource>()->markLayersChanged();
+            sources.update(*source);
+        }
+    }
     layers.update(layer);
     observer->onUpdate();
 }
