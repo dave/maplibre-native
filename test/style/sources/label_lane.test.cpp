@@ -562,8 +562,8 @@ TEST(LabelLane, EveryStepOfALaneSourceRunsOnTheLane) {
             EXPECT_EQ(std::string::npos, step.thread.find("Label lane")) << step.name << " ran on " << step.thread;
         }
     }
-    EXPECT_EQ((std::set<std::string>{"parse-url", "slice", "tile-parse", "tile-layout"}), laneSteps);
-    EXPECT_EQ((std::set<std::string>{"parse-url", "slice", "tile-parse", "tile-layout"}), plainSteps);
+    EXPECT_EQ((std::set<std::string>{"parse-url", "index", "slice", "tile-parse", "tile-layout"}), laneSteps);
+    EXPECT_EQ((std::set<std::string>{"parse-url", "index", "slice", "tile-parse", "tile-layout"}), plainSteps);
 }
 
 // The teardown test: a lane tile's release frees its buckets and textures on

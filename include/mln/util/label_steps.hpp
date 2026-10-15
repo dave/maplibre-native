@@ -12,7 +12,9 @@ struct LabelStep {
     /// The source the step was for.
     std::string sourceID;
     /// What ran: "convert" (a body's parse in a platform binding),
-    /// "parse-url" (a URL body's parse), "slice" (a tile's geojson-vt cut),
+    /// "parse-url" (a URL body's parse), "index" (the geojson-vt index
+    /// build, inside the parse, or on the caller's thread for a body set
+    /// with `setGeoJSON`), "slice" (a tile's geojson-vt cut),
     /// "tile-parse" and "tile-layout" (the tile worker). A hop is a tile's
     /// own job on the thread that owns the tile: "hop-data" (the cut tile
     /// sent to the worker), "hop-glyphs", "hop-images", "hop-layout".
