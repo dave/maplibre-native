@@ -7224,6 +7224,16 @@ static void *windowScreenContext = &windowScreenContext;
   }
 }
 
+- (void)sourceDidLayOut:(nonnull NSString *)sourceIdentifier generation:(uint64_t)generation {
+  if (!_mbglMap) {
+    return;
+  }
+
+  if ([self.delegate respondsToSelector:@selector(mapView:sourceDidLayOut:generation:)]) {
+    [self.delegate mapView:self sourceDidLayOut:sourceIdentifier generation:generation];
+  }
+}
+
 - (void)spriteWillLoad:(nullable NSString *)id url:(nullable NSString *)url {
   if (!_mbglMap) {
     return;

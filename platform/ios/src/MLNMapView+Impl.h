@@ -83,6 +83,7 @@ public:
   void onGlyphsError(const mln::FontStack&, const mln::GlyphRange&, std::exception_ptr) override;
   void onGlyphsRequested(const mln::FontStack&, const mln::GlyphRange&) override;
   void onTileAction(mln::TileOperation, const mln::OverscaledTileID&, const std::string&) override;
+  void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override;
   void onSpriteLoaded(const std::optional<mln::style::Sprite>&) override;
   void onSpriteError(const std::optional<mln::style::Sprite>&, std::exception_ptr) override;
   void onSpriteRequested(const std::optional<mln::style::Sprite>&) override;

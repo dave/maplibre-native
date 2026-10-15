@@ -50,6 +50,48 @@
   XCTAssertThrows(MLNGeoJSONOptionsFromDictionary(options));
 }
 
+- (void)testLabelLaneOption {
+  XCTAssertTrue(MLNGeoJSONOptionsFromDictionary(@{MLNShapeSourceOptionLabelLane : @YES})->labelLane);
+  XCTAssertFalse(MLNGeoJSONOptionsFromDictionary(@{})->labelLane, @"off by default");
+  XCTAssertThrows(MLNGeoJSONOptionsFromDictionary(@{MLNShapeSourceOptionLabelLane : @"yes"}));
+}
+
+- (void)testLabelLaneWithSynchronousUpdateIsRefused {
+  NSDictionary *both = @{MLNShapeSourceOptionLabelLane : @YES, MLNShapeSourceOptionSynchronousUpdate : @YES};
+  NSDictionary *lane = @{MLNShapeSourceOptionLabelLane : @YES};
+  XCTAssertThrowsSpecificNamed([[MLNShapeSource alloc] initWithIdentifier:@"lane-sync" shape:nil options:both],
+                               NSException, NSInvalidArgumentException);
+  // The lane alone is accepted.
+  XCTAssertNoThrow([[MLNShapeSource alloc] initWithIdentifier:@"lane" shape:nil options:lane]);
+}
+
+- (void)testEachBodyGetsTheNextDataGeneration {
+  MLNShapeSource *source = [[MLNShapeSource alloc] initWithIdentifier:@"generations"
+                                                                shape:nil
+                                                              options:@{MLNShapeSourceOptionLabelLane : @YES}];
+  uint64_t first = source.dataGeneration;
+  XCTAssertGreaterThan(first, 0ULL, @"the initial (nil) shape is a body too");
+  MLNPointFeature *point = [[MLNPointFeature alloc] init];
+  point.coordinate = CLLocationCoordinate2DMake(46, 8);
+  source.shape = point;
+  XCTAssertEqual(source.dataGeneration, first + 1);
+  source.URL = [NSURL URLWithString:@"http://example.invalid/body.geojson"];
+  XCTAssertEqual(source.dataGeneration, first + 2, @"a URL body takes its generation when it is set");
+}
+
+- (void)testTheStepRecorderIsOffByDefaultAndTakesWhatItRecorded {
+  [MLNShapeSource setRecordsLabelSteps:NO];
+  XCTAssertEqual([MLNShapeSource takeLabelSteps].count, 0UL);
+  [MLNShapeSource setRecordsLabelSteps:YES];
+  NSArray *steps = [MLNShapeSource takeLabelSteps];
+  XCTAssertNotNil(steps);
+  for (NSDictionary *step in steps) {
+    XCTAssertNotNil(step[@"thread"]);
+    XCTAssertNotNil(step[@"name"]);
+  }
+  [MLNShapeSource setRecordsLabelSteps:NO];
+}
+
 - (void)testNilShape {
   MLNShapeSource *source = [[MLNShapeSource alloc] initWithIdentifier:@"id" shape:nil options:nil];
   XCTAssertNil(source.shape);
