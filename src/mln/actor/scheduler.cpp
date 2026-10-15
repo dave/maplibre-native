@@ -70,13 +70,28 @@ std::shared_ptr<Scheduler> Scheduler::GetSequenced() {
     }
 }
 
+namespace {
+
+// Two threads: in the headless real-data check (LabelLaneRealData) the two
+// label sources' work in series filled about 90% of a body's time to its
+// layout on one thread, and two cut the median by about 10 ms (lead,
+// 2026-10-15). Each mailbox still runs one message at a time.
+class LabelLaneScheduler final : public ThreadedScheduler {
+public:
+    LabelLaneScheduler()
+        : ThreadedScheduler(2, "Label lane") {}
+    ~LabelLaneScheduler() override { invalidateWeakPtrsEarly(); }
+};
+
+} // namespace
+
 // static
 std::shared_ptr<Scheduler> Scheduler::GetLabelLane() {
     // Leaked on purpose: the lane lives for the life of the process, so no
-    // static destructor joins its thread at exit.
+    // static destructor joins its threads at exit.
     static const std::shared_ptr<Scheduler>* lane = [] {
         try {
-            return new std::shared_ptr<Scheduler>(std::make_shared<SequencedScheduler>("Label lane"));
+            return new std::shared_ptr<Scheduler>(std::make_shared<LabelLaneScheduler>());
         } catch (const std::exception& error) {
             Log::Error(Event::General, std::string("The label lane cannot be made: ") + error.what());
             assert(false);

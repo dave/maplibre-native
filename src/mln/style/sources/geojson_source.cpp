@@ -24,6 +24,10 @@ const Immutable<GeoJSONOptions>& checkedOptions(const Immutable<GeoJSONOptions>&
     if (options->labelLane && options->synchronousUpdate) {
         throw std::invalid_argument("GeoJSON source labelLane cannot be set with synchronousUpdate");
     }
+    // Supercluster cuts its tiles on the render thread: the lane cannot cover it.
+    if (options->labelLane && options->cluster) {
+        throw std::invalid_argument("GeoJSON source labelLane cannot be set with cluster");
+    }
     return options;
 }
 
@@ -67,6 +71,7 @@ const GeoJSONSource::Impl& GeoJSONSource::impl() const {
 uint64_t GeoJSONSource::setURL(const std::string& url_) {
     url = url_;
     urlGeneration = nextDataGeneration();
+    urlBody.reset();
 
     // Signal that the source description needs a reload
     if (loaded || req) {
@@ -88,12 +93,24 @@ uint64_t GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData)
 }
 
 void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData, uint64_t generation) {
-    assert(generation > impl().getDataGeneration());
     req.reset();
     // A URL body still being parsed is older: it must not replace this one.
     ++requestGeneration;
-    baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData), generation);
+    baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData), landingGeneration(generation));
     observer->onSourceChanged(*this);
+}
+
+uint64_t GeoJSONSource::landingGeneration(uint64_t generation) {
+    // A body made off the calling thread lands after a later generation was
+    // given out (a layer change on the source, `markLayersChanged`): it takes
+    // a new one, so the source's generation never goes back and the newest
+    // one covers both the body and the layers.
+    return generation > impl().getDataGeneration() ? generation : nextDataGeneration();
+}
+
+uint64_t GeoJSONSource::markLayersChanged() {
+    baseImpl = makeMutable<Impl>(impl(), impl().getData().lock(), nextDataGeneration());
+    return impl().getDataGeneration();
 }
 
 uint64_t GeoJSONSource::nextDataGeneration() {
@@ -144,45 +161,45 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
         } else if (res.noContent) {
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error("unexpectedly empty GeoJSON")));
         } else {
+            assert(res.data);
+            // The same bytes again (a revalidation, a second answer): nothing new to show.
+            if (urlBody && *urlBody == *res.data) {
+                return;
+            }
+            // A second, different body for the URL is a new body: a new
+            // generation, so a loaded check never waits on a body it can no
+            // longer see.
+            const uint64_t generation = urlBody ? nextDataGeneration() : urlGeneration;
+            urlBody = res.data;
             // Note: This task appears to be safe enough to schedule on the generic background queue.
             // This task does not reference other objects who's lifetimes are coupled with a map.
-            struct Parsed {
-                Immutable<Source::Impl> impl;
-                std::string error;
-            };
             parseScheduler->scheduleAndReplyValue(
                 util::SimpleIdentity::Empty,
-                /* makeImplInBackground */
-                [currentImpl = baseImpl,
-                 data = res.data,
+                /* parseInBackground */
+                [data = res.data,
                  seqScheduler{sequencedScheduler},
-                 generation = urlGeneration,
+                 options = impl().getOptions(),
+                 id = getID(),
                  queued = util::LabelSteps::recording() ? util::MonotonicTimer::now()
-                                                        : std::chrono::duration<double>{0}]() -> Parsed {
-                    assert(data);
-                    auto& current = static_cast<const Impl&>(*currentImpl);
-                    const util::LabelSteps::Scope step(current.id, "parse-url", false, queued);
-                    auto parsed = GeoJSONData::parse(*data, std::move(seqScheduler), current.getOptions(), current.id);
-                    if (auto* error = std::get_if<std::string>(&parsed)) {
-                        // An empty source, so that no tile waits for ever;
-                        // the error is reported when this lands.
-                        return {.impl = makeMutable<Impl>(current, nullptr, generation), .error = *error};
-                    }
-                    return {.impl = makeMutable<Impl>(
-                                current, std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)), generation),
-                            .error = {}};
+                                                        : std::chrono::duration<double>{0}]() {
+                    const util::LabelSteps::Scope step(id, "parse-url", false, queued);
+                    return GeoJSONData::parse(*data, std::move(seqScheduler), options, id);
                 },
-                /* onImplReady */
-                [this, self = makeWeakPtr(), capturedReqGeneration = ++requestGeneration](Parsed parsed) {
+                /* onParsed */
+                [this, self = makeWeakPtr(), capturedReqGeneration = ++requestGeneration, generation](
+                    GeoJSONData::ParseResult parsed) {
                     assert(capturedReqGeneration);
                     if (auto guard = self.lock(); self) {
                         if (capturedReqGeneration ==
                             requestGeneration) { // If a new request is being processed, ignore this impl.
-                            baseImpl = std::move(parsed.impl);
+                            auto* error = std::get_if<std::string>(&parsed);
+                            // A body that does not parse makes the source empty,
+                            // so that no tile waits for ever, and is reported.
+                            auto data = error ? nullptr : std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed));
+                            baseImpl = makeMutable<Impl>(impl(), std::move(data), landingGeneration(generation));
                             loaded = true;
-                            if (!parsed.error.empty()) {
-                                observer->onSourceError(*this,
-                                                        std::make_exception_ptr(std::runtime_error(parsed.error)));
+                            if (error) {
+                                observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error(*error)));
                             }
                             observer->onSourceLoaded(*this);
                         }

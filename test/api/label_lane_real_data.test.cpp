@@ -356,7 +356,7 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
             t.workOnRender += s.thread == renderThread;
             const bool onLane = s.thread.find("Label lane") != std::string::npos;
             t.workOnLane += onLane;
-            if (s.thread.find("Label lane 1") != std::string::npos) laneSeries += s.end - s.start;
+            if (onLane) laneSeries += s.end - s.start;
             if (s.queued.count() > 0) t.queue[key].add(ms(s.start - s.queued));
             t.work_[key].add(ms(s.end - s.start));
         }
@@ -383,7 +383,7 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
         std::printf("   laid out before the basemap's work ended (1 yes, 0 no): %s\n",
                     t.laidOutBeforeBasemapEnd.str().c_str());
         std::printf("   basemap work window, ms: %s\n", t.basemapBusy.str().c_str());
-        std::printf("   both sources' work on \"Label lane 1\" in series, ms: %s\n", t.laneSeries.str().c_str());
+        std::printf("   both sources' work on the lane threads, summed, ms: %s\n", t.laneSeries.str().c_str());
         for (const auto& [key, spread] : t.work_) {
             const auto q = t.queue.find(key);
             std::printf("   step %-24s work ms %-28s queue ms %s\n",

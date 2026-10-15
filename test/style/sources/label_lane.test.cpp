@@ -5,6 +5,7 @@
 // wait ends on an event, and its 30 s bound only turns a missing event into a
 // failure instead of a hang.
 
+#include <mln/test/fake_file_source.hpp>
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
 #include <mln/test/stub_style_observer.hpp>
@@ -20,6 +21,7 @@
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/style/conversion/geojson.hpp>
 #include <mln/style/conversion/geojson_options.hpp>
+#include <mln/style/conversion/filter.hpp>
 #include <mln/style/conversion/json.hpp>
 #include <mln/style/layers/circle_layer.hpp>
 #include <mln/style/layers/circle_layer_impl.hpp>
@@ -228,6 +230,22 @@ TEST(LabelLane, ASourceRefusesTheLaneWithASynchronousUpdate) {
     EXPECT_THROW(GeoJSONSource("source", makeMutable<GeoJSONOptions>(std::move(both))), std::invalid_argument);
     EXPECT_NO_THROW(GeoJSONSource("source", laneOptions()));
     EXPECT_NO_THROW(GeoJSONSource("source", syncOptions()));
+}
+
+// Supercluster cuts its tiles on the render thread: a lane source with
+// clusters would be a lane in part only.
+TEST(LabelLane, ASourceRefusesTheLaneWithClusters) {
+    GeoJSONOptions both;
+    both.labelLane = true;
+    both.cluster = true;
+    EXPECT_THROW(GeoJSONSource("source", makeMutable<GeoJSONOptions>(std::move(both))), std::invalid_argument);
+    GeoJSONOptions clusters;
+    clusters.cluster = true;
+    EXPECT_NO_THROW(GeoJSONSource("source", makeMutable<GeoJSONOptions>(std::move(clusters))));
+
+    conversion::Error error;
+    EXPECT_FALSE(conversion::convertJSON<GeoJSONOptions>(R"({"labelLane": true, "cluster": true})", error));
+    EXPECT_EQ("GeoJSON source labelLane cannot be set with cluster", error.message);
 }
 
 TEST(LabelLane, TheStyleRefusesTheLaneWithASynchronousUpdate) {
@@ -618,4 +636,176 @@ TEST(LabelLane, DestroyingTheMapWithLaneWorkInFlightIsSafe) {
     destroying.open();
     test.destroy();
     releaser.join();
+}
+
+// A URL answered twice (a revalidation): the same bytes again are no new
+// body; different bytes are, with a new generation, so a loaded check never
+// waits on a body it can no longer see.
+TEST(LabelLane, AURLBodyAnsweredAgainIsANewBodyOnlyIfItDiffers) {
+    util::RunLoop loop;
+    FakeFileSource fileSource;
+    StubStyleObserver observer;
+    int loads = 0;
+    observer.sourceLoaded = [&](Source&) {
+        ++loads;
+    };
+    GeoJSONSource source("source", laneOptions());
+    source.setObserver(&observer);
+    EXPECT_EQ(1u, source.setURL("http://body"));
+    source.loadDescription(fileSource);
+    const auto answer = [&](const std::string& body) {
+        Response response;
+        response.data = std::make_shared<std::string>(body);
+        return fileSource.respond(Resource::Kind::Source, response);
+    };
+
+    ASSERT_TRUE(answer(kPoints));
+    ASSERT_TRUE(runUntil(loop, [&] { return loads == 1; }, "the first body"));
+    EXPECT_EQ(1u, source.getDataGeneration());
+    const auto firstData = source.impl().getData().lock();
+
+    // The same bytes, in a new string: ignored when the answer comes, before
+    // any parse is scheduled.
+    ASSERT_TRUE(answer(kPoints));
+    EXPECT_EQ(1u, source.getDataGeneration());
+    EXPECT_EQ(firstData, source.impl().getData().lock());
+
+    const std::string other = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [5, 5]}}]})";
+    ASSERT_TRUE(answer(other));
+    ASSERT_TRUE(runUntil(loop, [&] { return loads == 2; }, "the second, different body"));
+    EXPECT_EQ(2u, source.getDataGeneration());
+    EXPECT_NE(firstData, source.impl().getData().lock());
+}
+
+namespace {
+
+std::optional<Filter> filterFrom(const std::string& json) {
+    conversion::Error error;
+    auto filter = conversion::convertJSON<Filter>(json, error);
+    EXPECT_TRUE(filter) << error.message;
+    return filter;
+}
+
+} // namespace
+
+// A layer's filter or layout change moves its GeoJSON source's generation
+// at once, for the app to read; a paint change, or a change on another
+// source's layer, does not.
+TEST(LabelLane, AFilterOrLayoutChangeMovesTheSourcesGeneration) {
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    Log::setObserver(std::make_unique<Log::NullObserver>());
+    style::Style style{fileSource, 1, {Scheduler::GetBackground(), util::SimpleIdentity{}}};
+    style.loadJSON(R"({"version": 8, "sources": {
+        "labels": {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}, "labelLane": true},
+        "other": {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}}},
+      "layers": [
+        {"id": "labels", "type": "circle", "source": "labels"},
+        {"id": "other", "type": "circle", "source": "other"}]})");
+    auto& labels = *style.getSource("labels")->as<GeoJSONSource>();
+    auto& labelsLayer = static_cast<CircleLayer&>(*style.getLayer("labels"));
+    auto& otherLayer = static_cast<CircleLayer&>(*style.getLayer("other"));
+    const uint64_t start = labels.getDataGeneration();
+    ASSERT_EQ(1u, start);
+
+    labelsLayer.setFilter(*filterFrom(R"(["==", ["get", "form"], "tag"])"));
+    EXPECT_EQ(start + 1, labels.getDataGeneration()) << "a filter change";
+
+    labelsLayer.setCircleColor(Color::red());
+    EXPECT_EQ(start + 1, labels.getDataGeneration()) << "a paint change moved it";
+
+    labelsLayer.setCircleSortKey(PropertyValue<float>(2.0f));
+    EXPECT_EQ(start + 2, labels.getDataGeneration()) << "a layout change";
+
+    otherLayer.setFilter(*filterFrom(R"(["==", ["get", "form"], "badge"])"));
+    EXPECT_EQ(start + 2, labels.getDataGeneration()) << "another source's layer moved it";
+}
+
+// A body made off the calling thread lands after a layer change took a later
+// generation: it takes a new one, so the generation never goes back.
+TEST(LabelLane, ABodyThatLandsAfterALayerChangeTakesANewGeneration) {
+    util::RunLoop loop;
+    GeoJSONSource source("source", laneOptions());
+    const uint64_t asked = source.nextDataGeneration();
+    const uint64_t layers = source.markLayersChanged();
+    ASSERT_GT(layers, asked);
+    source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), asked);
+    EXPECT_GT(source.getDataGeneration(), layers);
+}
+
+// The laid-out signal for a layer change: reported once, after the last tile
+// is laid out with the new layers; with a body set too, at the newer
+// generation only.
+TEST(LabelLane, ALayerChangeIsReportedLaidOutOnceAfterItsLastTile) {
+    TileWorld world;
+    Log::setObserver(std::make_unique<Log::NullObserver>());
+    Transform transform;
+    transform.resize({512, 512});
+    transform.jumpTo(CameraOptions().withCenter(LatLng()).withZoom(1.5));
+    world.transformState = transform.getState();
+
+    GeoJSONSource source("source", laneOptions());
+    source.setGeoJSON(points());
+    RenderGeoJSONSource renderSource{staticImmutableCast<GeoJSONSource::Impl>(source.baseImpl),
+                                     world.parameters(true).threadPool};
+    std::vector<Immutable<LayerProperties>> layers{world.layerProperties};
+
+    std::vector<uint64_t> reported;
+    const auto updateUntilReported = [&](const std::string& what) {
+        return runUntil(
+            world.loop,
+            [&] {
+                renderSource.update(source.baseImpl, layers, true, false, world.parameters(true));
+                const bool allComplete = renderSource.isLoaded();
+                if (auto generation = renderSource.takeLaidOutGeneration()) {
+                    reported.push_back(*generation);
+                    EXPECT_TRUE(allComplete) << "reported with a tile still being laid out";
+                    return true;
+                }
+                return false;
+            },
+            what);
+    };
+    ASSERT_TRUE(updateUntilReported("the body"));
+    ASSERT_EQ(std::vector<uint64_t>{1}, reported);
+
+    // New layers (a filter), as the style sends them with the source's new
+    // generation: the update that takes them relays the tiles out.
+    const auto newLayers = [&](const std::string& filter) {
+        CircleLayer layer("circles", "source");
+        layer.setFilter(*filterFrom(filter));
+        layers = {makeMutable<CircleLayerProperties>(staticImmutableCast<CircleLayer::Impl>(layer.baseImpl))};
+    };
+    newLayers(R"(["has", "a"])");
+    const uint64_t layerGeneration = source.markLayersChanged();
+    renderSource.update(source.baseImpl, layers, true, true, world.parameters(true));
+    EXPECT_FALSE(renderSource.isLoaded()) << "the new layers did not relay the tiles out";
+    EXPECT_FALSE(renderSource.takeLaidOutGeneration()) << "reported before the tiles hold the new layers";
+    ASSERT_TRUE(updateUntilReported("the layer change"));
+    EXPECT_EQ((std::vector<uint64_t>{1, layerGeneration}), reported);
+    renderSource.update(source.baseImpl, layers, true, false, world.parameters(true));
+    EXPECT_FALSE(renderSource.takeLaidOutGeneration()) << "reported twice";
+
+    // A body and a layer change before the next frame: the newer only.
+    const uint64_t body = source.setGeoJSON(points());
+    newLayers(R"(["has", "b"])");
+    const uint64_t both = source.markLayersChanged();
+    ASSERT_GT(both, body);
+    renderSource.update(source.baseImpl, layers, true, true, world.parameters(true));
+    ASSERT_TRUE(updateUntilReported("the body and the layer change"));
+    EXPECT_EQ((std::vector<uint64_t>{1, layerGeneration, both}), reported);
+}
+
+// On a map: a filter set on a lane source's layer is reported laid out at the
+// generation the source answers right after it.
+TEST(LabelLane, AFilterChangeOnTheMapIsReportedLaidOut) {
+    LaneMap test;
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->getStyle().getLayer("labels")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "none"])"));
+    const uint64_t generation = test.labels().getDataGeneration();
+    ASSERT_EQ(2u, generation);
+    ASSERT_TRUE(
+        runUntil(test.loop, [&] { return test.observer.has("labels", generation); }, "the filter change laid out"));
+    EXPECT_EQ(1, std::ranges::count(test.observer.laidOut, std::make_pair(std::string("labels"), generation)));
 }

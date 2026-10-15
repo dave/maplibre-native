@@ -43,7 +43,8 @@ struct GeoJSONOptions {
     // The source's off-thread work runs on the label lane
     // (`Scheduler::GetLabelLane()`), not on the shared worker pool: its body's
     // parse, its tiles' parse and layout, and its geojson-vt cuts (on a
-    // sequenced scheduler of its own). Refused with `synchronousUpdate`.
+    // sequenced scheduler of its own). Refused with `synchronousUpdate` and
+    // with `cluster` (Supercluster cuts on the render thread).
     bool labelLane = false;
 
     static Immutable<GeoJSONOptions> defaultOptions();
@@ -79,17 +80,23 @@ public:
 class GeoJSONSource final : public Source {
 public:
     /// Throws `std::invalid_argument` for `labelLane` with
-    /// `synchronousUpdate`, and `std::runtime_error` if the label lane
-    /// cannot be made.
+    /// `synchronousUpdate` or with `cluster`, and `std::runtime_error` if the
+    /// label lane cannot be made.
     GeoJSONSource(std::string id, Immutable<GeoJSONOptions> = GeoJSONOptions::defaultOptions());
     ~GeoJSONSource() final;
 
     // Data generations: each new body gets the next number, counting from 1,
-    // and the renderer reports "every tile in view is laid out at generation
-    // N" (`RendererObserver::onSourceLaidOut`). Each setter answers the
-    // generation of the body it sets.
+    // and so does each change of a layer's filter or layout property on the
+    // source (`markLayersChanged`). The renderer reports "every tile in view
+    // is laid out at generation N" (`RendererObserver::onSourceLaidOut`).
+    // Each setter answers the generation of the body it sets; a body made off
+    // the calling thread that lands after a later generation was given out
+    // takes a new one. `getDataGeneration` is the source's generation now.
+    // Wait for the latest generation read, or a later one.
 
     /// The generation for a URL body: it is that body's once it has loaded.
+    /// A second, different answer for the URL takes a new generation; the
+    /// same bytes again are ignored.
     uint64_t setURL(const std::string& url);
     uint64_t setGeoJSON(const GeoJSON&);
     uint64_t setGeoJSONData(std::shared_ptr<GeoJSONData>);
@@ -98,10 +105,16 @@ public:
     void setGeoJSONData(std::shared_ptr<GeoJSONData>, uint64_t generation);
     /// Takes the next data generation for a body that is still being made.
     uint64_t nextDataGeneration();
-    /// The generation of the body the source holds now; 0 before the first.
+    /// The generation the source holds now: of its body, or of a later layer
+    /// change on it; 0 before the first. A body still being made off the
+    /// calling thread is not counted until it lands.
     uint64_t getDataGeneration() const;
     /// The body of `generation` could not be made: reported as a source error.
     void setGeoJSONError(uint64_t generation, const std::string& message);
+    /// A layer on this source changed its filter or a layout property: the
+    /// source takes the next generation, laid out once its tiles are laid out
+    /// with the new layers. The style calls it; answers the new generation.
+    uint64_t markLayersChanged();
 
     /// Where a body's parse runs: the label lane for a `labelLane` source,
     /// else the shared worker pool.
@@ -129,8 +142,12 @@ protected:
     Mutable<Source::Impl> createMutable() const noexcept final;
 
 private:
+    uint64_t landingGeneration(uint64_t generation);
+
     std::optional<std::string> url;
     uint64_t urlGeneration = 0;
+    // The URL's last body, to tell a second, different answer from the same one again.
+    std::shared_ptr<const std::string> urlBody;
     uint64_t dataGeneration = 0;
     std::unique_ptr<AsyncRequest> req;
     std::atomic<uint64_t> requestGeneration{0};
