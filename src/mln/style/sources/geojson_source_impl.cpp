@@ -166,6 +166,8 @@ std::shared_ptr<GeoJSONData> GeoJSONData::create(const GeoJSON& geoJSON,
     vtOptions.buffer = static_cast<uint16_t>(::round(scale * options->buffer));
     vtOptions.tolerance = scale * options->tolerance;
     vtOptions.lineMetrics = options->lineMetrics;
+    // The geojson-vt index build, on whichever thread makes the data.
+    const util::LabelSteps::Scope step(sourceID, "index");
     return std::shared_ptr<GeoJSONData>(new GeoJSONVTData(geoJSON, vtOptions, std::move(sequencedScheduler), sourceID));
 }
 
