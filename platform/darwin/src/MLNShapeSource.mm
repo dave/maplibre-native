@@ -16,6 +16,7 @@
 #include <mln/map/map.hpp>
 #include <mln/renderer/renderer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
+#include <mln/util/label_steps.hpp>
 
 const MLNShapeSourceOption MLNShapeSourceOptionBuffer = @"MLNShapeSourceOptionBuffer";
 const MLNShapeSourceOption MLNShapeSourceOptionClusterRadius = @"MLNShapeSourceOptionClusterRadius";
@@ -36,6 +37,7 @@ const MLNShapeSourceOption MLNShapeSourceOptionLineDistanceMetrics =
     @"MLNShapeSourceOptionLineDistanceMetrics";
 const MLNShapeSourceOption MLNShapeSourceOptionSynchronousUpdate =
     @"MLNShapeSourceOptionSynchronousUpdate";
+const MLNShapeSourceOption MLNShapeSourceOptionLabelLane = @"MLNShapeSourceOptionLabelLane";
 
 mln::Immutable<mln::style::GeoJSONOptions> MLNGeoJSONOptionsFromDictionary(
     NSDictionary<MLNShapeSourceOption, id> *options) {
@@ -182,7 +184,29 @@ mln::Immutable<mln::style::GeoJSONOptions> MLNGeoJSONOptionsFromDictionary(
     geoJSONOptions->synchronousUpdate = value.boolValue;
   }
 
+  if (NSNumber *value = options[MLNShapeSourceOptionLabelLane]) {
+    if (![value isKindOfClass:[NSNumber class]]) {
+      [NSException raise:NSInvalidArgumentException
+                  format:@"MLNShapeSourceOptionLabelLane must be an NSNumber."];
+    }
+    geoJSONOptions->labelLane = value.boolValue;
+  }
+
   return geoJSONOptions;
+}
+
+/// The core source, its refusals (the label lane with synchronous update, a
+/// lane that cannot be made) raised as Objective-C exceptions.
+static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
+    NSString *identifier, mln::Immutable<mln::style::GeoJSONOptions> options) {
+  try {
+    return std::make_unique<mln::style::GeoJSONSource>(identifier.UTF8String, std::move(options));
+  } catch (const std::invalid_argument &error) {
+    [NSException raise:NSInvalidArgumentException format:@"%s", error.what()];
+  } catch (const std::exception &error) {
+    [NSException raise:NSInternalInconsistencyException format:@"%s", error.what()];
+  }
+  return nullptr;
 }
 
 @interface MLNShapeSource ()
@@ -197,9 +221,7 @@ mln::Immutable<mln::style::GeoJSONOptions> MLNGeoJSONOptionsFromDictionary(
 - (instancetype)initWithIdentifier:(NSString *)identifier
                                URL:(NSURL *)url
                            options:(NSDictionary<NSString *, id> *)options {
-  auto geoJSONOptions = MLNGeoJSONOptionsFromDictionary(options);
-  auto source =
-      std::make_unique<mln::style::GeoJSONSource>(identifier.UTF8String, std::move(geoJSONOptions));
+  auto source = MLNMakeGeoJSONSource(identifier, MLNGeoJSONOptionsFromDictionary(options));
   if (self = [super initWithPendingSource:std::move(source)]) {
     self.URL = url;
   }
@@ -209,9 +231,7 @@ mln::Immutable<mln::style::GeoJSONOptions> MLNGeoJSONOptionsFromDictionary(
 - (instancetype)initWithIdentifier:(NSString *)identifier
                              shape:(nullable MLNShape *)shape
                            options:(NSDictionary<MLNShapeSourceOption, id> *)options {
-  auto geoJSONOptions = MLNGeoJSONOptionsFromDictionary(options);
-  auto source =
-      std::make_unique<mln::style::GeoJSONSource>(identifier.UTF8String, std::move(geoJSONOptions));
+  auto source = MLNMakeGeoJSONSource(identifier, MLNGeoJSONOptionsFromDictionary(options));
   if (self = [super initWithPendingSource:std::move(source)]) {
     if ([shape isMemberOfClass:[MLNShapeCollection class]]) {
       static dispatch_once_t onceToken;
@@ -273,6 +293,33 @@ mln::Immutable<mln::style::GeoJSONOptions> MLNGeoJSONOptionsFromDictionary(
   MLNAssertStyleSourceIsValid();
   self.rawSource->setGeoJSON({shape.geoJSONObject});
   _shape = shape;
+}
+
+- (uint64_t)dataGeneration {
+  MLNAssertStyleSourceIsValid();
+  // The core's, not an ivar: the core keeps only a weak link to this object,
+  // so a source looked up again may be a new object.
+  return self.rawSource->getLatestGeneration();
+}
+
++ (void)setRecordsLabelSteps:(BOOL)recording {
+  mln::util::LabelSteps::setRecording(recording);
+}
+
++ (NSArray<NSDictionary<NSString *, id> *> *)takeLabelSteps {
+  NSMutableArray *steps = [NSMutableArray array];
+  for (const auto &step : mln::util::LabelSteps::take()) {
+    [steps addObject:@{
+      @"sourceID" : @(step.sourceID.c_str()),
+      @"name" : @(step.name.c_str()),
+      @"thread" : @(step.thread.c_str()),
+      @"hop" : @(step.hop),
+      @"queued" : @(step.queued.count()),
+      @"start" : @(step.start.count()),
+      @"end" : @(step.end.count()),
+    }];
+  }
+  return steps;
 }
 
 - (NSString *)description {

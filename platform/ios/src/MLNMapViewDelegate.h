@@ -494,6 +494,21 @@ cache or network, parsing, or encountering errors.
              overscaledZ:(NSInteger)overscaledZ
                 sourceID:(NSString *)sourceID;
 
+/**
+ Tells the delegate that every tile in view of the shape source is laid out
+ with the body of data generation `generation` (``MLNShapeSource/dataGeneration``
+ after its `shape` or `URL` was set). Once per generation, never for one older
+ than the source holds; called while the frame that first draws those tiles is
+ made.
+
+ @param mapView The map view.
+ @param sourceIdentifier The shape source's identifier.
+ @param generation The data generation that is laid out.
+ */
+- (void)mapView:(MLNMapView *)mapView
+    sourceDidLayOut:(NSString *)sourceIdentifier
+         generation:(uint64_t)generation;
+
 // MARK: - Sprite Requests
 
 /**
