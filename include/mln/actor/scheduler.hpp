@@ -102,6 +102,16 @@ public:
     /// on the same thread-unsafe object.
     [[nodiscard]] static std::shared_ptr<Scheduler> GetSequenced();
 
+    /// Get the label lane: the scheduler for the off-thread work of a GeoJSON
+    /// source made with `GeoJSONOptions::labelLane` (its body's parse and its
+    /// tiles' parse and layout). It shares no thread with `GetBackground()`,
+    /// so its work never waits behind basemap tiles. One thread, named
+    /// "Label lane 1", made on the first call and never destroyed.
+    ///
+    /// Returns null, with a logged error and a debug assert, if the lane
+    /// cannot be made; every later call returns null too.
+    [[nodiscard]] static std::shared_ptr<Scheduler> GetLabelLane();
+
     /// Set a function to be called when an exception occurs on a thread controlled by the scheduler
     void setExceptionHandler(std::function<void(const std::exception_ptr)> handler_) { handler = std::move(handler_); }
 

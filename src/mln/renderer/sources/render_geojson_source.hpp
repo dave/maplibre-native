@@ -26,10 +26,16 @@ public:
         const std::string& extensionField,
         const std::optional<std::map<std::string, Value>>& args) const override;
 
+    std::optional<uint64_t> takeLaidOutGeneration() override;
+
 private:
     const style::GeoJSONSource::Impl& impl() const;
+    bool idealTilesLaidOut(const std::shared_ptr<style::GeoJSONData>&) const;
 
     std::weak_ptr<style::GeoJSONData> data;
+    // The last generation reported laid out; reported once each.
+    uint64_t reportedGeneration = 0;
+    std::optional<uint64_t> laidOutGeneration;
 };
 
 } // namespace mln

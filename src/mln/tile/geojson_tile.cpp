@@ -30,10 +30,15 @@ void GeoJSONTile::updateData(std::shared_ptr<style::GeoJSONData> data_, bool nee
         [this, self = weakFactory.makeWeakPtr(), capturedData = data.get()](TileFeatures features) {
             // If the data has changed, a new request is being processed, ignore this one
             if (auto guard = self.lock(); self && data.get() == capturedData) {
+                dataInWorker = data;
                 setData(std::make_unique<GeoJSONTileData>(std::move(features)));
             }
         },
         runSynchronously);
+}
+
+bool GeoJSONTile::isLaidOutWith(const std::shared_ptr<style::GeoJSONData>& data_) const {
+    return !dataInWorker.owner_before(data_) && !data_.owner_before(dataInWorker) && isComplete();
 }
 
 void GeoJSONTile::querySourceFeatures(std::vector<Feature>& result,

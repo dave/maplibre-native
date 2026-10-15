@@ -170,6 +170,19 @@ RenderOrchestrator::~RenderOrchestrator() {
     // destroying the scheduler.  Those cleanup tasks must not hold the final reference
     // to the scheduler because it cannot be destroyed from one of its own pool threads.
     threadPool.waitForEmpty();
+    // The same for this renderer's tile workers on the label lane.
+    if (labelLane) {
+        labelLane->waitForEmpty(threadPool.tag);
+    }
+}
+
+const std::shared_ptr<Scheduler>& RenderOrchestrator::usedLabelLane() {
+    if (!labelLane) {
+        // A lane source was made, so the lane was made: GeoJSONSource throws if not.
+        labelLane = Scheduler::GetLabelLane();
+        assert(labelLane);
+    }
+    return labelLane;
 }
 
 void RenderOrchestrator::setObserver(RendererObserver* observer_) {
@@ -503,8 +516,12 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
             }
         }
         tileParameters.isUpdateSynchronous = sourceImpl->isUpdateSynchronous();
+        tileParameters.labelLane = sourceImpl->usesLabelLane() ? usedLabelLane() : nullptr;
         source->update(sourceImpl, filteredLayersForSource, sourceNeedsRendering, sourceNeedsRelayout, tileParameters);
         filteredLayersForSource.clear();
+        if (const auto generation = source->takeLaidOutGeneration()) {
+            observer->onSourceLaidOut(sourceImpl->id, *generation);
+        }
 
         // Update all layers with their new renderability status, if it changed.
         for (size_t i = 0; i < updateList.size(); i++) {

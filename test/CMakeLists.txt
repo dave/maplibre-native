@@ -74,6 +74,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/style/property_expression.test.cpp
     ${PROJECT_SOURCE_DIR}/test/style/source.test.cpp
     ${PROJECT_SOURCE_DIR}/test/style/sources/contour_source.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/style/sources/label_lane.test.cpp
     ${PROJECT_SOURCE_DIR}/test/style/style.test.cpp
     ${PROJECT_SOURCE_DIR}/test/style/style_image.test.cpp
     ${PROJECT_SOURCE_DIR}/test/style/style_layer.test.cpp

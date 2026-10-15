@@ -89,6 +89,13 @@ public:
     // Tile loading
     virtual void onTileAction(TileOperation, const OverscaledTileID&, const std::string&) {}
 
+    /// Every tile in view of the GeoJSON source is laid out with the body of
+    /// data generation `generation` (`style::GeoJSONSource::setGeoJSON` and
+    /// the other setters answer it). Once per generation; never for one
+    /// older than the source holds. Called while the frame that first draws
+    /// those tiles is made.
+    virtual void onSourceLaidOut(const std::string& /*sourceID*/, uint64_t /*generation*/) {}
+
     /// Render layer or drawable failed
     virtual void onRenderError(std::exception_ptr) {}
 };

@@ -239,10 +239,13 @@ struct IconAndTextTile {
         return static_cast<const SymbolBucket*>(renderData->getBucket(*layer->baseImpl));
     }
 
-    /** Builds the tile with [synchronous] updates and runs the loop until it is complete. */
-    std::unique_ptr<GeoJSONTile> build(bool synchronous, std::shared_ptr<FileSource> fileSource = nullptr) {
+    /** Builds the tile with [synchronous] updates, or on the label lane, and runs the loop until it is complete. */
+    std::unique_ptr<GeoJSONTile> build(bool synchronous,
+                                       std::shared_ptr<FileSource> fileSource = nullptr,
+                                       bool labelLane = false) {
         TileParameters parameters = test.tileParameters;
         parameters.isUpdateSynchronous = synchronous;
+        if (labelLane) parameters.labelLane = Scheduler::GetLabelLane();
         if (fileSource) parameters.fileSource = std::move(fileSource);
         auto tile = std::make_unique<GeoJSONTile>(OverscaledTileID(0, 0, 0), "source", parameters, data);
         tile->setLayers({layerProperties}, parameters.globalState);
@@ -305,3 +308,22 @@ TEST(GeoJSONTile, SynchronousUpdateKeepsTheIconWhenTheGlyphsAreFetched) {
     EXPECT_TRUE(bucket->hasIconData()) << "the layout dropped the icon";
 }
 
+// The same on the label lane: the worker on the lane, its answers through the
+// tile's mailbox, with the glyphs at hand and fetched.
+TEST(GeoJSONTile, ALaneUpdateKeepsTheIconWhenTheGlyphsAreAtHand) {
+    IconAndTextTile t(std::make_shared<GlyphManager>(std::make_unique<EveryGlyphLocal>()));
+    auto tile = t.build(false, nullptr, true);
+    const auto* bucket = t.bucket(*tile);
+    ASSERT_NE(nullptr, bucket) << "no symbol bucket";
+    EXPECT_TRUE(bucket->hasTextData());
+    EXPECT_TRUE(bucket->hasIconData()) << "the layout dropped the icon";
+}
+
+TEST(GeoJSONTile, ALaneUpdateKeepsTheIconWhenTheGlyphsAreFetched) {
+    IconAndTextTile t(fetchedGlyphs());
+    auto tile = t.build(false, glyphFileSource(), true);
+    const auto* bucket = t.bucket(*tile);
+    ASSERT_NE(nullptr, bucket) << "no symbol bucket";
+    EXPECT_TRUE(bucket->hasTextData());
+    EXPECT_TRUE(bucket->hasIconData()) << "the layout dropped the icon";
+}

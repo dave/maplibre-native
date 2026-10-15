@@ -111,6 +111,21 @@ std::optional<GeoJSONOptions> Converter<GeoJSONOptions>::operator()(const Conver
         }
     }
 
+    const auto labelLaneValue = objectMember(value, "labelLane");
+    if (labelLaneValue) {
+        if (toBool(*labelLaneValue)) {
+            options.labelLane = *toBool(*labelLaneValue);
+        } else {
+            error.message = "GeoJSON source labelLane value must be a boolean";
+            return std::nullopt;
+        }
+    }
+
+    if (options.labelLane && options.synchronousUpdate) {
+        error.message = "GeoJSON source labelLane cannot be set with synchronousUpdate";
+        return std::nullopt;
+    }
+
     const auto clusterProperties = objectMember(value, "clusterProperties");
     if (clusterProperties) {
         if (!isObject(*clusterProperties)) {

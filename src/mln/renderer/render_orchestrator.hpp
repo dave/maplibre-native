@@ -173,6 +173,7 @@ public:
 private:
     bool isLoaded() const;
     bool hasTransitions(TimePoint) const;
+    const std::shared_ptr<Scheduler>& usedLabelLane();
 
     RenderSource* getRenderSource(const std::string& id) const;
 
@@ -245,6 +246,9 @@ private:
     RenderLayerReferences layersNeedPlacement;
 
     TaggedScheduler threadPool;
+    // The label lane, once a source uses it; its work for this renderer has
+    // `threadPool`'s tag.
+    std::shared_ptr<Scheduler> labelLane;
 
     std::vector<std::unique_ptr<ChangeRequest>> pendingChanges;
 
