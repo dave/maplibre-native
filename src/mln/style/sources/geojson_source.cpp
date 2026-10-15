@@ -166,10 +166,11 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
             if (urlBody && *urlBody == *res.data) {
                 return;
             }
-            // A second, different body for the URL is a new body: a new
-            // generation, so a loaded check never waits on a body it can no
-            // longer see.
-            const uint64_t generation = urlBody ? nextDataGeneration() : urlGeneration;
+            // A second, different body for the URL is a new body: it lands
+            // with the URL's generation, which the first body already holds,
+            // so landingGeneration gives it a new one, and a loaded check
+            // never waits on a body it can no longer see.
+            const uint64_t generation = urlGeneration;
             urlBody = res.data;
             // Note: This task appears to be safe enough to schedule on the generic background queue.
             // This task does not reference other objects who's lifetimes are coupled with a map.
