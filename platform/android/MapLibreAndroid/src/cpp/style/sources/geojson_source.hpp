@@ -3,6 +3,8 @@
 #include "source.hpp"
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/actor/optional_actor.hpp>
+
+#include <chrono>
 #include "../../geojson/geometry.hpp"
 #include "../../geojson/feature.hpp"
 #include "../../geojson/feature_collection.hpp"
@@ -12,22 +14,30 @@
 namespace mln {
 namespace android {
 
-using GeoJSONDataCallback = std::function<void(std::shared_ptr<style::GeoJSONData>)>;
+/// A converted body, or the error that stopped it: every conversion answers.
+using GeoJSONDataCallback = std::function<void(style::GeoJSONData::ParseResult)>;
 
+/// Converts a source's bodies on its parse scheduler (the label lane for a
+/// `labelLane` source), making data that cuts on the source's slice scheduler.
 class FeatureConverter {
 public:
-    explicit FeatureConverter(Immutable<style::GeoJSONOptions> options_)
+    FeatureConverter(Immutable<style::GeoJSONOptions> options_,
+                     std::shared_ptr<Scheduler> sequencedScheduler_,
+                     std::string sourceID_)
         : options(std::move(options_)),
-          sequencedScheduler(Scheduler::GetSequenced()) {}
-    void convertJson(std::shared_ptr<std::string>, ActorRef<GeoJSONDataCallback>);
+          sequencedScheduler(std::move(sequencedScheduler_)),
+          sourceID(std::move(sourceID_)) {}
+    void convertJson(std::shared_ptr<std::string>, std::chrono::duration<double> queued, ActorRef<GeoJSONDataCallback>);
 
     template <class JNIType>
     void convertObject(std::shared_ptr<jni::Global<jni::Object<JNIType>, jni::EnvAttachingDeleter>>,
+                       std::chrono::duration<double> queued,
                        ActorRef<GeoJSONDataCallback>);
 
 private:
     Immutable<style::GeoJSONOptions> options;
     std::shared_ptr<Scheduler> sequencedScheduler;
+    const std::string sourceID;
 };
 
 struct Update {
@@ -51,12 +61,15 @@ public:
     ~GeoJSONSource();
 
 private:
-    void setGeoJSONString(jni::JNIEnv&, const jni::String&);
-    void setFeatureCollection(jni::JNIEnv&, const jni::Object<geojson::FeatureCollection>&);
-    void setFeature(jni::JNIEnv&, const jni::Object<geojson::Feature>&);
-    void setGeometry(jni::JNIEnv&, const jni::Object<geojson::Geometry>&);
+    // Each setter answers the data generation of the body it sets
+    // (`style::GeoJSONSource`); the map reports it laid out
+    // (`MapView.OnSourceLaidOutListener`).
+    jni::jlong setGeoJSONString(jni::JNIEnv&, const jni::String&);
+    jni::jlong setFeatureCollection(jni::JNIEnv&, const jni::Object<geojson::FeatureCollection>&);
+    jni::jlong setFeature(jni::JNIEnv&, const jni::Object<geojson::Feature>&);
+    jni::jlong setGeometry(jni::JNIEnv&, const jni::Object<geojson::Geometry>&);
 
-    void setURL(jni::JNIEnv&, const jni::String&);
+    jni::jlong setURL(jni::JNIEnv&, const jni::String&);
 
     jni::Local<jni::Array<jni::Object<geojson::Feature>>> querySourceFeatures(jni::JNIEnv&,
                                                                               const jni::Array<jni::Object<>>&);
@@ -78,9 +91,9 @@ private:
     std::unique_ptr<OptionalActor<FeatureConverter>> converter;
 
     template <class JNIType>
-    void setCollectionAsync(jni::JNIEnv&, const jni::Object<JNIType>&);
+    jni::jlong setCollectionAsync(jni::JNIEnv&, const jni::Object<JNIType>&);
 
-    void setAsync(Update::Converter);
+    jni::jlong setAsync(Update::Converter);
 
     template <class JNIType>
     void setCollectionSync(jni::JNIEnv&, const jni::Object<JNIType>&);
