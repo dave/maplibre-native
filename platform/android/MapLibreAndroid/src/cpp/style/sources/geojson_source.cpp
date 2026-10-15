@@ -17,6 +17,9 @@
 #include "../../geojson/feature.hpp"
 #include "../conversion/url_or_tileset.hpp"
 
+#include <mln/util/label_steps.hpp>
+#include <mln/util/monotonic_timer.hpp>
+
 #include <string>
 
 // GeoJSONSource uses a "coalescing" model for high frequency asynchronous data
@@ -28,9 +31,10 @@
 namespace mln {
 namespace android {
 
-// This conversion is expected not to fail because it's used only in contexts where
-// the value was originally a GeoJsonOptions object on the Java side. If it fails
-// to convert, it's a bug in our serialization or Java-side static typing.
+// The value was a GeoJsonOptions object on the Java side, so a value of the
+// wrong type is a bug in our serialization or Java-side static typing. Options
+// that refuse each other (labelLane with synchronousUpdate) also fail here: an
+// IllegalArgumentException to the caller.
 static Immutable<style::GeoJSONOptions> convertGeoJSONOptions(jni::JNIEnv& env, const jni::Object<>& options) {
     using namespace mln::style::conversion;
     if (!options) {
@@ -40,55 +44,69 @@ static Immutable<style::GeoJSONOptions> convertGeoJSONOptions(jni::JNIEnv& env, 
     std::optional<style::GeoJSONOptions> result = convert<style::GeoJSONOptions>(mln::android::Value(env, options),
                                                                                  error);
     if (!result) {
-        throw std::logic_error(error.message);
+        jni::ThrowNew(env, jni::FindClass(env, "java/lang/IllegalArgumentException"), error.message.c_str());
+        throw jni::PendingJavaException();
     }
     return makeMutable<style::GeoJSONOptions>(std::move(*result));
 }
+
+namespace {
+
+// The converter runs on the source's parse scheduler (the label lane for a
+// `labelLane` source) and makes data that cuts on the source's own slicer.
+std::unique_ptr<OptionalActor<FeatureConverter>> makeConverter(style::GeoJSONSource& source) {
+    return std::make_unique<OptionalActor<FeatureConverter>>(source.isUpdateSynchronous(),
+                                                             source.getParseScheduler(),
+                                                             source.impl().getOptions(),
+                                                             source.getSliceScheduler(),
+                                                             source.getID());
+}
+
+std::chrono::duration<double> queuedNow() {
+    return util::LabelSteps::recording() ? util::MonotonicTimer::now() : std::chrono::duration<double>{0};
+}
+
+} // namespace
 
 GeoJSONSource::GeoJSONSource(jni::JNIEnv& env, const jni::String& sourceId, const jni::Object<>& options)
     : Source(env,
              std::make_unique<mln::style::GeoJSONSource>(jni::Make<std::string>(env, sourceId),
                                                          convertGeoJSONOptions(env, options))),
-      converter(
-          std::make_unique<OptionalActor<FeatureConverter>>(source.as<style::GeoJSONSource>()->isUpdateSynchronous(),
-                                                            Scheduler::GetBackground(),
-                                                            source.as<style::GeoJSONSource>()->impl().getOptions())) {}
+      converter(makeConverter(*source.as<style::GeoJSONSource>())) {}
 
 GeoJSONSource::GeoJSONSource(jni::JNIEnv& env, mln::style::Source& coreSource, AndroidRendererFrontend* frontend)
     : Source(env, coreSource, createJavaPeer(env), frontend),
-      converter(
-          std::make_unique<OptionalActor<FeatureConverter>>(source.as<style::GeoJSONSource>()->isUpdateSynchronous(),
-                                                            Scheduler::GetBackground(),
-                                                            source.as<style::GeoJSONSource>()->impl().getOptions())) {}
+      converter(makeConverter(*source.as<style::GeoJSONSource>())) {}
 
 GeoJSONSource::~GeoJSONSource() = default;
 
-void GeoJSONSource::setGeoJSONString(jni::JNIEnv& env, const jni::String& jString) {
+jni::jlong GeoJSONSource::setGeoJSONString(jni::JNIEnv& env, const jni::String& jString) {
     std::shared_ptr<std::string> json = std::make_shared<std::string>(jni::Make<std::string>(env, jString));
 
     OptionalActorRef<FeatureConverter> converterRef = converter->self();
     Update::Converter converterFn = [converterRef, json](ActorRef<GeoJSONDataCallback> _callback) {
-        converterRef.invoke(&FeatureConverter::convertJson, json, _callback);
+        converterRef.invoke(&FeatureConverter::convertJson, json, queuedNow(), _callback);
     };
 
-    setAsync(converterFn);
+    return setAsync(converterFn);
 }
 
-void GeoJSONSource::setFeatureCollection(jni::JNIEnv& env, const jni::Object<geojson::FeatureCollection>& jFeatures) {
-    setCollectionAsync(env, jFeatures);
+jni::jlong GeoJSONSource::setFeatureCollection(jni::JNIEnv& env,
+                                               const jni::Object<geojson::FeatureCollection>& jFeatures) {
+    return setCollectionAsync(env, jFeatures);
 }
 
-void GeoJSONSource::setFeature(jni::JNIEnv& env, const jni::Object<geojson::Feature>& jFeature) {
-    setCollectionAsync(env, jFeature);
+jni::jlong GeoJSONSource::setFeature(jni::JNIEnv& env, const jni::Object<geojson::Feature>& jFeature) {
+    return setCollectionAsync(env, jFeature);
 }
 
-void GeoJSONSource::setGeometry(jni::JNIEnv& env, const jni::Object<geojson::Geometry>& jGeometry) {
-    setCollectionAsync(env, jGeometry);
+jni::jlong GeoJSONSource::setGeometry(jni::JNIEnv& env, const jni::Object<geojson::Geometry>& jGeometry) {
+    return setCollectionAsync(env, jGeometry);
 }
 
-void GeoJSONSource::setURL(jni::JNIEnv& env, const jni::String& url) {
+jni::jlong GeoJSONSource::setURL(jni::JNIEnv& env, const jni::String& url) {
     // Update the core source
-    source.as<style::GeoJSONSource>()->setURL(jni::Make<std::string>(env, url));
+    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->setURL(jni::Make<std::string>(env, url)));
 }
 
 jni::Local<jni::String> GeoJSONSource::getURL(jni::JNIEnv& env) {
@@ -171,28 +189,36 @@ jni::Local<jni::Object<Source>> GeoJSONSource::createJavaPeer(jni::JNIEnv& env) 
 }
 
 template <class JNIType>
-void GeoJSONSource::setCollectionAsync(jni::JNIEnv& env, const jni::Object<JNIType>& jObject) {
+jni::jlong GeoJSONSource::setCollectionAsync(jni::JNIEnv& env, const jni::Object<JNIType>& jObject) {
     auto global = jni::NewGlobal<jni::EnvAttachingDeleter>(env, jObject);
     auto object = std::make_shared<decltype(global)>(std::move(global));
 
     OptionalActorRef<FeatureConverter> converterRef = converter->self();
     Update::Converter converterFn = [converterRef, object](ActorRef<GeoJSONDataCallback> _callback) {
-        converterRef.invoke(&FeatureConverter::convertObject<JNIType>, object, _callback);
+        converterRef.invoke(&FeatureConverter::convertObject<JNIType>, object, queuedNow(), _callback);
     };
 
-    setAsync(converterFn);
+    return setAsync(converterFn);
 }
 
-void GeoJSONSource::setAsync(Update::Converter converterFn) {
+jni::jlong GeoJSONSource::setAsync(Update::Converter converterFn) {
+    // The generation is taken now, in call order; a body coalesced away before
+    // it converts never lands, so its generation is never reported.
+    const uint64_t generation = source.as<mln::style::GeoJSONSource>()->nextDataGeneration();
     awaitingUpdate = std::make_unique<Update>(
         std::move(converterFn),
         std::make_unique<Actor<GeoJSONDataCallback>>(
-            *Scheduler::GetCurrent(), [this](std::shared_ptr<style::GeoJSONData> geoJSONData) {
+            *Scheduler::GetCurrent(), [this, generation](style::GeoJSONData::ParseResult result) {
                 // conversion from Java features to core ones finished
                 android::UniqueEnv _env = android::AttachEnv();
 
-                // Update the core source
-                source.as<mln::style::GeoJSONSource>()->setGeoJSONData(std::move(geoJSONData));
+                // Update the core source, or report why the body could not be made.
+                auto& core = *source.as<mln::style::GeoJSONSource>();
+                if (auto* error = std::get_if<std::string>(&result)) {
+                    core.setGeoJSONError(generation, *error);
+                } else {
+                    core.setGeoJSONData(std::get<std::shared_ptr<style::GeoJSONData>>(std::move(result)), generation);
+                }
 
                 // if there is an awaiting update, execute it, otherwise, release resources
                 if (awaitingUpdate) {
@@ -205,20 +231,26 @@ void GeoJSONSource::setAsync(Update::Converter converterFn) {
 
     // If another update is running, wait
     if (update) {
-        return;
+        return static_cast<jni::jlong>(generation);
     }
 
     // no updates are being processed, execute this one
     update = std::move(awaitingUpdate);
     update->converterFn(update->callback->self());
+    return static_cast<jni::jlong>(generation);
 }
 
 jboolean GeoJSONSource::isUpdateSynchronous(jni::JNIEnv&) {
     return source.as<style::GeoJSONSource>()->isUpdateSynchronous();
 }
 
-void GeoJSONSource::setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean newOverride) {
-    source.as<style::GeoJSONSource>()->setOverrideSynchronousUpdate(newOverride);
+void GeoJSONSource::setOverrideSynchronousUpdate(jni::JNIEnv& env, jni::jboolean newOverride) {
+    try {
+        source.as<style::GeoJSONSource>()->setOverrideSynchronousUpdate(newOverride);
+    } catch (const std::logic_error& refused) {
+        // A label lane source refuses a synchronous override.
+        jni::ThrowNew(env, jni::FindClass(env, "java/lang/IllegalStateException"), refused.what());
+    }
 }
 
 void GeoJSONSource::registerNative(jni::JNIEnv& env) {
@@ -249,33 +281,31 @@ void GeoJSONSource::registerNative(jni::JNIEnv& env) {
         METHOD(&GeoJSONSource::setOverrideSynchronousUpdate, "nativeSetOverrideSynchronousUpdate"));
 }
 
-void FeatureConverter::convertJson(std::shared_ptr<std::string> json, ActorRef<GeoJSONDataCallback> callback) {
-    using namespace mln::style::conversion;
-
-    android::UniqueEnv _env = android::AttachEnv();
-    // Convert the jni object
-    Error error;
-    std::optional<GeoJSON> converted = parseGeoJSON(*json, error);
-    if (!converted) {
-        mln::Log::Error(mln::Event::JNI, "Error setting geo json: " + error.message);
-        return;
-    }
-
+void FeatureConverter::convertJson(std::shared_ptr<std::string> json,
+                                   std::chrono::duration<double> queued,
+                                   ActorRef<GeoJSONDataCallback> callback) {
+    const util::LabelSteps::Scope step(sourceID, "convert", false, queued);
+    // A body that does not parse answers its error: the update chain goes on,
+    // and the source reports it. It used to log and never answer, which held
+    // every later body of the source for ever.
     callback.invoke(&GeoJSONDataCallback::operator(),
-                    style::GeoJSONData::create(*converted, sequencedScheduler, options));
+                    style::GeoJSONData::parse(*json, sequencedScheduler, options, sourceID));
 }
 
 template <class JNIType>
 void FeatureConverter::convertObject(
     std::shared_ptr<jni::Global<jni::Object<JNIType>, jni::EnvAttachingDeleter>> jObject,
+    std::chrono::duration<double> queued,
     ActorRef<GeoJSONDataCallback> callback) {
     using namespace mln::android::geojson;
 
+    const util::LabelSteps::Scope step(sourceID, "convert", false, queued);
     android::UniqueEnv _env = android::AttachEnv();
     // Convert the jni object
     auto geometry = JNIType::convert(*_env, *jObject);
-    callback.invoke(&GeoJSONDataCallback::operator(),
-                    style::GeoJSONData::create(geometry, sequencedScheduler, options));
+    callback.invoke(
+        &GeoJSONDataCallback::operator(),
+        style::GeoJSONData::ParseResult(style::GeoJSONData::create(geometry, sequencedScheduler, options, sourceID)));
 }
 
 Update::Update(Converter _converterFn, std::unique_ptr<Actor<GeoJSONDataCallback>> _callback)
