@@ -234,14 +234,15 @@ class GeoJsonSource : Source {
      * In the case of asynchronous updates, the data won't be immediately visible or available to query when this method returns.
      *
      * @param feature the GeoJSON [Feature] to set
+     * @return the body's data generation, as [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it;
+     * null for a detached source, which sets nothing
      */
-
-    fun setGeoJson(feature: Feature?) {
+    fun setGeoJson(feature: Feature?): Long? {
         if (detached) {
-            return
+            return null
         }
         checkThread()
-        nativeSetFeature(feature)
+        return nativeSetFeature(feature)
     }
 
     /**
@@ -250,14 +251,15 @@ class GeoJsonSource : Source {
      * In the case of asynchronous updates, the data won't be immediately visible or available to query when this method returns.
      *
      * @param geometry the GeoJSON [Geometry] to set
+     * @return the body's data generation, as [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it;
+     * null for a detached source, which sets nothing
      */
-
-    fun setGeoJson(geometry: Geometry?) {
+    fun setGeoJson(geometry: Geometry?): Long? {
         if (detached) {
-            return
+            return null
         }
         checkThread()
-        nativeSetGeometry(geometry)
+        return nativeSetGeometry(geometry)
     }
 
     /**
@@ -266,10 +268,12 @@ class GeoJsonSource : Source {
      * In the case of asynchronous updates, the data won't be immediately visible or available to query when this method returns.
      *
      * @param featureCollection the GeoJSON FeatureCollection
+     * @return the body's data generation, as [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it;
+     * null for a detached source, which sets nothing
      */
-    fun setGeoJson(featureCollection: FeatureCollection?) {
+    fun setGeoJson(featureCollection: FeatureCollection?): Long? {
         if (detached) {
-            return
+            return null
         }
         checkThread()
         var featureCollection = featureCollection
@@ -278,7 +282,7 @@ class GeoJsonSource : Source {
             val featuresCopy: List<Feature> = ArrayList(features)
             featureCollection = FeatureCollection.fromFeatures(featuresCopy)
         }
-        nativeSetFeatureCollection(featureCollection)
+        return nativeSetFeatureCollection(featureCollection)
     }
 
     /**
@@ -286,14 +290,18 @@ class GeoJsonSource : Source {
      * The update is performed synchronously or asynchronously, based on the source synchronous update flag.
      * In the case of asynchronous updates, the data won't be immediately visible or available to query when this method returns.
      *
+     * A body that does not parse is reported as a source error; later bodies still land.
+     *
      * @param json the raw GeoJson FeatureCollection string
+     * @return the body's data generation, as [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it;
+     * null for a detached source, which sets nothing
      */
-    fun setGeoJson(json: String) {
+    fun setGeoJson(json: String): Long? {
         if (detached) {
-            return
+            return null
         }
         checkThread()
-        nativeSetGeoJsonString(json)
+        return nativeSetGeoJsonString(json)
     }
 
     /**
@@ -331,8 +339,8 @@ class GeoJsonSource : Source {
      *
      * @param uri the GeoJSON FeatureCollection uri
      */
-    fun setUri(uri: URI) {
-        setUri(uri.toString())
+    fun setUri(uri: URI): Long {
+        return setUri(uri.toString())
     }
 
     /**
@@ -358,10 +366,12 @@ class GeoJsonSource : Source {
      *
      *
      * @param uri the GeoJSON FeatureCollection uri
+     * @return the data generation of the body at [uri], once it has loaded, as
+     * [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it
      */
-    fun setUri(uri: String?) {
+    fun setUri(uri: String?): Long {
         checkThread()
-        nativeSetUrl(uri)
+        return nativeSetUrl(uri)
     }
 
     private fun setUrlInternal(url: String?) {
@@ -531,22 +541,22 @@ class GeoJsonSource : Source {
     protected external fun initialize(layerId: String?, options: Any?)
 
     @Keep
-    protected external fun nativeSetUrl(url: String?)
+    protected external fun nativeSetUrl(url: String?): Long
 
     @Keep
     protected external fun nativeGetUrl(): String?
 
     @Keep
-    private external fun nativeSetGeoJsonString(geoJson: String)
+    private external fun nativeSetGeoJsonString(geoJson: String): Long
 
     @Keep
-    private external fun nativeSetFeatureCollection(geoJson: FeatureCollection?)
+    private external fun nativeSetFeatureCollection(geoJson: FeatureCollection?): Long
 
     @Keep
-    private external fun nativeSetFeature(feature: Feature?)
+    private external fun nativeSetFeature(feature: Feature?): Long
 
     @Keep
-    private external fun nativeSetGeometry(geometry: Geometry?)
+    private external fun nativeSetGeometry(geometry: Geometry?): Long
 
     @Keep
     private external fun querySourceFeatures(filter: Array<Any>?): Array<Feature>
@@ -566,6 +576,7 @@ class GeoJsonSource : Source {
      * but can be applied to existing sources loaded from a style JSON.
      *
      * @param override whether to force synchronous updates
+     * @throws IllegalStateException for true on a source made with [GeoJsonOptions.withLabelLane]
      */
     fun setOverrideSynchronousUpdate(override: Boolean) {
         checkThread()

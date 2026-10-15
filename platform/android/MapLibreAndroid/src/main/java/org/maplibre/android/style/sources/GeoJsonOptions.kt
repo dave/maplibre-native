@@ -142,4 +142,19 @@ class GeoJsonOptions : HashMap<String?, Any?>() {
         this["synchronousUpdate"] = value
         return this
     }
+
+    /**
+     * Set a flag defining whether the source's off-thread work runs on the label lane: a
+     * worker thread of its own, not the pool shared with the basemap tiles. Its body's
+     * parse, its tiles' cuts and its tiles' parse and layout run there, so they never wait
+     * behind basemap work. The source's constructor throws an IllegalArgumentException if
+     * this is set with [withSynchronousUpdate], and a lane source's
+     * [GeoJsonSource.setOverrideSynchronousUpdate] throws an IllegalStateException for true.
+     *
+     * @param value whether the source uses the label lane. Defaults to false.
+     */
+    fun withLabelLane(value: Boolean): GeoJsonOptions {
+        this["labelLane"] = value
+        return this
+    }
 }

@@ -52,6 +52,8 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     = new CopyOnWriteArrayList<>();
   private final List<MapView.OnTileActionListener> onTileActionList
     = new CopyOnWriteArrayList<>();
+  private final List<MapView.OnSourceLaidOutListener> onSourceLaidOutList
+    = new CopyOnWriteArrayList<>();
   private final List<MapView.OnSpriteLoadedListener> onSpriteLoadedList
     = new CopyOnWriteArrayList<>();
   private final List<MapView.OnSpriteErrorListener> onSpriteErrorList
@@ -387,6 +389,20 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
   }
 
   @Override
+  public void onSourceLaidOut(String sourceId, long generation) {
+    try {
+      if (!onSourceLaidOutList.isEmpty()) {
+        for (MapView.OnSourceLaidOutListener listener : onSourceLaidOutList) {
+          listener.onSourceLaidOut(sourceId, generation);
+        }
+      }
+    } catch (Throwable err) {
+      Logger.e(TAG, "Exception in onSourceLaidOut", err);
+      throw err;
+    }
+  }
+
+  @Override
   public void onSpriteLoaded(String id, String url) {
     try {
       if (!onSpriteLoadedList.isEmpty()) {
@@ -609,6 +625,10 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onTileActionList.add(callback);
   }
 
+  public void addOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+    onSourceLaidOutList.add(callback);
+  }
+
   public void addOnSpriteLoadedListener(MapView.OnSpriteLoadedListener callback) {
     onSpriteLoadedList.add(callback);
   }
@@ -657,6 +677,10 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onTileActionList.remove(callback);
   }
 
+  public void removeOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+    onSourceLaidOutList.remove(callback);
+  }
+
   public void removeOnSpriteLoadedListener(MapView.OnSpriteLoadedListener callback) {
     onSpriteLoadedList.remove(callback);
   }
@@ -700,6 +724,7 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onGlyphsErrorList.clear();
     onGlyphsRequestedList.clear();
     onTileActionList.clear();
+    onSourceLaidOutList.clear();
     onSpriteLoadedList.clear();
     onSpriteErrorList.clear();
     onSpriteRequestedList.clear();

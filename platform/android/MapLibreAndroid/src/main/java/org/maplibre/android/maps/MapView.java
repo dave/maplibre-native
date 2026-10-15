@@ -1046,6 +1046,25 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
   }
 
   /**
+   * Set a callback that's invoked when every tile in view of a GeoJSON source is laid out
+   * with one body.
+   *
+   * @param callback The callback that's invoked
+   */
+  public void addOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+    mapChangeReceiver.addOnSourceLaidOutListener(callback);
+  }
+
+  /**
+   * Removes a callback set with {@link #addOnSourceLaidOutListener(OnSourceLaidOutListener)}.
+   *
+   * @param callback The callback to remove
+   */
+  public void removeOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+    mapChangeReceiver.removeOnSourceLaidOutListener(callback);
+  }
+
+  /**
    * Set a callback that's invoked after a sprite is loaded.
    *
    * @param callback The callback that's invoked after a sprite is loaded
@@ -1498,6 +1517,25 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
      * @param sourceID of the tile.
      */
     void onTileAction(TileOperation op, int x, int y, int z, int wrap, int overscaledZ, String sourceID);
+  }
+
+  /**
+   * Interface definition for a callback to be invoked when every tile in view of a GeoJSON
+   * source is laid out with one body.
+   * <p>
+   * {@link MapView#addOnSourceLaidOutListener(OnSourceLaidOutListener)}
+   * </p>
+   */
+  public interface OnSourceLaidOutListener {
+    /**
+     * Called once for each body, after the last tile in view is laid out with it, and never for
+     * a body older than the source holds. A body coalesced away before it was made is never
+     * reported.
+     *
+     * @param sourceId   the GeoJSON source
+     * @param generation the body's data generation: what the source's setter answered
+     */
+    void onSourceLaidOut(String sourceId, long generation);
   }
 
   /**

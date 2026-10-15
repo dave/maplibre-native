@@ -92,6 +92,10 @@ public:
         delegate.invoke(&RendererObserver::onTileAction, op, id, sourceID);
     }
 
+    void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
+        delegate.invoke(&RendererObserver::onSourceLaidOut, sourceID, generation);
+    }
+
     void onRenderError(std::exception_ptr err) override { delegate.invoke(&RendererObserver::onRenderError, err); }
 
 private:

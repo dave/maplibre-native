@@ -118,6 +118,8 @@ add_library(maplibre SHARED
             ${PROJECT_SOURCE_DIR}/map_renderer.hpp
             ${PROJECT_SOURCE_DIR}/map_renderer_runnable.cpp
             ${PROJECT_SOURCE_DIR}/map_renderer_runnable.hpp
+            ${PROJECT_SOURCE_DIR}/label_steps.cpp
+            ${PROJECT_SOURCE_DIR}/label_steps.hpp
             ${PROJECT_SOURCE_DIR}/native_map_view.cpp
             ${PROJECT_SOURCE_DIR}/native_map_view.hpp
             ${PROJECT_SOURCE_DIR}/native_map_options.cpp
