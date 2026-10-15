@@ -151,7 +151,6 @@ apple_xcframework(
     infoplists = ["info_plist"],
     ios = {
         "simulator": [
-            "x86_64",
             "arm64",
         ],
         "device": ["arm64"],
