@@ -240,6 +240,10 @@ jni::jlong GeoJSONSource::setAsync(Update::Converter converterFn) {
     return static_cast<jni::jlong>(generation);
 }
 
+jni::jlong GeoJSONSource::getDataGeneration(jni::JNIEnv&) {
+    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getDataGeneration());
+}
+
 jboolean GeoJSONSource::isUpdateSynchronous(jni::JNIEnv&) {
     return source.as<style::GeoJSONSource>()->isUpdateSynchronous();
 }
@@ -278,6 +282,7 @@ void GeoJSONSource::registerNative(jni::JNIEnv& env) {
         METHOD(&GeoJSONSource::getClusterLeaves, "nativeGetClusterLeaves"),
         METHOD(&GeoJSONSource::getClusterExpansionZoom, "nativeGetClusterExpansionZoom"),
         METHOD(&GeoJSONSource::isUpdateSynchronous, "nativeIsUpdateSynchronous"),
+        METHOD(&GeoJSONSource::getDataGeneration, "nativeGetDataGeneration"),
         METHOD(&GeoJSONSource::setOverrideSynchronousUpdate, "nativeSetOverrideSynchronousUpdate"));
 }
 

@@ -583,6 +583,22 @@ class GeoJsonSource : Source {
         nativeSetOverrideSynchronousUpdate(override)
     }
 
+    /**
+     * The data generation the source holds now: of its body, or of a later change of a
+     * layer's filter or layout property on this source, which moves it at once. Read it right
+     * after such a change: [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports
+     * it once every tile in view is laid out with the new layers. A body still converting is
+     * not counted until it lands; [setGeoJson] answers its generation.
+     */
+    val dataGeneration: Long
+        get() {
+            checkThread()
+            return nativeGetDataGeneration()
+        }
+
+    @Keep
+    private external fun nativeGetDataGeneration(): Long
+
     @Keep
     private external fun nativeIsUpdateSynchronous(): Boolean
 

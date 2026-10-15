@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.maplibre.android.maps.LabelSteps;
 import org.maplibre.android.maps.MapView;
+import org.maplibre.android.style.expressions.Expression;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.sources.GeoJsonOptions;
 import org.maplibre.android.style.sources.GeoJsonSource;
@@ -169,6 +170,45 @@ public class GeoJsonLabelLaneTests extends EspressoTest {
         LabelSteps.setRecording(false);
         LabelSteps.take();
       }
+    });
+  }
+
+  @Test
+  public void aLaneSourceIsRefusedWithClusters() {
+    validateTestSetup();
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      try {
+        new GeoJsonSource("both", new GeoJsonOptions().withLabelLane(true).withCluster(true));
+        fail("a source with labelLane and cluster was made");
+      } catch (IllegalArgumentException expected) {
+        assertTrue(expected.getMessage(), expected.getMessage().contains("cluster"));
+      }
+    });
+  }
+
+  @Test
+  public void aFilterChangeMovesTheGenerationAndIsReportedLaidOut() {
+    validateTestSetup();
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      List<Long> reported = new ArrayList<>();
+      MapView.OnSourceLaidOutListener listener = (sourceId, generation) -> {
+        if (sourceId.equals("lane")) {
+          reported.add(generation);
+        }
+      };
+      mapView.addOnSourceLaidOutListener(listener);
+      GeoJsonSource source = new GeoJsonSource("lane", new GeoJsonOptions().withLabelLane(true));
+      maplibreMap.getStyle().addSource(source);
+      CircleLayer layer = new CircleLayer("lane-circles", source.getId());
+      maplibreMap.getStyle().addLayer(layer);
+      Long body = source.setGeoJson(POINTS);
+      waitFor(uiController, () -> reported.contains(body), "the body laid out");
+
+      layer.setFilter(Expression.has("missing"));
+      long filtered = source.getDataGeneration();
+      assertTrue("the filter change did not move the generation", filtered > body);
+      waitFor(uiController, () -> reported.contains(filtered), "the filter change laid out");
+      mapView.removeOnSourceLaidOutListener(listener);
     });
   }
 }

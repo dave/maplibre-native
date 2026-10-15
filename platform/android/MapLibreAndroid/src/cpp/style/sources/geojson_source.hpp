@@ -99,6 +99,7 @@ private:
     void setCollectionSync(jni::JNIEnv&, const jni::Object<JNIType>&);
 
     jboolean isUpdateSynchronous(jni::JNIEnv&);
+    jni::jlong getDataGeneration(jni::JNIEnv&);
     void setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean);
 
 }; // class GeoJSONSource
