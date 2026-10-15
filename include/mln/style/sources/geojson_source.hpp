@@ -89,10 +89,14 @@ public:
     // and so does each change of a layer's filter or layout property on the
     // source (`markLayersChanged`). The renderer reports "every tile in view
     // is laid out at generation N" (`RendererObserver::onSourceLaidOut`).
-    // Each setter answers the generation of the body it sets; a body made off
-    // the calling thread that lands after a later generation was given out
-    // takes a new one. `getDataGeneration` is the source's generation now.
-    // Wait for the latest generation read, or a later one.
+    // Each setter answers the generation it gave out; `getLatestGeneration`
+    // is the latest one given out. Wait for the latest generation read, or a
+    // later one: a report of N means the tiles hold every body and layer
+    // change given out up to N. So while a body is pending (asked for, not
+    // landed), a layer change takes a generation but the source reports
+    // nothing as new until the body lands, and the body then takes the
+    // latest generation. An older body that lands while a newer one is
+    // pending keeps its own, lower, generation.
 
     /// The generation for a URL body: it is that body's once it has loaded.
     /// A second, different answer for the URL takes a new generation; the
@@ -105,10 +109,14 @@ public:
     void setGeoJSONData(std::shared_ptr<GeoJSONData>, uint64_t generation);
     /// Takes the next data generation for a body that is still being made.
     uint64_t nextDataGeneration();
-    /// The generation the source holds now: of its body, or of a later layer
-    /// change on it; 0 before the first. A body still being made off the
-    /// calling thread is not counted until it lands.
+    /// The generation the source holds now, the one its tiles will be
+    /// reported laid out at; 0 before the first. A body still pending is not
+    /// counted until it lands.
     uint64_t getDataGeneration() const;
+    /// The latest generation given out: by a setter, `nextDataGeneration`
+    /// or a layer change. The one to wait for after any setter, including
+    /// one that answers nothing (a platform's URL or layer property).
+    uint64_t getLatestGeneration() const;
     /// The body of `generation` could not be made: reported as a source error.
     void setGeoJSONError(uint64_t generation, const std::string& message);
     /// A layer on this source changed its filter or a layout property: the
@@ -149,6 +157,8 @@ private:
     // The URL's last body, to tell a second, different answer from the same one again.
     std::shared_ptr<const std::string> urlBody;
     uint64_t dataGeneration = 0;
+    // The newest body asked for (`nextDataGeneration`) and not landed yet; 0 for none.
+    uint64_t pendingBody = 0;
     std::unique_ptr<AsyncRequest> req;
     std::atomic<uint64_t> requestGeneration{0};
     std::shared_ptr<Scheduler> parseScheduler;

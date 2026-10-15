@@ -730,8 +730,82 @@ TEST(LabelLane, ABodyThatLandsAfterALayerChangeTakesANewGeneration) {
     const uint64_t asked = source.nextDataGeneration();
     const uint64_t layers = source.markLayersChanged();
     ASSERT_GT(layers, asked);
+    EXPECT_EQ(layers, source.getLatestGeneration());
+    // Pending: the source holds no generation as new as the body's yet.
+    EXPECT_LT(source.getDataGeneration(), asked);
     source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), asked);
-    EXPECT_GT(source.getDataGeneration(), layers);
+    // The body covers the layer change given out while it was pending.
+    EXPECT_EQ(layers, source.getDataGeneration());
+}
+
+// ios-names' case: a layer change while a body is pending (a URL load, a
+// body converting) is not reported as that body: the tiles hold the old one.
+// The old body with the new layers reports nothing; the body, when it lands,
+// is reported at the layer change's generation.
+TEST(LabelLane, ALayerChangeWhileABodyIsPendingIsNotReportedAsThatBody) {
+    TileWorld world;
+    Log::setObserver(std::make_unique<Log::NullObserver>());
+    Transform transform;
+    transform.resize({512, 512});
+    transform.jumpTo(CameraOptions().withCenter(LatLng()).withZoom(1.5));
+    world.transformState = transform.getState();
+
+    GeoJSONSource source("source", laneOptions());
+    source.setGeoJSON(points());
+    RenderGeoJSONSource renderSource{staticImmutableCast<GeoJSONSource::Impl>(source.baseImpl),
+                                     world.parameters(true).threadPool};
+    std::vector<Immutable<LayerProperties>> layers{world.layerProperties};
+    std::vector<uint64_t> reported;
+    const auto update = [&](bool relayout) {
+        renderSource.update(source.baseImpl, layers, true, relayout, world.parameters(true));
+        const bool allComplete = renderSource.isLoaded();
+        if (auto generation = renderSource.takeLaidOutGeneration()) {
+            reported.push_back(*generation);
+            EXPECT_TRUE(allComplete) << "reported with a tile still being laid out";
+            return true;
+        }
+        return false;
+    };
+    ASSERT_TRUE(runUntil(world.loop, [&] { return update(false); }, "the first body"));
+
+    const uint64_t pending = source.nextDataGeneration();
+    CircleLayer layer("circles", "source");
+    layer.setFilter(*filterFrom(R"(["has", "a"])"));
+    layers = {makeMutable<CircleLayerProperties>(staticImmutableCast<CircleLayer::Impl>(layer.baseImpl))};
+    const uint64_t layerChange = source.markLayersChanged();
+    ASSERT_GT(layerChange, pending);
+    EXPECT_EQ(layerChange, source.getLatestGeneration());
+
+    // The old body relaid out with the new layers: wait for every tile, then
+    // check nothing was reported.
+    update(true);
+    ASSERT_TRUE(runUntil(
+        world.loop,
+        [&] {
+            update(false);
+            return renderSource.isLoaded();
+        },
+        "the old body with the new layers"));
+    update(false);
+    EXPECT_EQ(std::vector<uint64_t>{1}, reported) << "a generation was reported with the old body";
+
+    source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), pending);
+    ASSERT_TRUE(runUntil(world.loop, [&] { return update(false); }, "the pending body"));
+    EXPECT_EQ((std::vector<uint64_t>{1, layerChange}), reported);
+}
+
+// An older body that lands while a newer one is pending keeps its own,
+// lower, generation, so a wait for the newer one does not take it.
+TEST(LabelLane, AnOlderBodyLandingKeepsAGenerationBelowThePendingOne) {
+    util::RunLoop loop;
+    GeoJSONSource source("source", laneOptions());
+    const uint64_t older = source.nextDataGeneration();
+    const uint64_t newer = source.nextDataGeneration();
+    source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), older);
+    EXPECT_EQ(older, source.getDataGeneration());
+    EXPECT_LT(source.getDataGeneration(), newer);
+    source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), newer);
+    EXPECT_EQ(newer, source.getDataGeneration());
 }
 
 // The laid-out signal for a layer change: reported once, after the last tile
