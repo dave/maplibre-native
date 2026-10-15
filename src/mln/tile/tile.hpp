@@ -82,6 +82,13 @@ public:
     virtual void setShowCollisionBoxes(const bool) {}
     virtual void setLayers(const std::vector<Immutable<style::LayerProperties>>&,
                            std::shared_ptr<const GlobalStateMap>) {}
+    /// As `setLayers`, and lays the tile out with the new layers before it
+    /// returns where the tile can (a label lane tile with the glyphs and
+    /// images at hand), for a layer change to draw in the frame that takes it.
+    virtual void setLayersInline(const std::vector<Immutable<style::LayerProperties>>& layers,
+                                 std::shared_ptr<const GlobalStateMap> globalState) {
+        setLayers(layers, std::move(globalState));
+    }
     virtual void setMask(TileMask&&) {}
 
     virtual void queryRenderedFeatures(std::unordered_map<std::string, std::vector<Feature>>& result,

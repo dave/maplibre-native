@@ -56,6 +56,10 @@ public:
                    std::shared_ptr<const GlobalStateMap> globalState_,
                    Immutable<std::set<std::string>> availableImages,
                    uint64_t correlationID);
+    /// Takes new layers without laying anything out (see the .cpp).
+    void setLayersQuietly(std::vector<Immutable<style::LayerProperties>>,
+                          std::shared_ptr<const GlobalStateMap> globalState_,
+                          Immutable<std::set<std::string>> availableImages);
     void setData(std::unique_ptr<const GeometryTileData>,
                  Immutable<std::set<std::string>> availableImages,
                  uint64_t correlationID);

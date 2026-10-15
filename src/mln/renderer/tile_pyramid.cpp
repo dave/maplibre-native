@@ -159,13 +159,21 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
     std::set<OverscaledTileID> retain;
 
     auto retainTileFn = [&](Tile& tile, TileNecessity necessity) -> void {
-        if (retain.emplace(tile.id).second) {
+        const bool first = retain.emplace(tile.id).second;
+        if (first) {
             tile.setUpdateParameters({.minimumUpdateInterval = minimumUpdateInterval, .isVolatile = isVolatile});
             tile.setNecessity(necessity);
         }
 
         if (needsRelayout) {
-            tile.setLayers(layers, parameters.globalState);
+            // Inline once a tile: a tile can be retained twice in an update,
+            // and a second setLayers would leave the inline layout behind
+            // the tile's newest correlation.
+            if (parameters.relayoutInline) {
+                if (first) tile.setLayersInline(layers, parameters.globalState);
+            } else {
+                tile.setLayers(layers, parameters.globalState);
+            }
         }
     };
     auto getTileFn = [&](const OverscaledTileID& tileID) -> Tile* {
