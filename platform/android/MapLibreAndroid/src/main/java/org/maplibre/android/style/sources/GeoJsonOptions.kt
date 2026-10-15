@@ -148,7 +148,8 @@ class GeoJsonOptions : HashMap<String?, Any?>() {
      * worker thread of its own, not the pool shared with the basemap tiles. Its body's
      * parse, its tiles' cuts and its tiles' parse and layout run there, so they never wait
      * behind basemap work. The source's constructor throws an IllegalArgumentException if
-     * this is set with [withSynchronousUpdate], and a lane source's
+     * this is set with [withSynchronousUpdate] or [withCluster] (clusters cut their tiles on
+     * the render thread), and a lane source's
      * [GeoJsonSource.setOverrideSynchronousUpdate] throws an IllegalStateException for true.
      *
      * @param value whether the source uses the label lane. Defaults to false.
