@@ -42,6 +42,7 @@ LabelSteps::Scope::Scope(const std::string& sourceID, const char* name, bool hop
     step.sourceID = sourceID;
     step.name = name;
     step.thread = platform::getCurrentThreadName();
+    step.threadID = std::this_thread::get_id();
     step.hop = hop;
     step.queued = queued;
     step.start = MonotonicTimer::now();
