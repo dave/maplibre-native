@@ -17,6 +17,8 @@
 #include <mln/map/map_options.hpp>
 #include <mln/map/transform.hpp>
 #include <mln/renderer/image_manager.hpp>
+#include <mln/renderer/query.hpp>
+#include <mln/renderer/renderer.hpp>
 #include <mln/renderer/sources/render_geojson_source.hpp>
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/style/conversion/geojson.hpp>
@@ -531,7 +533,7 @@ public:
         fileSource,
         MapOptions().withMapMode(MapMode::Continuous).withSize(frontend->getSize()).withPixelRatio(1.0));
 
-    LaneMap() {
+    explicit LaneMap(const std::string& style = styleJSON(true)) {
         fileSource->sourceResponse = [](const Resource&) {
             Response response;
             response.data = std::make_shared<std::string>(kPoints);
@@ -542,7 +544,7 @@ public:
             response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
             return response;
         };
-        map->getStyle().loadJSON(styleJSON(true));
+        map->getStyle().loadJSON(style);
     }
 
     GeoJSONSource& labels() { return *map->getStyle().getSource("labels")->as<GeoJSONSource>(); }
@@ -882,4 +884,159 @@ TEST(LabelLane, AFilterChangeOnTheMapIsReportedLaidOut) {
     ASSERT_TRUE(
         runUntil(test.loop, [&] { return test.observer.has("labels", generation); }, "the filter change laid out"));
     EXPECT_EQ(1, std::ranges::count(test.observer.laidOut, std::make_pair(std::string("labels"), generation)));
+}
+
+namespace {
+
+// Circles on the lane source: a rendered query reads the tiles' layout (their
+// feature index), with no symbol placement in between.
+std::string circleStyleJSON() {
+    return R"({"version": 8, "center": [0, 0], "zoom": 1.5,
+        "sources": {"labels": {"type": "geojson", "data": "http://bodies/labels.json", "labelLane": true}},
+        "layers": [{"id": "circles", "type": "circle", "source": "labels", "paint": {"circle-radius": 8}}]})";
+}
+
+/** The circles the last frame drew. Read before the loop turns again, it is that frame's layout. */
+std::size_t drawnCircles(LaneMap& test) {
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"circles"};
+    return test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options).size();
+}
+
+/** Runs the loop until one more frame is drawn. */
+bool runOneFrame(LaneMap& test, const std::string& what) {
+    const int before = test.observer.frames;
+    return runUntil(test.loop, [&] { return test.observer.frames > before; }, what);
+}
+
+/** Holds both lane threads in tasks of their own until released; confirms both are held. */
+class LaneBlock {
+public:
+    static constexpr int kThreads = 2;
+    LaneBlock() {
+        for (int i = 0; i < kThreads; ++i) {
+            Scheduler::GetLabelLane()->schedule([this] {
+                {
+                    std::scoped_lock lock(mutex);
+                    ++held;
+                    cv.notify_all();
+                }
+                gate.wait();
+            });
+        }
+        std::unique_lock lock(mutex);
+        allHeld = cv.wait_for(lock, kBound, [&] { return held == kThreads; });
+    }
+    ~LaneBlock() { release(); }
+    void release() { gate.open(); }
+    bool allHeld = false;
+
+private:
+    Gate gate;
+    std::mutex mutex;
+    std::condition_variable cv;
+    int held = 0;
+};
+
+} // namespace
+
+// A filter change on a lane source is drawn in the very frame that takes it,
+// as on a synchronous source: the app's synchronous overlay, set in the same
+// turn, lands in that frame too.
+TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrame) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test)) << "the body's four points are not drawn";
+
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "keep"])"));
+    ASSERT_TRUE(runOneFrame(test, "the frame after the filter"));
+    EXPECT_EQ(0u, drawnCircles(test)) << "the filter was not drawn in the frame that took it";
+}
+
+// The same with a body held on the lane (both lane threads held): the
+// render thread lays the filter out with the body the tiles hold, without
+// waiting for the lane, and the held body lands later, at the generation
+// that covers the filter too.
+TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrameWithABodyHeldOnTheLane) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    LaneBlock block;
+    ASSERT_TRUE(block.allHeld) << "the lane's two threads were not both held";
+    // A new body, parsed on the lane as the Android binding does: held.
+    auto& source = test.labels();
+    const uint64_t body = source.nextDataGeneration();
+    const std::string kept = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "keep"}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]})";
+    source.getParseScheduler()->scheduleAndReplyValue(
+        util::SimpleIdentity::Empty,
+        [kept, slicer = source.getSliceScheduler(), options = source.impl().getOptions()] {
+            return GeoJSONData::parse(kept, slicer, options, "labels");
+        },
+        [&test, body](GeoJSONData::ParseResult parsed) {
+            test.labels().setGeoJSONData(std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)), body);
+        });
+
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "keep"])"));
+    const uint64_t latest = source.getLatestGeneration();
+    ASSERT_GT(latest, body);
+    ASSERT_TRUE(runOneFrame(test, "the frame after the filter, with the lane held"));
+    EXPECT_EQ(0u, drawnCircles(test)) << "the filter was not drawn on the old body in the frame that took it";
+    EXPECT_FALSE(test.observer.has("labels", body)) << "reported the held body's generation";
+    EXPECT_FALSE(test.observer.has("labels", latest)) << "reported the latest generation with the old body";
+
+    block.release();
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the held body laid out"));
+    ASSERT_TRUE(runOneFrame(test, "a frame with the held body"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the held body with the filter";
+}
+
+// A body that has reached the tiles, whose layout waits on the held lane: the
+// filter is laid out inline with that newest body, and drawn in the next
+// frame; and every frame after, until the lane's work is done, keeps it.
+TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
+    Recording recording;
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    LaneBlock block;
+    ASSERT_TRUE(block.allHeld) << "the lane's two threads were not both held";
+    const std::string kept = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "keep"}, "geometry": {"type": "Point", "coordinates": [0, 0]}},
+        {"type": "Feature", "properties": {"kind": "drop"}, "geometry": {"type": "Point", "coordinates": [10, 10]}}]})";
+    conversion::Error error;
+    const std::size_t stepsBefore = recording.steps().size();
+    test.labels().setGeoJSON(*conversion::parseGeoJSON(kept, error));
+    // The new body's cut reaches the tiles, and their workers' layouts wait
+    // on the held lane.
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            const auto& steps = recording.steps();
+            return std::any_of(steps.begin() + static_cast<std::ptrdiff_t>(stepsBefore),
+                               steps.end(),
+                               [](const auto& s) { return s.sourceID == "labels" && s.name == "hop-data"; });
+        },
+        "the new body's tiles sent to their workers"));
+
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "keep"])"));
+    const uint64_t latest = test.labels().getLatestGeneration();
+    ASSERT_TRUE(runOneFrame(test, "the frame after the filter, with the lane held"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "not the newest body with the filter";
+
+    EXPECT_TRUE(test.observer.has("labels", latest)) << "the inline layout of the newest body was not reported";
+
+    // The lane's layouts, for the old layers and the new, come after: once
+    // the lane has done them, the frame they bring still draws the inline
+    // layout. (Which of them a frame sees is timing; the rule that drops the
+    // older one is GeoJSONTile.ALayoutOlderThanTheOneTakenIsDropped.)
+    block.release();
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    ASSERT_TRUE(runOneFrame(test, "the frame the lane's layouts bring"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "a frame drew a layout older than the inline one";
 }

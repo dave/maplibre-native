@@ -43,6 +43,12 @@ public:
     std::unique_ptr<TileRenderData> createRenderData() override;
     void setLayers(const std::vector<Immutable<style::LayerProperties>>&,
                    std::shared_ptr<const GlobalStateMap>) override;
+    /// For a label lane tile: sends the layers to the lane's worker, and lays
+    /// the tile's newest data out with them on this thread at once, in a
+    /// synchronous worker of its own, so the render thread never waits for a
+    /// body on the lane. The lane's older results are dropped when they come.
+    void setLayersInline(const std::vector<Immutable<style::LayerProperties>>&,
+                         std::shared_ptr<const GlobalStateMap>) override;
     void setShowCollisionBoxes(bool showCollisionBoxes) override;
 
     void onGlyphsAvailable(GlyphMap, HBShapeRequests) override;
@@ -116,11 +122,46 @@ protected:
 
 private:
     void markObsolete();
+    std::vector<Immutable<style::LayerProperties>> layersForZoom(
+        const std::vector<Immutable<style::LayerProperties>>&) const;
+    HBShapeResults shape(GlyphMap&, const HBShapeRequests&);
+
+    // Takes the glyph and image answers for the inline worker, apart from the
+    // lane worker's: a requestor has one image request at a time.
+    class InlineRequestor final : public GlyphRequestor, public ImageRequestor {
+    public:
+        InlineRequestor(GeometryTile& tile_, std::shared_ptr<ImageManager> imageManager_)
+            : ImageRequestor(std::move(imageManager_)),
+              tile(tile_) {}
+        void onGlyphsAvailable(GlyphMap, HBShapeRequests) override;
+        void onImagesAvailable(ImageMap, ImageMap, ImageVersionMap, uint64_t imageCorrelationID) override;
+
+    private:
+        GeometryTile& tile;
+    };
 
     TaggedScheduler threadPool;
 
     const std::shared_ptr<Mailbox> mailbox;
     OptionalActor<GeometryTileWorker> worker;
+
+    // A label lane tile's inline layouts (`setLayersInline`): the data it
+    // last sent to the worker, the worker's other arguments, and the
+    // synchronous worker of the last inline layout.
+    const bool laysOutInline;
+    std::unique_ptr<const GeometryTileData> lastData;
+    const float pixelRatio;
+    const gfx::DynamicTextureAtlasPtr dynamicTextureAtlas;
+    const std::shared_ptr<FontFaces> fontFaces;
+    const bool captureRenderedFeatures;
+    std::unique_ptr<InlineRequestor> inlineRequestor;
+    std::unique_ptr<OptionalActor<GeometryTileWorker>> inlineWorker;
+    // Set while the inline worker runs: its glyph and image requests go
+    // through `inlineRequestor`.
+    bool inInlineWorker = false;
+    // A result older than the last one taken is dropped: with an inline
+    // layout, the lane's result for older layers can come after it.
+    uint64_t takenCorrelationID = 0;
 
     const std::shared_ptr<FileSource> fileSource;
     const std::shared_ptr<GlyphManager> glyphManager;

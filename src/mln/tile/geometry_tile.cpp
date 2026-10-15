@@ -215,6 +215,11 @@ GeometryTile::GeometryTile(const OverscaledTileID& id_,
              parameters.glyphManager->getFontFaces(),
              parameters.captureRenderedFeatures,
              observer),
+      laysOutInline(parameters.labelLane && !parameters.isUpdateSynchronous),
+      pixelRatio(parameters.pixelRatio),
+      dynamicTextureAtlas(parameters.dynamicTextureAtlas),
+      fontFaces(parameters.glyphManager->getFontFaces()),
+      captureRenderedFeatures(parameters.captureRenderedFeatures),
       fileSource(parameters.fileSource),
       glyphManager(parameters.glyphManager),
       imageManager(parameters.imageManager),
@@ -228,6 +233,11 @@ GeometryTile::~GeometryTile() {
 
     glyphManager->removeRequestor(*this);
     imageManager->removeRequestor(*this);
+    inlineWorker.reset();
+    if (inlineRequestor) {
+        glyphManager->removeRequestor(*inlineRequestor);
+        imageManager->removeRequestor(*inlineRequestor);
+    }
 
     if (pending) {
         // This tile never finished loading or was abandoned, emit a cancellation event
@@ -272,6 +282,11 @@ void GeometryTile::setData(std::unique_ptr<const GeometryTileData> data_) {
     // signaling a complete state despite pending parse operations.
     pending = true;
 
+    if (laysOutInline) {
+        // A GeoJSON tile's data shares its features: the copy is cheap.
+        lastData = data_ ? data_->clone() : nullptr;
+    }
+
     ++correlationID;
     worker.self().invoke(
         &GeometryTileWorker::setData, std::move(data_), imageManager->getAvailableImages(), correlationID);
@@ -313,6 +328,16 @@ void GeometryTile::setLayers(const std::vector<Immutable<LayerProperties>>& laye
         observer->onTileAction(id, sourceID, TileOperation::StartParse);
     }
 
+    ++correlationID;
+    worker.self().invoke(&GeometryTileWorker::setLayers,
+                         layersForZoom(layers),
+                         std::move(globalState),
+                         imageManager->getAvailableImages(),
+                         correlationID);
+}
+
+std::vector<Immutable<LayerProperties>> GeometryTile::layersForZoom(
+    const std::vector<Immutable<LayerProperties>>& layers) const {
     std::vector<Immutable<LayerProperties>> impls;
     impls.reserve(layers.size());
 
@@ -330,13 +355,70 @@ void GeometryTile::setLayers(const std::vector<Immutable<LayerProperties>>& laye
 
         impls.push_back(layer);
     }
+    return impls;
+}
 
-    ++correlationID;
-    worker.self().invoke(&GeometryTileWorker::setLayers,
-                         std::move(impls),
-                         std::move(globalState),
-                         imageManager->getAvailableImages(),
-                         correlationID);
+void GeometryTile::setLayersInline(const std::vector<Immutable<LayerProperties>>& layers,
+                                   std::shared_ptr<const GlobalStateMap> globalState) {
+    MLN_TRACE_FUNC();
+
+    // The lane's worker takes the layers too, for the bodies to come; its
+    // result for them repeats this one, and its results for older layers,
+    // still on the way, are dropped (`takenCorrelationID`).
+    setLayers(layers, globalState);
+    if (!laysOutInline || !lastData || obsolete) {
+        return;
+    }
+
+    if (!inlineRequestor) {
+        inlineRequestor = std::make_unique<InlineRequestor>(*this, imageManager);
+    }
+    // A worker of its own, synchronous: the lane's worker is the Actor's, and
+    // may be parsing a body on the lane now.
+    inlineWorker = std::make_unique<OptionalActor<GeometryTileWorker>>(
+        true,
+        threadPool,
+        OptionalActorRef<GeometryTile>(true, *this, mailbox),
+        threadPool,
+        id,
+        sourceID,
+        obsolete,
+        mode,
+        pixelRatio,
+        showCollisionBoxes,
+        dynamicTextureAtlas,
+        fontFaces,
+        captureRenderedFeatures,
+        observer);
+    const util::LabelSteps::Scope step(sourceID, "hop-inline-layout", true);
+    const bool wasInside = std::exchange(inInlineWorker, true);
+    const auto images = imageManager->getAvailableImages();
+    inlineWorker->self().invoke(
+        &GeometryTileWorker::setLayers, layersForZoom(layers), std::move(globalState), images, correlationID);
+    inlineWorker->self().invoke(&GeometryTileWorker::setData, lastData->clone(), images, correlationID);
+    inInlineWorker = wasInside;
+}
+
+void GeometryTile::InlineRequestor::onGlyphsAvailable(GlyphMap glyphMap, HBShapeRequests requests) {
+    if (!tile.inlineWorker) return;
+    HBShapeResults results = tile.shape(glyphMap, requests);
+    const bool wasInside = std::exchange(tile.inInlineWorker, true);
+    tile.inlineWorker->self().invoke(&GeometryTileWorker::onGlyphsAvailable, std::move(glyphMap), std::move(results));
+    tile.inInlineWorker = wasInside;
+}
+
+void GeometryTile::InlineRequestor::onImagesAvailable(ImageMap images,
+                                                      ImageMap patterns,
+                                                      ImageVersionMap versionMap,
+                                                      uint64_t imageCorrelationID) {
+    if (!tile.inlineWorker) return;
+    const bool wasInside = std::exchange(tile.inInlineWorker, true);
+    tile.inlineWorker->self().invoke(&GeometryTileWorker::onImagesAvailable,
+                                     std::move(images),
+                                     std::move(patterns),
+                                     std::move(versionMap),
+                                     imageCorrelationID);
+    tile.inInlineWorker = wasInside;
 }
 
 void GeometryTile::setShowCollisionBoxes(const bool showCollisionBoxes_) {
@@ -352,6 +434,13 @@ void GeometryTile::setShowCollisionBoxes(const bool showCollisionBoxes_) {
 void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64_t resultCorrelationID) {
     MLN_TRACE_FUNC();
     const util::LabelSteps::Scope step(sourceID, "hop-layout", true);
+
+    // Results come in order from one worker. With an inline layout there are
+    // two: a lane result for older layers can come after the inline one.
+    if (resultCorrelationID < takenCorrelationID) {
+        return;
+    }
+    takenCorrelationID = resultCorrelationID;
 
     loaded = true;
     renderable = true;
@@ -401,9 +490,14 @@ void GeometryTile::onError(std::exception_ptr err, const uint64_t resultCorrelat
     observer->onTileError(*this, std::move(err));
 }
 
-void GeometryTile::onGlyphsAvailable(GlyphMap glyphMap, [[maybe_unused]] HBShapeRequests requests) {
+void GeometryTile::onGlyphsAvailable(GlyphMap glyphMap, HBShapeRequests requests) {
     MLN_TRACE_FUNC();
 
+    HBShapeResults results = shape(glyphMap, requests);
+    worker.self().invoke(&GeometryTileWorker::onGlyphsAvailable, std::move(glyphMap), std::move(results));
+}
+
+HBShapeResults GeometryTile::shape(GlyphMap& glyphMap, [[maybe_unused]] const HBShapeRequests& requests) {
     HBShapeResults results;
 #ifdef MLN_TEXT_SHAPING_HARFBUZZ
     for (auto& fontStackIT : requests) {
@@ -442,7 +536,7 @@ void GeometryTile::onGlyphsAvailable(GlyphMap glyphMap, [[maybe_unused]] HBShape
         }
     }
 #endif // MLN_TEXT_SHAPING_HARFBUZZ
-    worker.self().invoke(&GeometryTileWorker::onGlyphsAvailable, std::move(glyphMap), std::move(results));
+    return results;
 }
 
 void GeometryTile::getGlyphs(GlyphDependencies glyphDependencies) {
@@ -450,7 +544,11 @@ void GeometryTile::getGlyphs(GlyphDependencies glyphDependencies) {
     const util::LabelSteps::Scope step(sourceID, "hop-glyphs", true);
 
     if (fileSource) {
-        glyphManager->getGlyphs(*this, std::move(glyphDependencies), *fileSource);
+        if (inInlineWorker) {
+            glyphManager->getGlyphs(*inlineRequestor, std::move(glyphDependencies), *fileSource);
+        } else {
+            glyphManager->getGlyphs(*this, std::move(glyphDependencies), *fileSource);
+        }
     }
 }
 
@@ -471,7 +569,11 @@ void GeometryTile::getImages(ImageRequestPair pair) {
     MLN_TRACE_FUNC();
     const util::LabelSteps::Scope step(sourceID, "hop-images", true);
 
-    imageManager->getImages(*this, std::move(pair));
+    if (inInlineWorker) {
+        imageManager->getImages(*inlineRequestor, std::move(pair));
+    } else {
+        imageManager->getImages(*this, std::move(pair));
+    }
 }
 
 std::shared_ptr<FeatureIndex> GeometryTile::getFeatureIndex() const {

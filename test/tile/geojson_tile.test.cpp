@@ -2,6 +2,7 @@
 #include <mln/test/fake_file_source.hpp>
 #include <mln/test/stub_tile_observer.hpp>
 #include <mln/tile/geojson_tile.hpp>
+#include <mln/geometry/feature_index.hpp>
 #include <mln/tile/tile_loader_impl.hpp>
 
 #include <mln/annotation/annotation_manager.hpp>
@@ -134,6 +135,34 @@ TEST(GeoJSONTile, Issue7648) {
     while (!tile.isComplete()) {
         test.loop.runOnce();
     }
+}
+
+// A label lane tile lays a layer change out inline, while the lane's worker
+// may still be laying out a body with the old layers: that older result,
+// coming after the inline one, must not replace it.
+TEST(GeoJSONTile, ALayoutOlderThanTheOneTakenIsDropped) {
+    GeoJSONTileTest test;
+    GeoJSONTile tile(OverscaledTileID(0, 0, 0),
+                     "source",
+                     test.tileParameters,
+                     std::make_shared<FakeGeoJSONData>(mapbox::feature::feature_collection<int16_t>{}));
+    const auto layout = [] {
+        return std::make_shared<GeometryTile::LayoutResult>(mln::unordered_map<std::string, LayerRenderData>{},
+                                                            std::make_shared<FeatureIndex>(nullptr),
+                                                            gfx::GlyphAtlas{},
+                                                            gfx::ImageAtlas{},
+                                                            nullptr);
+    };
+    auto newer = layout();
+    const auto* newerIndex = newer->featureIndex.get();
+    tile.onLayout(std::move(newer), 5);
+    ASSERT_EQ(newerIndex, tile.getFeatureIndex().get());
+    tile.onLayout(layout(), 3);
+    EXPECT_EQ(newerIndex, tile.getFeatureIndex().get()) << "an older layout replaced the newer one";
+    auto same = layout();
+    const auto* sameIndex = same->featureIndex.get();
+    tile.onLayout(std::move(same), 5);
+    EXPECT_EQ(sameIndex, tile.getFeatureIndex().get()) << "a layout as new as the last one was dropped";
 }
 
 // Tests that tiles remain renderable if they have been renderable and then had

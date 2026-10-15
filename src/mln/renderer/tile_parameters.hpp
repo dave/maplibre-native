@@ -49,6 +49,10 @@ public:
     // else null. Only the tile worker runs there: the tile's render-thread jobs
     // stay on `threadPool`, the queue the graphics context drains.
     std::shared_ptr<Scheduler> labelLane = nullptr;
+    // A layer change on a label lane source: its tiles lay the new layers out
+    // inline (`Tile::setLayersInline`), so the frame that takes the change
+    // draws it.
+    bool relayoutInline = false;
     bool captureRenderedFeatures = false;
     // Cross-source lookup: a render source can resolve another source by ID
     // during update(). Used by ContourSource to find its upstream
