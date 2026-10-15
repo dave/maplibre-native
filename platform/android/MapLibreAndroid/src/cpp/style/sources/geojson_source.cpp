@@ -241,7 +241,7 @@ jni::jlong GeoJSONSource::setAsync(Update::Converter converterFn) {
 }
 
 jni::jlong GeoJSONSource::getDataGeneration(jni::JNIEnv&) {
-    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getDataGeneration());
+    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getLatestGeneration());
 }
 
 jboolean GeoJSONSource::isUpdateSynchronous(jni::JNIEnv&) {

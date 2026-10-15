@@ -584,11 +584,12 @@ class GeoJsonSource : Source {
     }
 
     /**
-     * The data generation the source holds now: of its body, or of a later change of a
-     * layer's filter or layout property on this source, which moves it at once. Read it right
-     * after such a change: [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports
-     * it once every tile in view is laid out with the new layers. A body still converting is
-     * not counted until it lands; [setGeoJson] answers its generation.
+     * The latest data generation given out: by [setGeoJson], [setUri], or a change of a layer's
+     * filter or layout property on this source, which takes one at once. Read it right after
+     * such a change and wait for it, or a later one:
+     * [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports a generation only
+     * once every tile in view holds every body and layer change given out up to it. While a
+     * body is still converting, a layer change is not reported until that body lands.
      */
     val dataGeneration: Long
         get() {
