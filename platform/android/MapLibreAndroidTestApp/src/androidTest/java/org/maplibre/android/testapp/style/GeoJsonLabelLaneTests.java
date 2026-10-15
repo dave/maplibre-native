@@ -116,6 +116,10 @@ public class GeoJsonLabelLaneTests extends EspressoTest {
       maplibreMap.getStyle().addSource(source);
       maplibreMap.getStyle().addLayer(new CircleLayer("lane-circles", source.getId()));
 
+      // The constructor's empty body first: set while it converts, the broken
+      // body would wait as the next body, and the one after would coalesce it
+      // away unconverted.
+      waitFor(uiController, () -> !reported.isEmpty(), "the constructor's body laid out");
       // The next body waits for the broken one's answer (the binding coalesces
       // bodies, one in conversion at a time): it lands only if that answer comes.
       Long broken = source.setGeoJson("{not json");
