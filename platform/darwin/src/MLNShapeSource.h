@@ -170,6 +170,17 @@ FOUNDATION_EXTERN MLN_EXPORT const MLNShapeSourceOption MLNShapeSourceOptionLine
 FOUNDATION_EXTERN MLN_EXPORT const MLNShapeSourceOption MLNShapeSourceOptionSynchronousUpdate;
 
 /**
+ An `NSNumber` object containing a Boolean: the source's off-thread work (its
+ body's parse, its tiles' parse and layout, and its tile cuts) runs on the
+ label lane, a thread of its own, not on the worker pool the other sources
+ share. The default value is `NO`.
+
+ Refused with ``MLNShapeSourceOptionSynchronousUpdate``: creating the source
+ raises `NSInvalidArgumentException`.
+ */
+FOUNDATION_EXTERN MLN_EXPORT const MLNShapeSourceOption MLNShapeSourceOptionLabelLane;
+
+/**
  ``MLNShapeSource`` is a map content source that supplies vector shapes to be
  shown on the map. The shapes may be instances of ``MLNShape`` or ``MLNShape``,
  or they may be defined by local or external
@@ -360,6 +371,36 @@ MLN_EXPORT
  this property is set to `nil`.
  */
 @property (nonatomic, copy, nullable) NSURL *URL;
+
+/**
+ The latest data generation the source gave out: each new body set by `shape`
+ or `URL` gets the next number, counting from 1, and so does each change of a
+ filter or layout property of a layer on this source; 0 before the first.
+ Read it right after such a change. The map view's delegate is told when
+ every tile in view is laid out with a generation
+ (`-mapView:sourceDidLayOut:generation:`): wait for the value read, or a later
+ one. A URL body takes its generation when it is set, and it is reported once
+ it has loaded. Read from the core source, so every object for the same source
+ answers the same.
+ */
+@property (nonatomic, readonly) uint64_t dataGeneration;
+
+/**
+ The step recorder, for debug builds and tests: when on, every shape source's
+ off-thread steps and tile hops record the thread they ran on and their
+ times. Off by default.
+ */
++ (void)setRecordsLabelSteps:(BOOL)recording;
+
+/**
+ The steps recorded since the last call, in the order they ended. Each is a
+ dictionary with `sourceID` (NSString), `name` (NSString: "convert",
+ "parse-url", "slice", "tile-parse", "tile-layout", or a tile hop "hop-data",
+ "hop-glyphs", "hop-images", "hop-layout"), `thread` (NSString), `hop`
+ (NSNumber, Boolean), and `queued`, `start` and `end` (NSNumber, seconds on the
+ steady clock; `queued` is 0 where the recorder cannot see it).
+ */
++ (NSArray<NSDictionary<NSString *, id> *> *)takeLabelSteps;
 
 /**
  Returns an array of map features for this source, filtered by the given
