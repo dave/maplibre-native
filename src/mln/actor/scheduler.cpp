@@ -2,6 +2,9 @@
 #include <mln/util/thread_local.hpp>
 #include <mln/util/thread_pool.hpp>
 #include <mln/util/run_loop.hpp>
+#include <mln/util/logging.hpp>
+
+#include <cassert>
 
 namespace mln {
 
@@ -65,6 +68,22 @@ std::shared_ptr<Scheduler> Scheduler::GetSequenced() {
         weaks[lastUsedIndex] = result;
         return result;
     }
+}
+
+// static
+std::shared_ptr<Scheduler> Scheduler::GetLabelLane() {
+    // Leaked on purpose: the lane lives for the life of the process, so no
+    // static destructor joins its thread at exit.
+    static const std::shared_ptr<Scheduler>* lane = [] {
+        try {
+            return new std::shared_ptr<Scheduler>(std::make_shared<SequencedScheduler>("Label lane"));
+        } catch (const std::exception& error) {
+            Log::Error(Event::General, std::string("The label lane cannot be made: ") + error.what());
+            assert(false);
+            return new std::shared_ptr<Scheduler>();
+        }
+    }();
+    return *lane;
 }
 
 } // namespace mln

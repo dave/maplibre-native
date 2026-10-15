@@ -436,6 +436,10 @@ void Map::Impl::onTileAction(TileOperation op, const OverscaledTileID& id, const
     }
 }
 
+void Map::Impl::onSourceLaidOut(const std::string& sourceID, uint64_t generation) {
+    observer.onSourceLaidOut(sourceID, generation);
+}
+
 void Map::Impl::onRenderError(std::exception_ptr error) {
     observer.onRenderError(error);
 

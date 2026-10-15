@@ -85,6 +85,9 @@ public:
     // Tile requests
     virtual void onTileAction(TileOperation, const OverscaledTileID&, const std::string&) {}
 
+    /// See `RendererObserver::onSourceLaidOut`.
+    virtual void onSourceLaidOut(const std::string& /*sourceID*/, uint64_t /*generation*/) {}
+
     // Sprite requests
     virtual void onSpriteLoaded(const std::optional<style::Sprite>&) {}
     virtual void onSpriteError(const std::optional<style::Sprite>&, std::exception_ptr) {}

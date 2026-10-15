@@ -117,6 +117,10 @@ public:
 
     virtual uint8_t getMaxZoom() const;
 
+    /// After `update`: the data generation whose tiles in view are now all
+    /// laid out, once per generation (`RendererObserver::onSourceLaidOut`).
+    virtual std::optional<uint64_t> takeLaidOutGeneration() { return std::nullopt; }
+
     void setObserver(RenderSourceObserver*);
 
     Immutable<style::Source::Impl> baseImpl;

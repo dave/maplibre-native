@@ -68,6 +68,9 @@ public:
     void dumpDebugLogs() const;
 
     const std::map<OverscaledTileID, std::unique_ptr<Tile>>& getTiles() const { return tiles; }
+    /// The tiles the view asked for in the last `update` (its tile cover),
+    /// whether loaded yet or not; none when the last update rendered nothing.
+    const std::vector<OverscaledTileID>& getIdealTiles() const { return lastIdealTiles; }
     void clearAll();
 
     void updateFadingTiles();
@@ -77,6 +80,7 @@ private:
     void addRenderTile(const UnwrappedTileID& tileID, Tile& tile);
 
     std::map<OverscaledTileID, std::unique_ptr<Tile>> tiles;
+    std::vector<OverscaledTileID> lastIdealTiles;
     TileCache cache;
 
     std::map<UnwrappedTileID, std::reference_wrapper<Tile>> renderedTiles; // Sorted by tile id.

@@ -7,12 +7,36 @@
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/tile/tile.hpp>
 #include <mln/util/async_request.hpp>
+#include <mln/util/label_steps.hpp>
 #include <mln/util/logging.hpp>
+#include <mln/util/monotonic_timer.hpp>
 #include <mln/util/thread_pool.hpp>
 #include <mln/util/identity.hpp>
 
+#include <stdexcept>
+
 namespace mln {
 namespace style {
+
+namespace {
+
+const Immutable<GeoJSONOptions>& checkedOptions(const Immutable<GeoJSONOptions>& options) {
+    if (options->labelLane && options->synchronousUpdate) {
+        throw std::invalid_argument("GeoJSON source labelLane cannot be set with synchronousUpdate");
+    }
+    return options;
+}
+
+std::shared_ptr<Scheduler> labelLane() {
+    auto lane = Scheduler::GetLabelLane();
+    if (!lane) {
+        // GetLabelLane logged the cause and asserted.
+        throw std::runtime_error("GeoJSON source labelLane: the label lane cannot be made");
+    }
+    return lane;
+}
+
+} // namespace
 
 // static
 Immutable<GeoJSONOptions> GeoJSONOptions::defaultOptions() {
@@ -21,8 +45,13 @@ Immutable<GeoJSONOptions> GeoJSONOptions::defaultOptions() {
 }
 
 GeoJSONSource::GeoJSONSource(std::string id, Immutable<GeoJSONOptions> options)
-    : Source(makeMutable<Impl>(std::move(id), std::move(options))),
-      sequencedScheduler(Scheduler::GetSequenced()) {}
+    : Source(makeMutable<Impl>(std::move(id), checkedOptions(options))),
+      parseScheduler(options->labelLane ? labelLane() : Scheduler::GetBackground()),
+      // A lane source cuts on a thread of its own: geojson-vt is not
+      // thread-safe, and the shared sequenced ring also serves other sources
+      // and logging.
+      sequencedScheduler(options->labelLane ? std::make_shared<SequencedScheduler>("Label lane s")
+                                            : Scheduler::GetSequenced()) {}
 
 GeoJSONSource::~GeoJSONSource() = default;
 
@@ -35,8 +64,9 @@ const GeoJSONSource::Impl& GeoJSONSource::impl() const {
  * Set the url to a geojson file which can be fetched
  * \param url_
  */
-void GeoJSONSource::setURL(const std::string& url_) {
+uint64_t GeoJSONSource::setURL(const std::string& url_) {
     url = url_;
+    urlGeneration = nextDataGeneration();
 
     // Signal that the source description needs a reload
     if (loaded || req) {
@@ -44,16 +74,48 @@ void GeoJSONSource::setURL(const std::string& url_) {
         req.reset();
         observer->onSourceDescriptionChanged(*this);
     }
+    return urlGeneration;
 }
 
-void GeoJSONSource::setGeoJSON(const mapbox::geojson::geojson& geoJSON) {
-    setGeoJSONData(GeoJSONData::create(geoJSON, sequencedScheduler, impl().getOptions()));
+uint64_t GeoJSONSource::setGeoJSON(const mapbox::geojson::geojson& geoJSON) {
+    return setGeoJSONData(GeoJSONData::create(geoJSON, sequencedScheduler, impl().getOptions(), getID()));
 }
 
-void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData) {
+uint64_t GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData) {
+    const uint64_t generation = nextDataGeneration();
+    setGeoJSONData(std::move(geoJSONData), generation);
+    return generation;
+}
+
+void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData, uint64_t generation) {
+    assert(generation > impl().getDataGeneration());
     req.reset();
-    baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData));
+    // A URL body still being parsed is older: it must not replace this one.
+    ++requestGeneration;
+    baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData), generation);
     observer->onSourceChanged(*this);
+}
+
+uint64_t GeoJSONSource::nextDataGeneration() {
+    return ++dataGeneration;
+}
+
+uint64_t GeoJSONSource::getDataGeneration() const {
+    return impl().getDataGeneration();
+}
+
+void GeoJSONSource::setGeoJSONError(uint64_t generation, const std::string& message) {
+    observer->onSourceError(
+        *this,
+        std::make_exception_ptr(std::runtime_error("GeoJSON body " + std::to_string(generation) + ": " + message)));
+}
+
+std::shared_ptr<Scheduler> GeoJSONSource::getParseScheduler() const {
+    return parseScheduler;
+}
+
+std::shared_ptr<Scheduler> GeoJSONSource::getSliceScheduler() const {
+    return sequencedScheduler;
 }
 
 std::optional<std::string> GeoJSONSource::getURL() const {
@@ -84,34 +146,44 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
         } else {
             // Note: This task appears to be safe enough to schedule on the generic background queue.
             // This task does not reference other objects who's lifetimes are coupled with a map.
-            Scheduler::GetBackground()->scheduleAndReplyValue(
+            struct Parsed {
+                Immutable<Source::Impl> impl;
+                std::string error;
+            };
+            parseScheduler->scheduleAndReplyValue(
                 util::SimpleIdentity::Empty,
                 /* makeImplInBackground */
                 [currentImpl = baseImpl,
                  data = res.data,
-                 seqScheduler{sequencedScheduler}]() -> Immutable<Source::Impl> {
+                 seqScheduler{sequencedScheduler},
+                 generation = urlGeneration,
+                 queued = util::LabelSteps::recording() ? util::MonotonicTimer::now()
+                                                        : std::chrono::duration<double>{0}]() -> Parsed {
                     assert(data);
                     auto& current = static_cast<const Impl&>(*currentImpl);
-                    conversion::Error error;
-                    std::shared_ptr<GeoJSONData> geoJSONData;
-                    if (std::optional<GeoJSON> geoJSON = conversion::convertJSON<GeoJSON>(*data, error)) {
-                        geoJSONData = GeoJSONData::create(*geoJSON, std::move(seqScheduler), current.getOptions());
-                    } else {
-                        // Create an empty GeoJSON VT object to make sure we're not
-                        // infinitely waiting for tiles to load.
-                        Log::Error(Event::ParseStyle, "Failed to parse GeoJSON data: " + error.message);
+                    const util::LabelSteps::Scope step(current.id, "parse-url", false, queued);
+                    auto parsed = GeoJSONData::parse(*data, std::move(seqScheduler), current.getOptions(), current.id);
+                    if (auto* error = std::get_if<std::string>(&parsed)) {
+                        // An empty source, so that no tile waits for ever;
+                        // the error is reported when this lands.
+                        return {.impl = makeMutable<Impl>(current, nullptr, generation), .error = *error};
                     }
-                    return makeMutable<Impl>(current, std::move(geoJSONData));
+                    return {.impl = makeMutable<Impl>(
+                                current, std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)), generation),
+                            .error = {}};
                 },
                 /* onImplReady */
-                [this, self = makeWeakPtr(), capturedReqGeneration = ++requestGeneration](
-                    Immutable<Source::Impl> newImpl) {
+                [this, self = makeWeakPtr(), capturedReqGeneration = ++requestGeneration](Parsed parsed) {
                     assert(capturedReqGeneration);
                     if (auto guard = self.lock(); self) {
                         if (capturedReqGeneration ==
                             requestGeneration) { // If a new request is being processed, ignore this impl.
-                            baseImpl = std::move(newImpl);
+                            baseImpl = std::move(parsed.impl);
                             loaded = true;
+                            if (!parsed.error.empty()) {
+                                observer->onSourceError(*this,
+                                                        std::make_exception_ptr(std::runtime_error(parsed.error)));
+                            }
                             observer->onSourceLoaded(*this);
                         }
                     }
@@ -132,7 +204,10 @@ bool GeoJSONSource::isUpdateSynchronous() const noexcept {
     return baseImpl->isUpdateSynchronous();
 }
 
-void GeoJSONSource::setOverrideSynchronousUpdate(bool value) noexcept {
+void GeoJSONSource::setOverrideSynchronousUpdate(bool value) {
+    if (value && impl().getOptions()->labelLane) {
+        throw std::logic_error("GeoJSON source " + getID() + ": labelLane refuses a synchronous update override");
+    }
     impl().setOverrideSynchronousUpdate(value);
 }
 

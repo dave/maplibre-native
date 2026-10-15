@@ -8,7 +8,9 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
+#include <variant>
 
 namespace mln {
 
@@ -38,15 +40,31 @@ struct GeoJSONOptions {
     // Update options
     bool synchronousUpdate = false;
 
+    // The source's off-thread work runs on the label lane
+    // (`Scheduler::GetLabelLane()`), not on the shared worker pool: its body's
+    // parse, its tiles' parse and layout, and its geojson-vt cuts (on a
+    // sequenced scheduler of its own). Refused with `synchronousUpdate`.
+    bool labelLane = false;
+
     static Immutable<GeoJSONOptions> defaultOptions();
 };
 class GeoJSONData {
 public:
     using TileFeatures = mapbox::feature::feature_collection<int16_t>;
     using Features = mapbox::feature::feature_collection<double>;
+    /// `sourceID` names the source for the step recorder (`util::LabelSteps`) only.
     static std::shared_ptr<GeoJSONData> create(const GeoJSON&,
                                                std::shared_ptr<Scheduler> sequencedScheduler,
-                                               const Immutable<GeoJSONOptions>& = GeoJSONOptions::defaultOptions());
+                                               const Immutable<GeoJSONOptions>& = GeoJSONOptions::defaultOptions(),
+                                               const std::string& sourceID = {});
+
+    /// Parses a GeoJSON body and makes its data, or answers the parse error.
+    /// Both a URL body and the Android binding's string body come here.
+    using ParseResult = std::variant<std::shared_ptr<GeoJSONData>, std::string>;
+    static ParseResult parse(const std::string& json,
+                             std::shared_ptr<Scheduler> sequencedScheduler,
+                             const Immutable<GeoJSONOptions>&,
+                             const std::string& sourceID);
 
     virtual ~GeoJSONData() = default;
     virtual void getTile(const CanonicalTileID&, const std::function<void(TileFeatures)>&, bool runSynchronously) = 0;
@@ -60,12 +78,36 @@ public:
 // NOTE: Any derived class must invalidate `weakFactory` in the destructor
 class GeoJSONSource final : public Source {
 public:
+    /// Throws `std::invalid_argument` for `labelLane` with
+    /// `synchronousUpdate`, and `std::runtime_error` if the label lane
+    /// cannot be made.
     GeoJSONSource(std::string id, Immutable<GeoJSONOptions> = GeoJSONOptions::defaultOptions());
     ~GeoJSONSource() final;
 
-    void setURL(const std::string& url);
-    void setGeoJSON(const GeoJSON&);
-    void setGeoJSONData(std::shared_ptr<GeoJSONData>);
+    // Data generations: each new body gets the next number, counting from 1,
+    // and the renderer reports "every tile in view is laid out at generation
+    // N" (`RendererObserver::onSourceLaidOut`). Each setter answers the
+    // generation of the body it sets.
+
+    /// The generation for a URL body: it is that body's once it has loaded.
+    uint64_t setURL(const std::string& url);
+    uint64_t setGeoJSON(const GeoJSON&);
+    uint64_t setGeoJSONData(std::shared_ptr<GeoJSONData>);
+    /// For a body made off the calling thread: `generation` is one that
+    /// `nextDataGeneration()` gave when the body was asked for.
+    void setGeoJSONData(std::shared_ptr<GeoJSONData>, uint64_t generation);
+    /// Takes the next data generation for a body that is still being made.
+    uint64_t nextDataGeneration();
+    /// The generation of the body the source holds now; 0 before the first.
+    uint64_t getDataGeneration() const;
+    /// The body of `generation` could not be made: reported as a source error.
+    void setGeoJSONError(uint64_t generation, const std::string& message);
+
+    /// Where a body's parse runs: the label lane for a `labelLane` source,
+    /// else the shared worker pool.
+    std::shared_ptr<Scheduler> getParseScheduler() const;
+    /// Where the source's geojson-vt cuts run; a body's data is made with it.
+    std::shared_ptr<Scheduler> getSliceScheduler() const;
 
     std::optional<std::string> getURL() const;
     const GeoJSONOptions& getOptions() const;
@@ -80,15 +122,19 @@ public:
     mapbox::base::WeakPtr<Source> makeWeakPtr() override { return weakFactory.makeWeakPtr(); }
 
     bool isUpdateSynchronous() const noexcept;
-    void setOverrideSynchronousUpdate(bool) noexcept;
+    /// Throws `std::logic_error` for `true` on a `labelLane` source.
+    void setOverrideSynchronousUpdate(bool);
 
 protected:
     Mutable<Source::Impl> createMutable() const noexcept final;
 
 private:
     std::optional<std::string> url;
+    uint64_t urlGeneration = 0;
+    uint64_t dataGeneration = 0;
     std::unique_ptr<AsyncRequest> req;
     std::atomic<uint64_t> requestGeneration{0};
+    std::shared_ptr<Scheduler> parseScheduler;
     std::shared_ptr<Scheduler> sequencedScheduler;
     mapbox::base::WeakPtrFactory<Source> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`

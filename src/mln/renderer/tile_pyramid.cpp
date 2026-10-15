@@ -83,6 +83,7 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         }
 
         tiles.clear();
+        lastIdealTiles.clear();
         renderedTiles.clear();
         cache.deferPendingReleases();
 
@@ -280,6 +281,8 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
         pair.second->setShowCollisionBoxes(parameters.debugOptions & MapDebugOptions::Collision);
     }
 
+    lastIdealTiles = std::move(idealTiles);
+
     // Initialize renderable tiles and update the contained layer render data.
     for (auto& entry : renderedTiles) {
         Tile& tile = entry.second;
@@ -438,6 +441,7 @@ void TilePyramid::dumpDebugLogs() const {
 void TilePyramid::clearAll() {
     fadingTiles = false;
     tiles.clear();
+    lastIdealTiles.clear();
     renderedTiles.clear();
     cache.clear();
 }
