@@ -105,8 +105,8 @@ public:
     /// Get the label lane: the scheduler for the off-thread work of a GeoJSON
     /// source made with `GeoJSONOptions::labelLane` (its body's parse and its
     /// tiles' parse and layout). It shares no thread with `GetBackground()`,
-    /// so its work never waits behind basemap tiles. One thread, named
-    /// "Label lane 1", made on the first call and never destroyed.
+    /// so its work never waits behind basemap tiles. Two threads, named
+    /// "Label lane 1" and "Label lane 2", made on the first call and never destroyed.
     ///
     /// Returns null, with a logged error and a debug assert, if the lane
     /// cannot be made; every later call returns null too.
