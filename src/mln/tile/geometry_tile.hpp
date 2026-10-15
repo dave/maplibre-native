@@ -43,10 +43,11 @@ public:
     std::unique_ptr<TileRenderData> createRenderData() override;
     void setLayers(const std::vector<Immutable<style::LayerProperties>>&,
                    std::shared_ptr<const GlobalStateMap>) override;
-    /// For a label lane tile: sends the layers to the lane's worker, and lays
-    /// the tile's newest data out with them on this thread at once, in a
-    /// synchronous worker of its own, so the render thread never waits for a
-    /// body on the lane. The lane's older results are dropped when they come.
+    /// For a label lane tile: lays the tile's newest data out with the layers
+    /// on this thread at once, in a synchronous worker of its own, so the
+    /// render thread never waits for a body on the lane. The lane's worker
+    /// only keeps the layers, for the bodies to come; its older results are
+    /// dropped when they come.
     void setLayersInline(const std::vector<Immutable<style::LayerProperties>>&,
                          std::shared_ptr<const GlobalStateMap>) override;
     void setShowCollisionBoxes(bool showCollisionBoxes) override;

@@ -362,13 +362,23 @@ void GeometryTile::setLayersInline(const std::vector<Immutable<LayerProperties>>
                                    std::shared_ptr<const GlobalStateMap> globalState) {
     MLN_TRACE_FUNC();
 
-    // The lane's worker takes the layers too, for the bodies to come; its
-    // result for them repeats this one, and its results for older layers,
-    // still on the way, are dropped (`takenCorrelationID`).
-    setLayers(layers, globalState);
     if (!laysOutInline || !lastData || obsolete) {
+        // Nothing to lay out here yet (no data has come): the worker does it.
+        setLayers(layers, globalState);
         return;
     }
+
+    if (!pending) {
+        pending = true;
+        observer->onTileAction(id, sourceID, TileOperation::StartParse);
+    }
+    ++correlationID;
+    const auto images = imageManager->getAvailableImages();
+    // The lane's worker takes the layers for the bodies to come, and lays
+    // nothing out with them: this tile does, below. Its layouts for the old
+    // layers, still on the way, are older than this one and are dropped
+    // (`takenCorrelationID`).
+    worker.self().invoke(&GeometryTileWorker::setLayersQuietly, layersForZoom(layers), globalState, images);
 
     if (!inlineRequestor) {
         inlineRequestor = std::make_unique<InlineRequestor>(*this, imageManager);
@@ -392,7 +402,6 @@ void GeometryTile::setLayersInline(const std::vector<Immutable<LayerProperties>>
         observer);
     const util::LabelSteps::Scope step(sourceID, "hop-inline-layout", true);
     const bool wasInside = std::exchange(inInlineWorker, true);
-    const auto images = imageManager->getAvailableImages();
     inlineWorker->self().invoke(
         &GeometryTileWorker::setLayers, layersForZoom(layers), std::move(globalState), images, correlationID);
     inlineWorker->self().invoke(&GeometryTileWorker::setData, lastData->clone(), images, correlationID);

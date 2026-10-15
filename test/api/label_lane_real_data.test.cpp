@@ -21,7 +21,11 @@
 #include <mln/map/camera.hpp>
 #include <mln/map/map_observer.hpp>
 #include <mln/map/map_options.hpp>
+#include <mln/style/conversion/geojson.hpp>
+#include <mln/style/expression/dsl.hpp>
+#include <mln/style/filter.hpp>
 #include <mln/style/image.hpp>
+#include <mln/style/layer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/style/style.hpp>
@@ -163,16 +167,21 @@ std::set<std::string> imageKeys(const std::string& body) {
     return keys;
 }
 
-class Observer final : public MapObserver {
+class LaneObserver final : public MapObserver {
 public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut[{sourceID, generation}] = util::MonotonicTimer::now();
+        // Reported while frame number `frames` (from 0) is made.
+        laidOutFrame[{sourceID, generation}] = frames;
     }
     void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
         lastFrameFull = status.mode == RenderMode::Full;
+        ++frames;
     }
     std::map<std::pair<std::string, uint64_t>, Secs> laidOut;
+    std::map<std::pair<std::string, uint64_t>, int> laidOutFrame;
     bool lastFrameFull = false;
+    int frames = 0;
 };
 
 struct BodySet {
@@ -211,7 +220,7 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
         response.data = glyphs;
         return response;
     };
-    Observer observer;
+    LaneObserver observer;
     // Pixel 7: 1080 x 2400 px at 2.625 px per dp.
     HeadlessFrontend frontend{Size{411, 914}, 2.625f};
     MapAdapter map{frontend,
@@ -408,6 +417,98 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
                 EXPECT_EQ(0, t.workOnRender) << "lane: a step of ours ran on the render thread";
                 EXPECT_EQ(t.work, t.workOnLane) << "lane: a step of ours ran off the lane";
                 break;
+        }
+    }
+}
+
+// ios-names' case, with the real placement and names bodies and the app's
+// layers (several symbol layers, more than one tile): a filter change on
+// every label layer in one turn is laid out, and reported, while the very
+// next frame is made, for both sources; and the lane lays nothing out again
+// for it.
+TEST(LabelLaneRealData, AFilterChangeOnEveryLabelLayerIsLaidOutInTheNextFrame) {
+    const std::string placementBody = util::read_file("test/fixtures/label_lane/gpt-placement-z10.json");
+    const std::string namesBody = util::read_file("test/fixtures/label_lane/gpt-names-z10.json");
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    const auto basemapTile = std::make_shared<std::string>(
+        util::read_file("metrics/integration/tiles/14-8803-5375.mvt"));
+    fileSource->tileResponse = [basemapTile](const Resource&) {
+        Response response;
+        response.data = basemapTile;
+        return response;
+    };
+    const auto glyphs = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+    fileSource->glyphsResponse = [glyphs](const Resource&) {
+        Response response;
+        response.data = glyphs;
+        return response;
+    };
+    LaneObserver observer;
+    HeadlessFrontend frontend{Size{411, 914}, 2.625f};
+    MapAdapter map{frontend,
+                   observer,
+                   fileSource,
+                   MapOptions().withMapMode(MapMode::Continuous).withSize(frontend.getSize()).withPixelRatio(2.625f)};
+    map.getStyle().loadJSON(styleJSON(Arm::Lane));
+    for (const auto& key : imageKeys(placementBody)) {
+        map.getStyle().addImage(std::make_unique<style::Image>(key, PremultipliedImage({48, 48}), 2.0f));
+    }
+    map.jumpTo(CameraOptions().withCenter(LatLng{-48.65, -72.85}).withZoom(10.0));
+    auto& placement = *map.getStyle().getSource("placement")->as<GeoJSONSource>();
+    auto& names = *map.getStyle().getSource("names")->as<GeoJSONSource>();
+    conversion::Error error;
+    const uint64_t placementBodyGeneration = placement.setGeoJSON(*conversion::parseGeoJSON(placementBody, error));
+    const uint64_t namesBodyGeneration = names.setGeoJSON(*conversion::parseGeoJSON(namesBody, error));
+
+    bool late = false;
+    util::Timer watchdog;
+    watchdog.start(kBound, Duration::zero(), [&] { late = true; });
+    while (!late && !(observer.laidOut.contains({"placement", placementBodyGeneration}) &&
+                      observer.laidOut.contains({"names", namesBodyGeneration}) && observer.lastFrameFull)) {
+        turn(loop);
+    }
+    ASSERT_FALSE(late) << "the bodies were not laid out";
+    // Every lane layout of the bodies is done before the change.
+    Scheduler::GetLabelLane()->waitForEmpty(frontend.getThreadPool().tag);
+    while (!late && !observer.lastFrameFull) {
+        turn(loop);
+    }
+
+    (void)util::LabelSteps::take();
+    util::LabelSteps::setRecording(true);
+    int labelLayers = 0;
+    for (auto* layer : map.getStyle().getLayers()) {
+        if (layer->getSourceID() == "placement" || layer->getSourceID() == "names") {
+            layer->setFilter(
+                Filter(expression::dsl::eq(expression::dsl::get("form"), expression::dsl::literal("none"))));
+            ++labelLayers;
+        }
+    }
+    ASSERT_GT(labelLayers, 5);
+    const uint64_t placementLatest = placement.getLatestGeneration();
+    const uint64_t namesLatest = names.getLatestGeneration();
+    const int frameMade = observer.frames;
+    while (!late && observer.frames == frameMade) {
+        turn(loop);
+    }
+    ASSERT_FALSE(late) << "no frame after the change";
+    // -1: not reported at all.
+    const auto frameOf = [&](const std::string& id, uint64_t generation) {
+        const auto it = observer.laidOutFrame.find({id, generation});
+        return it == observer.laidOutFrame.end() ? -1 : it->second;
+    };
+    EXPECT_EQ(frameMade, frameOf("placement", placementLatest))
+        << "the placement source's change was not laid out in the next frame";
+    EXPECT_EQ(frameMade, frameOf("names", namesLatest))
+        << "the names source's change was not laid out in the next frame";
+
+    Scheduler::GetLabelLane()->waitForEmpty(frontend.getThreadPool().tag);
+    util::LabelSteps::setRecording(false);
+    for (const auto& step : util::LabelSteps::take()) {
+        if ((step.sourceID == "placement" || step.sourceID == "names") && !step.hop) {
+            EXPECT_EQ(std::string::npos, step.thread.find("Label lane"))
+                << step.sourceID << " " << step.name << ": the lane laid the change out again";
         }
     }
 }
