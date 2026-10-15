@@ -70,6 +70,7 @@ FOUNDATION_EXTERN MLN_EXPORT MLNExceptionName const _Nonnull MLNUnderlyingMapUna
                         wrap:(NSInteger)wrap
                  overscaledZ:(NSInteger)overscaledZ
                     sourceID:(nonnull NSString *)sourceID;
+- (void)sourceDidLayOut:(nonnull NSString *)sourceIdentifier generation:(uint64_t)generation;
 - (void)spriteWillLoad:(nullable NSString *)id url:(nullable NSString *)url;
 - (void)spriteDidLoad:(nullable NSString *)id url:(nullable NSString *)url;
 - (void)spriteDidError:(nullable NSString *)id url:(nullable NSString *)url;
