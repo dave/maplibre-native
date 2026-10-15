@@ -21,7 +21,11 @@
 #include <mln/map/camera.hpp>
 #include <mln/map/map_observer.hpp>
 #include <mln/map/map_options.hpp>
+#include <mln/style/conversion/geojson.hpp>
+#include <mln/style/expression/dsl.hpp>
+#include <mln/style/filter.hpp>
 #include <mln/style/image.hpp>
+#include <mln/style/layer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/style/style.hpp>
@@ -34,9 +38,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <latch>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -163,17 +170,45 @@ std::set<std::string> imageKeys(const std::string& body) {
     return keys;
 }
 
-class Observer final : public MapObserver {
+class LaneObserver final : public MapObserver {
 public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut[{sourceID, generation}] = util::MonotonicTimer::now();
+        // Reported while frame number `frames` (from 0) is made.
+        laidOutFrame[{sourceID, generation}] = frames;
     }
     void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
         lastFrameFull = status.mode == RenderMode::Full;
+        ++frames;
     }
     std::map<std::pair<std::string, uint64_t>, Secs> laidOut;
+    std::map<std::pair<std::string, uint64_t>, int> laidOutFrame;
     bool lastFrameFull = false;
+    int frames = 0;
 };
+
+// The threads a scheduler runs its tasks on: `count` tasks that each wait for
+// all the others to start, so each holds one of the scheduler's `count`
+// threads. The test tells threads apart by identity, not by name (not every
+// platform names its threads).
+std::set<std::thread::id> threadsOf(Scheduler& scheduler, std::ptrdiff_t count) {
+    std::mutex mutex;
+    std::set<std::thread::id> ids;
+    std::latch started(count);
+    std::latch done(count);
+    for (std::ptrdiff_t i = 0; i < count; ++i) {
+        scheduler.schedule([&] {
+            {
+                const std::scoped_lock lock(mutex);
+                ids.insert(std::this_thread::get_id());
+            }
+            started.arrive_and_wait();
+            done.count_down();
+        });
+    }
+    done.wait();
+    return ids;
+}
 
 struct BodySet {
     std::string sourceID;
@@ -186,6 +221,8 @@ struct ArmResult {
     std::vector<util::LabelStep> steps;
     std::vector<BodySet> sets;
     std::map<std::pair<std::string, uint64_t>, Secs> laidOut;
+    /// The lane's threads, and in the lane arm the lane sources' slicers.
+    std::set<std::thread::id> lane;
 };
 
 bool ours(const util::LabelStep& step) {
@@ -211,7 +248,7 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
         response.data = glyphs;
         return response;
     };
-    Observer observer;
+    LaneObserver observer;
     // Pixel 7: 1080 x 2400 px at 2.625 px per dp.
     HeadlessFrontend frontend{Size{411, 914}, 2.625f};
     MapAdapter map{frontend,
@@ -241,7 +278,7 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
     }
     EXPECT_FALSE(late) << armName(arm) << ": the basemap's tiles did not arrive";
 
-    ArmResult result{.arm = arm, .steps = {}, .sets = {}, .laidOut = {}};
+    ArmResult result{.arm = arm, .steps = {}, .sets = {}, .laidOut = {}, .lane = {}};
     const auto set = [&](const std::string& sourceID, const std::string& body) {
         auto& source = *map.getStyle().getSource(sourceID)->as<GeoJSONSource>();
         const uint64_t generation = source.nextDataGeneration();
@@ -253,8 +290,8 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
                 return GeoJSONData::parse(body, slicer, options, sourceID);
             };
         const auto land = [&map, sourceID, generation](GeoJSONData::ParseResult parsed) {
-            auto* source = map.getStyle().getSource(sourceID)->as<GeoJSONSource>();
-            source->setGeoJSONData(std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)), generation);
+            auto* landing = map.getStyle().getSource(sourceID)->as<GeoJSONSource>();
+            landing->setGeoJSONData(std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)), generation);
         };
         if (arm == Arm::Sync) {
             land(convert());
@@ -277,6 +314,14 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
     drain();
     result.steps = std::move(steps);
     result.laidOut = observer.laidOut;
+    result.lane = threadsOf(*Scheduler::GetLabelLane(), 2);
+    if (arm == Arm::Lane) {
+        for (const char* id : {"placement", "names"}) {
+            result.lane.merge(threadsOf(*map.getStyle().getSource(id)->as<GeoJSONSource>()->getSliceScheduler(), 1));
+        }
+    }
+    EXPECT_EQ(arm == Arm::Lane ? 4u : 2u, result.lane.size())
+        << armName(arm) << ": the lane threads were not told apart";
     return result;
 }
 
@@ -308,7 +353,7 @@ struct Spread {
 TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) {
     const std::string placementBody = util::read_file("test/fixtures/label_lane/gpt-placement-z10.json");
     const std::string namesBody = util::read_file("test/fixtures/label_lane/gpt-names-z10.json");
-    const std::string renderThread = platform::getCurrentThreadName();
+    const std::thread::id renderThread = std::this_thread::get_id();
 
     (void)util::LabelSteps::take();
     util::LabelSteps::setRecording(true);
@@ -348,13 +393,13 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
             const std::string key = s.sourceID + " " + s.name;
             if (s.hop) {
                 ++t.hops;
-                t.hopsOnRender += s.thread == renderThread;
+                t.hopsOnRender += s.threadID == renderThread;
                 t.hop[key].add(ms(s.end - s.start));
                 continue;
             }
             ++t.work;
-            t.workOnRender += s.thread == renderThread;
-            const bool onLane = s.thread.find("Label lane") != std::string::npos;
+            t.workOnRender += s.threadID == renderThread;
+            const bool onLane = r.lane.contains(s.threadID);
             t.workOnLane += onLane;
             if (onLane) laneSeries += s.end - s.start;
             if (s.queued.count() > 0) t.queue[key].add(ms(s.start - s.queued));
@@ -408,6 +453,102 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
                 EXPECT_EQ(0, t.workOnRender) << "lane: a step of ours ran on the render thread";
                 EXPECT_EQ(t.work, t.workOnLane) << "lane: a step of ours ran off the lane";
                 break;
+        }
+    }
+}
+
+// ios-names' case, with the real placement and names bodies and the app's
+// layers (several symbol layers, more than one tile): a filter change on
+// every label layer in one turn is laid out, and reported, while the very
+// next frame is made, for both sources; and the lane lays nothing out again
+// for it.
+TEST(LabelLaneRealData, AFilterChangeOnEveryLabelLayerIsLaidOutInTheNextFrame) {
+    const std::string placementBody = util::read_file("test/fixtures/label_lane/gpt-placement-z10.json");
+    const std::string namesBody = util::read_file("test/fixtures/label_lane/gpt-names-z10.json");
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    const auto basemapTile = std::make_shared<std::string>(
+        util::read_file("metrics/integration/tiles/14-8803-5375.mvt"));
+    fileSource->tileResponse = [basemapTile](const Resource&) {
+        Response response;
+        response.data = basemapTile;
+        return response;
+    };
+    const auto glyphs = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+    fileSource->glyphsResponse = [glyphs](const Resource&) {
+        Response response;
+        response.data = glyphs;
+        return response;
+    };
+    LaneObserver observer;
+    HeadlessFrontend frontend{Size{411, 914}, 2.625f};
+    MapAdapter map{frontend,
+                   observer,
+                   fileSource,
+                   MapOptions().withMapMode(MapMode::Continuous).withSize(frontend.getSize()).withPixelRatio(2.625f)};
+    map.getStyle().loadJSON(styleJSON(Arm::Lane));
+    for (const auto& key : imageKeys(placementBody)) {
+        map.getStyle().addImage(std::make_unique<style::Image>(key, PremultipliedImage({48, 48}), 2.0f));
+    }
+    map.jumpTo(CameraOptions().withCenter(LatLng{-48.65, -72.85}).withZoom(10.0));
+    auto& placement = *map.getStyle().getSource("placement")->as<GeoJSONSource>();
+    auto& names = *map.getStyle().getSource("names")->as<GeoJSONSource>();
+    conversion::Error error;
+    const uint64_t placementBodyGeneration = placement.setGeoJSON(*conversion::parseGeoJSON(placementBody, error));
+    const uint64_t namesBodyGeneration = names.setGeoJSON(*conversion::parseGeoJSON(namesBody, error));
+
+    bool late = false;
+    util::Timer watchdog;
+    watchdog.start(kBound, Duration::zero(), [&] { late = true; });
+    while (!late && !(observer.laidOut.contains({"placement", placementBodyGeneration}) &&
+                      observer.laidOut.contains({"names", namesBodyGeneration}) && observer.lastFrameFull)) {
+        turn(loop);
+    }
+    ASSERT_FALSE(late) << "the bodies were not laid out";
+    // Every lane layout of the bodies is done before the change.
+    Scheduler::GetLabelLane()->waitForEmpty(frontend.getThreadPool().tag);
+    while (!late && !observer.lastFrameFull) {
+        turn(loop);
+    }
+
+    (void)util::LabelSteps::take();
+    util::LabelSteps::setRecording(true);
+    int labelLayers = 0;
+    for (auto* layer : map.getStyle().getLayers()) {
+        if (layer->getSourceID() == "placement" || layer->getSourceID() == "names") {
+            layer->setFilter(
+                Filter(expression::dsl::eq(expression::dsl::get("form"), expression::dsl::literal("none"))));
+            ++labelLayers;
+        }
+    }
+    ASSERT_GT(labelLayers, 5);
+    const uint64_t placementLatest = placement.getLatestGeneration();
+    const uint64_t namesLatest = names.getLatestGeneration();
+    const int frameMade = observer.frames;
+    while (!late && observer.frames == frameMade) {
+        turn(loop);
+    }
+    ASSERT_FALSE(late) << "no frame after the change";
+    // -1: not reported at all.
+    const auto frameOf = [&](const std::string& id, uint64_t generation) {
+        const auto it = observer.laidOutFrame.find({id, generation});
+        return it == observer.laidOutFrame.end() ? -1 : it->second;
+    };
+    EXPECT_EQ(frameMade, frameOf("placement", placementLatest))
+        << "the placement source's change was not laid out in the next frame";
+    EXPECT_EQ(frameMade, frameOf("names", namesLatest))
+        << "the names source's change was not laid out in the next frame";
+
+    Scheduler::GetLabelLane()->waitForEmpty(frontend.getThreadPool().tag);
+    util::LabelSteps::setRecording(false);
+    std::set<std::thread::id> lane = threadsOf(*Scheduler::GetLabelLane(), 2);
+    for (const char* id : {"placement", "names"}) {
+        lane.merge(threadsOf(*map.getStyle().getSource(id)->as<GeoJSONSource>()->getSliceScheduler(), 1));
+    }
+    for (const auto& step : util::LabelSteps::take()) {
+        if ((step.sourceID == "placement" || step.sourceID == "names") && !step.hop) {
+            EXPECT_FALSE(lane.contains(step.threadID))
+                << step.sourceID << " " << step.name << ": the lane laid the change out again";
         }
     }
 }

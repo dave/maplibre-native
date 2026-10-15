@@ -453,6 +453,9 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         RenderSource* source = renderSources.at(sourceImpl->id).get();
         bool sourceNeedsRendering = implicitSourceNeedsRendering.contains(sourceImpl->id);
         bool sourceNeedsRelayout = false;
+        // A layer's filter or layout change on this source (not an image or
+        // global-state relayout).
+        bool sourceLayersChanged = false;
 
         for (std::size_t index = 0; index < orderedLayers.size(); ++index) {
             RenderLayer& layer = orderedLayers[index];
@@ -484,9 +487,11 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
                         layer.evaluatedProperties->collectEvaluatedGlobalStateRefs(refs);
                         return expression::globalStateRefsIntersect(&refs, changedGlobalStateKeys.get());
                     }();
+                    const bool layerChanged = hasLayoutDifference(layerDiff, layerId);
+                    sourceLayersChanged = sourceLayersChanged || layerChanged;
                     sourceNeedsRelayout = (sourceNeedsRelayout || hasImageDiff ||
-                                           constantsMaskChanged.contains(layerId) ||
-                                           hasLayoutDifference(layerDiff, layerId) || globalStateRequiresRelayout);
+                                           constantsMaskChanged.contains(layerId) || layerChanged ||
+                                           globalStateRequiresRelayout);
                     if (layerIsVisible) {
                         filteredLayersForSource.push_back(layer.evaluatedProperties);
                         if (zoomFitsLayer) {
@@ -517,6 +522,10 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         }
         tileParameters.isUpdateSynchronous = sourceImpl->isUpdateSynchronous();
         tileParameters.labelLane = sourceImpl->usesLabelLane() ? usedLabelLane() : nullptr;
+        // A lane source lays a layer change out on the render thread, before
+        // this frame draws, as a synchronous source does; its bodies stay on
+        // the lane.
+        tileParameters.relayoutInline = tileParameters.labelLane && sourceLayersChanged;
         source->update(sourceImpl, filteredLayersForSource, sourceNeedsRendering, sourceNeedsRelayout, tileParameters);
         filteredLayersForSource.clear();
         if (const auto generation = source->takeLaidOutGeneration()) {

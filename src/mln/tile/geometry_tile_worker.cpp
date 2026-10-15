@@ -163,6 +163,22 @@ void GeometryTileWorker::setData(std::unique_ptr<const GeometryTileData> data_,
     }
 }
 
+void GeometryTileWorker::setLayersQuietly(std::vector<Immutable<LayerProperties>> layers_,
+                                          std::shared_ptr<const GlobalStateMap> globalState_,
+                                          Immutable<std::set<std::string>> availableImages_) {
+    MLN_TRACE_FUNC();
+
+    // The tile laid these layers out itself (GeometryTile::setLayersInline):
+    // keep them for the bodies to come, lay nothing out now, and keep the
+    // correlation, so a layout of the old layers still on the way is older
+    // than the tile's and is dropped. The parse result is for the old layers:
+    // no layout may be made from it.
+    layers = std::move(layers_);
+    globalState = std::move(globalState_);
+    availableImages = std::move(availableImages_);
+    featureIndex.reset();
+}
+
 void GeometryTileWorker::setLayers(std::vector<Immutable<LayerProperties>> layers_,
                                    std::shared_ptr<const GlobalStateMap> globalState_,
                                    Immutable<std::set<std::string>> availableImages_,
