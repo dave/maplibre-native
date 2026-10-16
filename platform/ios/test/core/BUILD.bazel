@@ -59,6 +59,10 @@ ios_application(
 
 ios_unit_test(
     name = "CppUnitTests",
+    # The runner passes only these of bazel's test environment on to the test
+    # host app; gtest reads GTEST_FILTER itself, so one run can name its tests:
+    # bazel test //platform/ios/test/core:CppUnitTests --test_env=GTEST_FILTER='ContourLines.*'
+    env_inherit = ["GTEST_FILTER"],
     minimum_os_version = "15.5",
     provisioning_profile = "//platform/ios:xcode_profile",
     test_host = "CppUnitTestsApp",
