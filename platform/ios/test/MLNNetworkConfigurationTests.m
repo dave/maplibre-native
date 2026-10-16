@@ -42,6 +42,10 @@
 // Regression test for https://github.com/mapbox/mapbox-gl-native/issues/14982
 - (void)testAccessingEventsFromMultipleThreads {
     MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    // Events are recorded only for a metrics delegate: without one this test
+    // would not touch the events dictionary at all.
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
 
     // Concurrent
     dispatch_queue_t queue = dispatch_queue_create("org.maplibre.testAccessingEventsFromMultipleThreads", DISPATCH_QUEUE_CONCURRENT);
@@ -149,6 +153,25 @@
     });
     [self waitForExpectations:@[delivered] timeout:10.0];
     XCTAssertEqual(metrics.eventCount, rounds);
+}
+
+// With no metrics delegate nothing is recorded, so nothing waits to be sent.
+- (void)testWithoutAMetricsDelegateNoEventIsRecorded {
+    MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    [configuration startDownloadEvent:@"/tile" type:@"tile"];
+
+    // A metrics delegate set later gets no event for that start.
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
+    NSURL *url = [NSURL URLWithString:@"https://example.com/tile"];
+    [configuration stopDownloadEventForResponse:[[NSURLResponse alloc] initWithURL:url MIMEType:nil expectedContentLength:0 textEncodingName:nil]];
+
+    XCTestExpectation *delivered = [self expectationWithDescription:@"main queue drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [delivered fulfill];
+    });
+    [self waitForExpectations:@[delivered] timeout:10.0];
+    XCTAssertEqual(metrics.eventCount, 0u);
 }
 
 // Three completions at once for one recorded start, as when three sources
