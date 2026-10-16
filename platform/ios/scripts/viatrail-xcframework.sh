@@ -30,7 +30,21 @@ CMD=(bazel build --compilation_mode=opt --features=dead_strip,thin_lto --objc_en
 ZIP="$(bazel info --compilation_mode=opt bazel-bin)/platform/ios/MapLibre.dynamic.xcframework.zip"
 rm -rf "$OUT" && mkdir -p "$OUT"
 (cd "$OUT" && unzip -q "$ZIP")
-BIN="$OUT/MapLibre.xcframework/ios-arm64/MapLibre.framework/MapLibre"
+# The dSYMs (about 200 MB) go beside the framework, not in it: the app repo
+# vendors the framework, and large files do not belong in git. Keep them with
+# the build for symbolicating crash reports.
+XCF="$OUT/MapLibre.xcframework"
+mkdir -p "$OUT/dSYMs"
+for slice in "$XCF"/*/; do
+  name=$(basename "$slice")
+  if [ -d "$slice/dSYMs" ]; then mv "$slice/dSYMs" "$OUT/dSYMs/$name"; fi
+done
+n=0
+while /usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$n" "$XCF/Info.plist" >/dev/null 2>&1; do
+  /usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:$n:DebugSymbolsPath" "$XCF/Info.plist" 2>/dev/null || true
+  n=$((n+1))
+done
+BIN="$XCF/ios-arm64/MapLibre.framework/MapLibre"
 [ -f "$BIN" ] || { echo "viatrail-xcframework: no device binary at $BIN" >&2; exit 1; }
 if nm -u "$BIN" | grep -q "__assert_rtn"; then
   echo "viatrail-xcframework: the device binary imports __assert_rtn: not a release build" >&2
