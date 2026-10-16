@@ -19,6 +19,21 @@
 
 @end
 
+// Counts the metric events, on the main queue where they arrive.
+@interface MLNTestMetricsDelegate : NSObject <MLNNetworkConfigurationMetricsDelegate>
+@property (nonatomic) NSUInteger eventCount;
+@end
+
+@implementation MLNTestMetricsDelegate
+
+- (void)networkConfiguration:(MLNNetworkConfiguration *)networkConfiguration
+      didGenerateMetricEvent:(NSDictionary *)metricEvent {
+    NSAssert(NSThread.isMainThread, @"metric events arrive on the main queue");
+    self.eventCount += 1;
+}
+
+@end
+
 @interface MLNNetworkConfigurationTests : XCTestCase
 @end
 
@@ -27,6 +42,10 @@
 // Regression test for https://github.com/mapbox/mapbox-gl-native/issues/14982
 - (void)testAccessingEventsFromMultipleThreads {
     MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    // Events are recorded only for a metrics delegate: without one this test
+    // would not touch the events dictionary at all.
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
 
     // Concurrent
     dispatch_queue_t queue = dispatch_queue_create("org.maplibre.testAccessingEventsFromMultipleThreads", DISPATCH_QUEUE_CONCURRENT);
@@ -97,4 +116,99 @@
 
     XCTAssertEqual(processedResponse, internalResponse);
 }
+
+// Two completions for one path, at once: the key leaves out the query, and the
+// session's delegate queue runs several completions together. Both used to pass
+// the event check, then one read the event after the other removed it, and the
+// event's dictionary literal threw (NSInvalidArgumentException, a SIGABRT about
+// a second after launch on the iPhone). Each start gives exactly one event.
+- (void)testTwoCompletionsForOnePathAtOnceGiveOneEvent {
+    MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
+
+    dispatch_queue_t queue = dispatch_queue_create("org.maplibre.testTwoCompletionsForOnePathAtOnce",
+                                                   DISPATCH_QUEUE_CONCURRENT);
+    const NSUInteger rounds = 2000;
+    for (NSUInteger i = 0; i < rounds; i++) {
+        NSURL *first = [NSURL URLWithString:[NSString stringWithFormat:@"https://example.com/tile?a=%lu", (unsigned long)i]];
+        NSURL *second = [NSURL URLWithString:[NSString stringWithFormat:@"https://example.com/tile?b=%lu", (unsigned long)i]];
+        [configuration startDownloadEvent:first.relativePath type:@"tile"];
+        NSURLResponse *firstResponse = [[NSURLResponse alloc] initWithURL:first MIMEType:nil expectedContentLength:0 textEncodingName:nil];
+        NSURLResponse *secondResponse = [[NSURLResponse alloc] initWithURL:second MIMEType:nil expectedContentLength:0 textEncodingName:nil];
+        dispatch_group_t group = dispatch_group_create();
+        dispatch_group_async(group, queue, ^{
+            [configuration stopDownloadEventForResponse:firstResponse];
+        });
+        dispatch_group_async(group, queue, ^{
+            [configuration stopDownloadEventForResponse:secondResponse];
+        });
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    }
+
+    // The events reach the delegate on the main queue, after every stop above.
+    XCTestExpectation *delivered = [self expectationWithDescription:@"events delivered"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [delivered fulfill];
+    });
+    [self waitForExpectations:@[delivered] timeout:10.0];
+    XCTAssertEqual(metrics.eventCount, rounds);
+}
+
+// With no metrics delegate nothing is recorded, so nothing waits to be sent.
+- (void)testWithoutAMetricsDelegateNoEventIsRecorded {
+    MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    [configuration startDownloadEvent:@"/tile" type:@"tile"];
+
+    // A metrics delegate set later gets no event for that start.
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
+    NSURL *url = [NSURL URLWithString:@"https://example.com/tile"];
+    [configuration stopDownloadEventForResponse:[[NSURLResponse alloc] initWithURL:url MIMEType:nil expectedContentLength:0 textEncodingName:nil]];
+
+    XCTestExpectation *delivered = [self expectationWithDescription:@"main queue drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [delivered fulfill];
+    });
+    [self waitForExpectations:@[delivered] timeout:10.0];
+    XCTAssertEqual(metrics.eventCount, 0u);
+}
+// Three completions for one path at once: the shape of an app whose style has
+// three sources on one tile URL, on a session whose delegate queue runs
+// completions concurrently. On the 85defb9df882 code this failed in 5 of 5
+// runs: it aborted with the iPhone's stack (nil into the event's dictionary
+// literal in eventAttributesForURL:withAction:), or it counted about three
+// events per start. Each start gives exactly one event.
+- (void)testThreeCompletionsForOnePathAtOnceGiveOneEvent {
+    MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
+    configuration.metricsDelegate = metrics;
+
+    dispatch_queue_t queue = dispatch_queue_create("org.maplibre.testThreeCompletionsForOnePath",
+                                                   DISPATCH_QUEUE_CONCURRENT);
+    const NSUInteger rounds = 2000;
+    for (NSUInteger i = 0; i < rounds; i++) {
+        NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://example.com/tiles/5/16/%lu?w=0", (unsigned long)i]];
+        for (int k = 0; k < 3; k++) {
+            [configuration startDownloadEvent:url.relativePath type:@"tile"];
+        }
+        NSURLResponse *response = [[NSURLResponse alloc] initWithURL:url MIMEType:nil expectedContentLength:0 textEncodingName:nil];
+        dispatch_group_t group = dispatch_group_create();
+        for (int k = 0; k < 3; k++) {
+            dispatch_group_async(group, queue, ^{
+                [configuration stopDownloadEventForResponse:response];
+            });
+        }
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    }
+
+    // The events reach the delegate on the main queue, after every stop above.
+    XCTestExpectation *delivered = [self expectationWithDescription:@"events delivered"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [delivered fulfill];
+    });
+    [self waitForExpectations:@[delivered] timeout:10.0];
+    XCTAssertEqual(metrics.eventCount, rounds);
+}
+
 @end
