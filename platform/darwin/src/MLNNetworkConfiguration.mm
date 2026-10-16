@@ -135,6 +135,10 @@ NSString *const kMLNDownloadPerformanceEvent = @"mobile.performance_trace";
 }
 
 - (void)startDownloadEvent:(NSString *)urlString type:(NSString *)resourceType {
+  // The events are only for a metrics delegate: with none, record nothing.
+  if (!self.metricsDelegate) {
+    return;
+  }
   if (urlString && resourceType) {
     [self addEventDictionary:@{MLNStartTime : [NSDate date], MLNResourceType : resourceType}
                       forKey:urlString];
@@ -174,14 +178,19 @@ NSString *const kMLNDownloadPerformanceEvent = @"mobile.performance_trace";
   // literal below).
   NSDictionary *parameters = [self takeEventDictionaryForKey:urlString];
   if (!parameters) {
-    // Another completion for the same path took it.
+    // No start was recorded (no metrics delegate then), or another completion
+    // for the same path took it.
+    return;
+  }
+  id<MLNNetworkConfigurationMetricsDelegate> metricsDelegate = self.metricsDelegate;
+  if (!metricsDelegate) {
     return;
   }
   NSDictionary *eventAttributes = [self eventAttributesForURL:response
                                                    parameters:parameters
                                                    withAction:action];
   dispatch_async(dispatch_get_main_queue(), ^{
-    [self.metricsDelegate networkConfiguration:self didGenerateMetricEvent:eventAttributes];
+    [metricsDelegate networkConfiguration:self didGenerateMetricEvent:eventAttributes];
   });
 }
 
