@@ -3,9 +3,11 @@
 #include <mln/renderer/sources/render_raster_dem_source.hpp>
 #include <mln/renderer/sources/render_tile_source.hpp>
 #include <mln/style/sources/contour_source_impl.hpp>
+#include <mln/tile/contour_tile.hpp>
 
 #include <mapbox/std/weak.hpp>
 
+#include <map>
 #include <optional>
 
 namespace mln {
@@ -38,6 +40,14 @@ private:
     // matching contour tile in our pyramid (same OverscaledTileID) and call
     // populateFromDEM on it.
     void onUpstreamTileLoaded(const RasterDEMTile&);
+
+    // Populates the tiles in `pendingPopulate`, once the render thread's
+    // current messages are handled: one DEM arrival notifies up to nine
+    // tiles, and several arrivals often come together, so each tile is
+    // populated once, from the newest snapshot of its DEM.
+    void populatePending();
+    std::map<OverscaledTileID, ContourTile::DEMSnapshot> pendingPopulate;
+    bool populateScheduled = false;
 
     // Cached upstream pointer for use within a single update() call. Cleared
     // in rebindUpstream when the resolved upstream changes (so we never
