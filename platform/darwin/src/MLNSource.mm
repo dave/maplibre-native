@@ -41,7 +41,9 @@ const MLNExceptionName MLNInvalidStyleSourceException = @"MLNInvalidStyleSourceE
   NSString *identifier = @(rawSource->getID().c_str());
   if (self = [self initWithIdentifier:identifier]) {
     _weakSource = rawSource->makeWeakPtr();
-    rawSource->peer = SourceWrapper{self};
+    // A source already in a style (`stylable` set) is held by its core source; a pending one
+    // is not, as it owns its core source (`SourceWrapper`).
+    rawSource->peer = SourceWrapper{self, stylable ? self : nil};
     _stylable = stylable;
   }
   return self;
@@ -67,7 +69,10 @@ const MLNExceptionName MLNInvalidStyleSourceException = @"MLNInvalidStyleSourceE
   }
 
   _stylable = stylable;
+  mln::style::Source *rawSource = _pendingSource.get();
   _stylable.style.rawStyle->addSource(std::move(_pendingSource));
+  // In the style now: held by its core source (`SourceWrapper`).
+  rawSource->peer = SourceWrapper{self, self};
 }
 
 - (BOOL)removeFromStylable:(id<MLNStylable>)mapView
@@ -80,6 +85,9 @@ const MLNExceptionName MLNInvalidStyleSourceException = @"MLNInvalidStyleSourceE
 
     if (removedSource) {
       removed = YES;
+      // Out of the style: it owns its core source again, so the core source must not hold it
+      // (a cycle).
+      removedSource->peer = SourceWrapper{self, nil};
       _pendingSource = std::move(removedSource);
       _stylable = nil;
     } else if (outError) {

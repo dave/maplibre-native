@@ -14,10 +14,20 @@ class Source;
 
 // A struct to be stored in the `peer` member of mln::style::Source, in order to implement
 // object identity. We don't store a MLNSource pointer directly because that doesn't
-// interoperate with ARC. The inner pointer is weak in order to avoid a reference cycle for
+// interoperate with ARC. `source` is weak in order to avoid a reference cycle for
 // "pending" MLNSources, which have a strong owning pointer to the mln::style::Source.
+//
+// `held` (Viatrail fork, 2026-10-16) keeps the MLNSource of a source that is IN a style
+// alive for as long as the core source is there, so every lookup returns the same object
+// and state kept on it (MLNShapeSource's `shape`) survives. With only the weak link, an
+// optimised build freed a looked-up MLNSource at once, and the next lookup made a new one
+// whose `shape` was nil (at -O0 ARC happened to keep it alive). No cycle: an added
+// MLNSource holds its core source only weakly. `held` is cleared when the source leaves
+// the style (it then owns its core source again), and released with the peer when the
+// core source is destroyed.
 struct SourceWrapper {
   __weak MLNSource *source;
+  MLNSource *held;
 };
 
 /**
