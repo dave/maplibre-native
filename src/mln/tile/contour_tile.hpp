@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mln/actor/scheduler.hpp>
+#include <mln/algorithm/contour/isolines.hpp>
 #include <mln/algorithm/contour/units.hpp>
 #include <mln/tile/geometry_tile.hpp>
 
@@ -13,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace mln {
@@ -65,6 +67,13 @@ public:
     };
     // Nothing when the DEM tile has no data.
     static std::optional<DEMSnapshot> snapshot(const RasterDEMTile&);
+
+    // The marching squares every contour tile runs:
+    // algorithm::contour::generateContours. Tests swap in the version from
+    // before it was made faster, to draw both on the same renderer.
+    using MarchingSquares = std::vector<algorithm::contour::ContourLineString> (*)(
+        std::span<const std::int16_t>, int, int, const algorithm::contour::ContourThresholds&);
+    static std::atomic<MarchingSquares> marchingSquares;
 
     // As `populateFromDEM`, from a snapshot.
     void populate(const DEMSnapshot&,

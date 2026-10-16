@@ -10,6 +10,7 @@
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_options.hpp>
 #include <mln/style/style.hpp>
+#include <mln/tile/contour_tile.hpp>
 #include <mln/util/image.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/run_loop.hpp>
@@ -17,10 +18,13 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
+
+// The fixtures are WebP DEM tiles. WebP support is not enabled in Qt by
+// default (see Image.WebPTile in test/util/image.test.cpp).
+#if !defined(__QT__)
 
 using namespace mln;
 
@@ -95,7 +99,8 @@ std::string contourStyle() {
     // The app's contour source and its z11 band layers, in opaque black so
     // that any moved line shows.
     auto band = [](const std::string& id, int minzoom, const std::string& filter) {
-        return R"({"id": ")" + id + R"(", "type": "line", "source": "contours", "source-layer": "contours", "minzoom": )" +
+        return R"({"id": ")" + id +
+               R"(", "type": "line", "source": "contours", "source-layer": "contours", "minzoom": )" +
                std::to_string(minzoom) + R"(, "filter": )" + filter +
                R"(, "paint": {"line-color": "black", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.4, 15, 0.8]}})";
     };
@@ -105,11 +110,14 @@ std::string contourStyle() {
                      "majorMultiplier": [1, 11, 5, 12, 10]}},
       "layers": [{"id": "background", "type": "background", "paint": {"background-color": "white"}},)" +
            band("band_200", 9, R"(["all", ["!=", ["get", "ele"], 0], ["==", ["%", ["get", "ele"], 200], 0]])") + "," +
-           band("band_100",
-                10,
-                R"(["all", ["!=", ["get", "ele"], 0], ["==", ["%", ["get", "ele"], 100], 0], ["!=", ["%", ["get", "ele"], 200], 0]])") +
+           band(
+               "band_100",
+               10,
+               R"(["all", ["!=", ["get", "ele"], 0], ["==", ["%", ["get", "ele"], 100], 0], ["!=", ["%", ["get", "ele"], 200], 0]])") +
            "," +
-           band("band_20", 11, R"(["all", ["==", ["%", ["get", "ele"], 20], 0], ["!=", ["%", ["get", "ele"], 100], 0]])") +
+           band("band_20",
+                11,
+                R"(["all", ["==", ["%", ["get", "ele"], 20], 0], ["!=", ["%", ["get", "ele"], 100], 0]])") +
            "]}";
 }
 
@@ -143,18 +151,22 @@ PremultipliedImage renderContours(double zoom) {
 
 } // namespace
 
-// The contour lines of nine real tiles draw exactly as they did before the
-// contour work was made cheaper (expected images from fork 52b261a0e374).
-// MLN_CONTOUR_UPDATE=1 writes new expected images.
-TEST(ContourLines, TheRenderMatchesTheExpectedImage) {
+// The contour lines of nine real tiles draw exactly as they do with the
+// marching squares from before it was made faster: both are drawn in this run,
+// on this renderer, so no stored image is needed.
+TEST(ContourLines, TheRenderMatchesTheReferenceMarchingSquares) {
     for (const auto& [zoom, name] : {std::pair{11.0, "z11"}, std::pair{11.4, "z11.4"}}) {
-        const auto actual = renderContours(zoom);
-        const std::string path = kFixtures + "expected-" + name + ".png";
-        if (std::getenv("MLN_CONTOUR_UPDATE")) {
-            util::write_file(path, encodePNG(actual));
-            continue;
+        ASSERT_EQ(&algorithm::contour::generateContours, ContourTile::marchingSquares.load());
+        PremultipliedImage expected;
+        {
+            // Put the production marching squares back however this scope ends.
+            struct Restore {
+                ~Restore() { ContourTile::marchingSquares = &algorithm::contour::generateContours; }
+            } restore;
+            ContourTile::marchingSquares = &algorithm::contour::generateContoursReference;
+            expected = renderContours(zoom);
         }
-        const auto expected = decodeImage(util::read_file(path));
+        const auto actual = renderContours(zoom);
         ASSERT_EQ(expected.size, actual.size) << name;
         std::size_t differing = 0;
         std::size_t dark = 0;
@@ -167,3 +179,5 @@ TEST(ContourLines, TheRenderMatchesTheExpectedImage) {
         EXPECT_EQ(0u, differing) << name << ": " << differing << " pixels differ";
     }
 }
+
+#endif // !defined(__QT__)
