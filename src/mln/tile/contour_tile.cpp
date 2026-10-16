@@ -90,10 +90,10 @@ std::vector<std::vector<algorithm::contour::Point2D>> clipPolylineToTile(
                 const double t = q[i] / p[i];
                 if (p[i] < 0.0) {
                     if (t > tExit) return std::nullopt;
-                    if (t > tEnter) tEnter = t;
+                    tEnter = std::max(tEnter, t);
                 } else {
                     if (t < tEnter) return std::nullopt;
-                    if (t < tExit) tExit = t;
+                    tExit = std::min(tExit, t);
                 }
             }
         }
@@ -237,6 +237,8 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
 
 } // namespace
 
+std::atomic<ContourTile::MarchingSquares> ContourTile::marchingSquares{&algorithm::contour::generateContours};
+
 ContourTile::ContourTile(const OverscaledTileID& id_,
                          std::string sourceID_,
                          const TileParameters& parameters,
@@ -281,9 +283,9 @@ std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTil
     // the raw buffered image (one memcpy); the job decodes the heights, as
     // DEMData::get would.
     assert(dem.stride == dem.dim + 2 * DEMData::border);
-    return DEMSnapshot{std::make_shared<const PremultipliedImage>(dem.getImage()->clone()),
-                       dem.dim,
-                       dem.getUnpackVector()};
+    return DEMSnapshot{.image = std::make_shared<const PremultipliedImage>(dem.getImage()->clone()),
+                       .dim = dem.dim,
+                       .unpack = dem.getUnpackVector()};
 }
 
 void ContourTile::populate(const DEMSnapshot& snapshot_,
@@ -305,7 +307,15 @@ void ContourTile::populate(const DEMSnapshot& snapshot_,
     const std::uint64_t generation = ++requestedGeneration;
     latestGeneration->store(generation);
     threadPool.scheduleAndReplyValue(
-        [image, unpack, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit, generation,
+        [image,
+         unpack,
+         width,
+         dim,
+         intervalMeters,
+         intervalDisplayUnits,
+         majorMultiplier,
+         unit,
+         generation,
          latest = latestGeneration]() -> mapbox::feature::feature_collection<std::int16_t> {
             // A newer call was made while this one waited: its result would be
             // dropped on reply, so skip the work.
@@ -341,7 +351,7 @@ void ContourTile::populate(const DEMSnapshot& snapshot_,
             // exactly at the seam.
             thresholds.extent = static_cast<int>(std::lround(
                 static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
-            const auto lines = algorithm::contour::generateContours(heights, width, width, thresholds);
+            const auto lines = marchingSquares.load()(heights, width, width, thresholds);
 
             // Shift so alg index `border` lands at +0.5cw (sample 0's
             // pixel-center position): the shift is (2·border − 1) half
