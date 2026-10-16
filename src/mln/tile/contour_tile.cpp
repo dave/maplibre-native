@@ -11,6 +11,10 @@
 #include <mln/tile/raster_dem_tile.hpp>
 #include <mln/util/constants.hpp>
 #include <mln/util/identity.hpp>
+#include <mln/tile/contour_probe.hpp>
+
+#include <array>
+#include <chrono>
 
 #include <mapbox/feature.hpp>
 #include <mapbox/geometry.hpp>
@@ -194,6 +198,13 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
     const std::int64_t intervalRound = static_cast<std::int64_t>(std::llround(intervalDisplayUnits));
     const std::int64_t majorMod = (majorMultiplier > 0 && intervalRound > 0) ? intervalRound * majorMultiplier : 0;
 
+    using SteadyClock = std::chrono::steady_clock;
+    auto ms = [](SteadyClock::time_point a, SteadyClock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    contour_probe::Stats local;
+    const double postEpsilon = contour_probe::postEpsilon.load();
+    static_assert(kChaikinIterations == 2);
     std::vector<algorithm::contour::Point2D> work;
     for (const auto& line : lines) {
         if (line.points.size() < 4) continue;
@@ -204,12 +215,42 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
             work.push_back({static_cast<double>(line.points[i]), static_cast<double>(line.points[i + 1])});
         }
 
-        for (auto& clipped : clipPolylineToTile(work)) {
+        auto t0 = SteadyClock::now();
+        auto clippedLines = clipPolylineToTile(work);
+        auto t1 = SteadyClock::now();
+        local.clipMs += ms(t0, t1);
+        for (auto& clipped : clippedLines) {
             if (clipped.size() < 2) continue;
+            local.clipPoints += clipped.size();
+            auto a = SteadyClock::now();
             const auto simplified = algorithm::contour::douglasPeucker(clipped, kSimplifyEpsilon);
+            auto b = SteadyClock::now();
+            local.dpMs += ms(a, b);
             if (simplified.size() < 2) continue;
-            const auto smoothed = algorithm::contour::chaikin(simplified, kChaikinIterations);
+            local.dpPoints += simplified.size();
+            const auto pass1 = algorithm::contour::chaikin(simplified, 1);
+            auto c = SteadyClock::now();
+            local.ch1Ms += ms(b, c);
+            local.ch1Points += pass1.size();
+            auto smoothed = algorithm::contour::chaikin(pass1, 1);
+            auto d = SteadyClock::now();
+            local.ch2Ms += ms(c, d);
+            local.ch2Points += smoothed.size();
+            if (postEpsilon > 0.0) {
+                smoothed = algorithm::contour::douglasPeucker(smoothed, postEpsilon);
+                local.postMs += ms(d, SteadyClock::now());
+            }
+            local.postPoints += smoothed.size();
             if (smoothed.size() < 2) continue;
+            const auto buildStart = SteadyClock::now();
+            struct BuildTimer {
+                contour_probe::Stats& s;
+                SteadyClock::time_point t;
+                ~BuildTimer() {
+                    s.buildMs += std::chrono::duration<double, std::milli>(SteadyClock::now() - t).count();
+                    s.features++;
+                }
+            } buildTimer{local, buildStart};
 
             mapbox::geometry::line_string<std::int16_t> ls;
             ls.reserve(smoothed.size());
@@ -229,6 +270,22 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
             f.properties["major"] = (majorMod > 0) && (elev % majorMod == 0);
             features.push_back(std::move(f));
         }
+    }
+    {
+        std::lock_guard<std::mutex> lock(contour_probe::mutex);
+        auto& s = contour_probe::stats;
+        s.clipMs += local.clipMs;
+        s.dpMs += local.dpMs;
+        s.ch1Ms += local.ch1Ms;
+        s.ch2Ms += local.ch2Ms;
+        s.postMs += local.postMs;
+        s.buildMs += local.buildMs;
+        s.clipPoints += local.clipPoints;
+        s.dpPoints += local.dpPoints;
+        s.ch1Points += local.ch1Points;
+        s.ch2Points += local.ch2Points;
+        s.postPoints += local.postPoints;
+        s.features += local.features;
     }
     return features;
 }
@@ -270,61 +327,77 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
     //
     // Snapshot here on the render thread because backfillBorder mutates
     // the same image asynchronously when more neighbours arrive.
+    using SteadyClock = std::chrono::steady_clock;
+    const auto snapStart = SteadyClock::now();
     const int dim = dem.dim;
     const int border = DEMData::border;
     const int width = dim + 2 * border;
     auto heights = std::make_shared<std::vector<std::int16_t>>();
-    heights->reserve(static_cast<std::size_t>(width) * width);
-    for (int y = -border; y < dim + border; y++) {
-        for (int x = -border; x < dim + border; x++) {
-            heights->push_back(static_cast<std::int16_t>(dem.get(x, y)));
+    std::shared_ptr<PremultipliedImage> raw;
+    const bool rawSnapshot = contour_probe::rawSnapshot.load();
+    if (rawSnapshot) {
+        raw = std::make_shared<PremultipliedImage>(dem.getImage()->clone());
+    } else {
+        heights->reserve(static_cast<std::size_t>(width) * width);
+        for (int y = -border; y < dim + border; y++) {
+            for (int x = -border; x < dim + border; x++) {
+                heights->push_back(static_cast<std::int16_t>(dem.get(x, y)));
+            }
         }
     }
+    {
+        std::lock_guard<std::mutex> lock(contour_probe::mutex);
+        contour_probe::stats.populates++;
+        contour_probe::stats.snapshotMs += std::chrono::duration<double, std::milli>(SteadyClock::now() - snapStart).count();
+    }
+    const auto encoding = dem.encoding;
 
-    // The configured `intervalDisplayUnits` is in display units (feet,
-    // metres, custom). Heights are always metres. Convert the threshold to
-    // metres before running the algorithm so its level outputs come back in
-    // metres too, then convert per-feature `ele` back to display units in
-    // `toFeatures`.
     const double intervalMeters = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
 
     const std::uint64_t generation = ++requestedGeneration;
+    latestGeneration->store(generation);
+    const bool skipStale = contour_probe::skipStale.load();
+    const bool fastMarch = contour_probe::fastMarch.load();
     threadPool.scheduleAndReplyValue(
-        [heights, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit]() {
+        [heights, raw, encoding, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit,
+         latest = latestGeneration, generation, skipStale, fastMarch]() {
+            auto ms = [](SteadyClock::time_point a, SteadyClock::time_point b) {
+                return std::chrono::duration<double, std::milli>(b - a).count();
+            };
+            if (skipStale && latest->load() != generation) {
+                std::lock_guard<std::mutex> lock(contour_probe::mutex);
+                contour_probe::stats.jobsSkipped++;
+                return mapbox::feature::feature_collection<std::int16_t>{};
+            }
+            const auto t0 = SteadyClock::now();
+            if (raw) {
+                // Decode the raw buffered image, as DEMData::get does.
+                const std::array<float, 4> unpack = encoding == Tileset::RasterEncoding::Terrarium
+                                                        ? std::array<float, 4>{{256.0f, 1.0f, 1.0f / 256.0f, 32768.0f}}
+                                                        : std::array<float, 4>{{6553.6f, 25.6f, 0.1f, 10000.0f}};
+                heights->resize(static_cast<std::size_t>(width) * width);
+                const uint8_t* data = raw->data.get();
+                for (std::size_t i = 0; i < heights->size(); i++) {
+                    const uint8_t* v = data + i * 4;
+                    (*heights)[i] = static_cast<std::int16_t>(
+                        static_cast<int32_t>(v[0] * unpack[0] + v[1] * unpack[1] + v[2] * unpack[2] - unpack[3]));
+                }
+            }
+            const auto t1 = SteadyClock::now();
             algorithm::contour::ContourThresholds thresholds;
             thresholds.interval = intervalMeters;
-            // Pixel-center coordinate mapping. We want:
-            //   alg index `border`     (sample 0, world west_L + 0.5cw) → tile-local +0.5cw
-            //   alg index `border+dim-1` (sample dim-1, east_L − 0.5cw) → EXTENT − 0.5cw
-            //   alg indices [0, border-1] and [border+dim, width-1]    → outside the tile,
-            //                                                            in the neighbour's interior
-            //
-            // The algorithm internally uses
-            //   multiplier = thresholds.extent / (width - 1)
-            // and emits output at multiplier·index. We want
-            //   multiplier = EXTENT / dim
-            // so each cell spans one tile-local cell width, no matter how
-            // wide the buffered view is. That gives
-            //   thresholds.extent = EXTENT × (width - 1) / dim
-            //
-            // The boundary cell on each tile (heights[border-1..border]
-            // on the west, heights[width-2..width-1] on the east, after
-            // backfillBorder) straddles the tile edge using identical
-            // neighbour data, so adjacent tiles' contour features meet
-            // exactly at the seam.
             thresholds.extent = static_cast<int>(std::lround(
                 static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
-            const auto lines = algorithm::contour::generateContours(*heights, width, width, thresholds);
+            const auto lines = fastMarch
+                                   ? algorithm::contour::generateContoursFast(*heights, width, width, thresholds)
+                                   : algorithm::contour::generateContours(*heights, width, width, thresholds);
+            const auto t2 = SteadyClock::now();
 
-            // Shift so alg index `border` lands at +0.5cw (sample 0's
-            // pixel-center position): the shift is (2·border − 1) half
-            // cells. With DEMData::border = 3 it is 2.5 cells, and alg
-            // index 0 (the outermost west border cell) sits three cells
-            // west of sample 0.
             const double halfCellPx = 0.5 * static_cast<double>(util::EXTENT) / static_cast<double>(dim);
             const double shift = halfCellPx * static_cast<double>(2 * DEMData::border - 1);
             std::vector<algorithm::contour::ContourLineString> shifted;
             shifted.reserve(lines.size());
+            std::size_t points = 0;
             for (const auto& line : lines) {
                 algorithm::contour::ContourLineString s;
                 s.elevation = line.elevation;
@@ -333,7 +406,19 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
                     s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i] - shift)));
                     s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i + 1] - shift)));
                 }
+                points += line.points.size() / 2;
                 shifted.push_back(std::move(s));
+            }
+            const auto t3 = SteadyClock::now();
+            {
+                std::lock_guard<std::mutex> lock(contour_probe::mutex);
+                auto& st = contour_probe::stats;
+                st.jobsRun++;
+                st.decodeMs += ms(t0, t1);
+                st.marchMs += ms(t1, t2);
+                st.shiftMs += ms(t2, t3);
+                st.marchLines += lines.size();
+                st.marchPoints += points;
             }
             return toFeatures(shifted, unit, intervalDisplayUnits, majorMultiplier);
         },
@@ -345,7 +430,16 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
                 // finish in either order, so drop an older result rather
                 // than let it replace a newer one.
                 if (generation != requestedGeneration) {
+                    std::lock_guard<std::mutex> lock(contour_probe::mutex);
+                    contour_probe::stats.dropped++;
                     return;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(contour_probe::mutex);
+                    contour_probe::stats.applied++;
+                    contour_probe::lastFeatures[std::to_string(id.canonical.z) + "/" +
+                                                std::to_string(id.canonical.x) + "/" +
+                                                std::to_string(id.canonical.y)] = features;
                 }
                 appliedGeneration = generation;
                 setData(std::make_unique<GeoJSONTileData>(std::move(features)));

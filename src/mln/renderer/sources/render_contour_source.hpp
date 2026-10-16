@@ -7,6 +7,7 @@
 #include <mapbox/std/weak.hpp>
 
 #include <optional>
+#include <set>
 
 namespace mln {
 
@@ -45,6 +46,12 @@ private:
     // dtor body for why.
     RenderRasterDEMSource* upstream = nullptr;
     std::optional<RenderRasterDEMSource::ListenerHandle> listenerHandle;
+
+    // SCRATCH (lever c): tiles to populate once the render thread's current
+    // messages are handled.
+    void populatePending();
+    std::set<OverscaledTileID> pendingPopulate;
+    bool populateScheduled = false;
 
     mapbox::base::WeakPtrFactory<RenderContourSource> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`.

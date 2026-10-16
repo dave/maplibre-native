@@ -6,6 +6,9 @@
 #include <deque>
 #include <limits>
 #include <unordered_map>
+#include <vector>
+
+#include <mln/util/containers.hpp>
 
 namespace mln {
 namespace algorithm {
@@ -272,6 +275,184 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
             ContourLineString line;
             line.elevation = level;
             line.points.assign(f.points.begin(), f.points.end());
+            result.push_back(std::move(line));
+        }
+    }
+
+    return result;
+}
+
+namespace {
+
+// SCRATCH: the same polyline as Fragment, in two vectors: `head` holds the
+// prepended points as reversed (x, y) pairs, `tail` the appended ones, so the
+// line is reversePairs(head) ++ tail.
+struct FastFragment {
+    std::uint64_t start;
+    std::uint64_t end;
+    std::vector<std::int32_t> head;
+    std::vector<std::int32_t> tail;
+    bool merged = false;
+    std::size_t size() const { return head.size() + tail.size(); }
+};
+
+struct FastLevelState {
+    std::vector<FastFragment> fragments;
+    mln::unordered_map<std::uint64_t, std::size_t> byStart;
+    mln::unordered_map<std::uint64_t, std::size_t> byEnd;
+};
+
+// Appends reversePairs(v) to out.
+inline void appendReversedPairs(std::vector<std::int32_t>& out, const std::vector<std::int32_t>& v) {
+    for (std::size_t i = v.size(); i >= 2; i -= 2) {
+        out.push_back(v[i - 2]);
+        out.push_back(v[i - 1]);
+    }
+}
+
+} // namespace
+
+std::vector<ContourLineString> generateContoursFast(std::span<const std::int16_t> heights,
+                                                    int width,
+                                                    int height,
+                                                    const ContourThresholds& thresholds) {
+    if (thresholds.interval <= 0.0) {
+        return {};
+    }
+    if (width < 2 || height < 2) {
+        return {};
+    }
+    if (static_cast<std::ptrdiff_t>(heights.size()) < static_cast<std::ptrdiff_t>(width) * height) {
+        return {};
+    }
+
+    const double interval = thresholds.interval;
+    const double multiplier = static_cast<double>(thresholds.extent) / static_cast<double>(width - 1);
+
+    // The same map as generateContours, filled in the same order, so its
+    // iteration order (and so the output order) is the same. `cache` finds a
+    // level's state without the hash lookup; std::unordered_map keeps its
+    // elements in place, so the pointers stay valid.
+    std::unordered_map<long long, FastLevelState> levels;
+    std::int16_t minH = std::numeric_limits<std::int16_t>::max();
+    std::int16_t maxH = std::numeric_limits<std::int16_t>::min();
+    for (std::size_t i = 0; i < static_cast<std::size_t>(width) * height; i++) {
+        minH = std::min(minH, heights[i]);
+        maxH = std::max(maxH, heights[i]);
+    }
+    const long long minKey = static_cast<long long>(std::floor(minH / interval)) - 2;
+    const long long maxKey = static_cast<long long>(std::ceil(maxH / interval)) + 2;
+    std::vector<FastLevelState*> cache(static_cast<std::size_t>(maxKey - minKey + 1), nullptr);
+
+    for (int r = 1; r < height; r++) {
+        const std::int16_t* above = heights.data() + static_cast<std::size_t>(r - 1) * width;
+        const std::int16_t* below = heights.data() + static_cast<std::size_t>(r) * width;
+        for (int c = 1; c < width; c++) {
+            const double tl = static_cast<double>(above[c - 1]);
+            const double tr = static_cast<double>(above[c]);
+            const double bl = static_cast<double>(below[c - 1]);
+            const double br = static_cast<double>(below[c]);
+
+            const double minV = std::min({tl, tr, bl, br});
+            const double maxV = std::max({tl, tr, bl, br});
+            const double startLevel = std::ceil(minV / interval) * interval;
+            const double endLevel = std::floor(maxV / interval) * interval;
+
+            for (double level = startLevel; level <= endLevel + 0.5 * interval; level += interval) {
+                const int idx = (tl > level ? 8 : 0) | (tr > level ? 4 : 0) | (br > level ? 2 : 0) |
+                                (bl > level ? 1 : 0);
+                const int nSegments = SEGMENT_COUNT[idx];
+                if (nSegments == 0) continue;
+
+                const long long levelKey = std::llround(level / interval);
+                FastLevelState*& cached = cache[static_cast<std::size_t>(levelKey - minKey)];
+                if (cached == nullptr) cached = &levels[levelKey];
+                FastLevelState& state = *cached;
+
+                for (int s = 0; s < nSegments; s++) {
+                    const Segment seg = CASES[idx][s];
+                    double sx, sy, ex, ey;
+                    edgePosition(seg.start, c, r, tl, tr, bl, br, level, sx, sy);
+                    edgePosition(seg.end, c, r, tl, tr, bl, br, level, ex, ey);
+                    const std::int32_t sxi = scaleCoord(sx, multiplier);
+                    const std::int32_t syi = scaleCoord(sy, multiplier);
+                    const std::int32_t exi = scaleCoord(ex, multiplier);
+                    const std::int32_t eyi = scaleCoord(ey, multiplier);
+
+                    const std::uint64_t startIdx = edgeIndex(width, c, r, seg.start);
+                    const std::uint64_t endIdx = edgeIndex(width, c, r, seg.end);
+
+                    auto fByEnd = state.byEnd.find(startIdx);
+                    auto fByStart = state.byStart.find(endIdx);
+
+                    if (fByEnd != state.byEnd.end()) {
+                        const std::size_t fIdx = fByEnd->second;
+                        state.byEnd.erase(fByEnd);
+                        // erase can move elements of a dense map: find again.
+                        fByStart = state.byStart.find(endIdx);
+                        FastFragment& f = state.fragments[fIdx];
+
+                        if (fByStart != state.byStart.end()) {
+                            const std::size_t gIdx = fByStart->second;
+                            state.byStart.erase(fByStart);
+                            if (fIdx == gIdx) {
+                                f.tail.push_back(exi);
+                                f.tail.push_back(eyi);
+                            } else {
+                                // f ++ g, copying the shorter of the two.
+                                FastFragment& g = state.fragments[gIdx];
+                                if (g.size() <= f.size()) {
+                                    appendReversedPairs(f.tail, g.head);
+                                    f.tail.insert(f.tail.end(), g.tail.begin(), g.tail.end());
+                                } else {
+                                    appendReversedPairs(g.head, f.tail);
+                                    g.head.insert(g.head.end(), f.head.begin(), f.head.end());
+                                    std::swap(f.head, g.head);
+                                    std::swap(f.tail, g.tail);
+                                }
+                                g.head.clear();
+                                g.tail.clear();
+                                f.end = g.end;
+                                g.merged = true;
+                                state.byEnd[f.end] = fIdx;
+                            }
+                        } else {
+                            f.tail.push_back(exi);
+                            f.tail.push_back(eyi);
+                            f.end = endIdx;
+                            state.byEnd[endIdx] = fIdx;
+                        }
+                    } else if (fByStart != state.byStart.end()) {
+                        const std::size_t fIdx = fByStart->second;
+                        FastFragment& f = state.fragments[fIdx];
+                        state.byStart.erase(fByStart);
+                        f.head.push_back(sxi);
+                        f.head.push_back(syi);
+                        f.start = startIdx;
+                        state.byStart[startIdx] = fIdx;
+                    } else {
+                        const std::size_t fIdx = state.fragments.size();
+                        FastFragment newF{startIdx, endIdx, {}, {sxi, syi, exi, eyi}, false};
+                        state.fragments.push_back(std::move(newF));
+                        state.byStart[startIdx] = fIdx;
+                        state.byEnd[endIdx] = fIdx;
+                    }
+                }
+            }
+        }
+    }
+
+    std::vector<ContourLineString> result;
+    for (auto& [levelKey, state] : levels) {
+        const double level = static_cast<double>(levelKey) * interval;
+        for (auto& f : state.fragments) {
+            if (f.merged) continue;
+            if (f.size() < 4) continue;
+            ContourLineString line;
+            line.elevation = level;
+            line.points.reserve(f.size());
+            appendReversedPairs(line.points, f.head);
+            line.points.insert(line.points.end(), f.tail.begin(), f.tail.end());
             result.push_back(std::move(line));
         }
     }

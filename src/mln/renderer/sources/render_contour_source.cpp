@@ -3,6 +3,8 @@
 #include <mln/renderer/render_orchestrator.hpp>
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/tile/contour_tile.hpp>
+#include <mln/tile/contour_probe.hpp>
+#include <mln/actor/scheduler.hpp>
 #include <mln/tile/raster_dem_tile.hpp>
 #include <mln/util/constants.hpp>
 #include <mln/util/logging.hpp>
@@ -152,7 +154,36 @@ void RenderContourSource::rebindUpstream(const TileParameters& parameters) {
     }
 }
 
+void RenderContourSource::populatePending() {
+    populateScheduled = false;
+    auto ids = std::move(pendingPopulate);
+    pendingPopulate.clear();
+    if (upstream == nullptr) return;
+    for (const auto& id : ids) {
+        Tile* match = tilePyramid.getTile(id);
+        const RasterDEMTile* dem = upstream->getRenderableTile(id);
+        if (match == nullptr || dem == nullptr) continue;
+        const auto& opts = impl().getOptions();
+        const double zoom = static_cast<double>(id.canonical.z);
+        const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
+        const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
+        static_cast<ContourTile&>(*match).populateFromDEM(*dem, interval, major, opts.unit);
+    }
+}
+
 void RenderContourSource::onUpstreamTileLoaded(const RasterDEMTile& demTile) {
+    if (contour_probe::coalesce.load()) {
+        pendingPopulate.insert(demTile.id);
+        if (!populateScheduled) {
+            populateScheduled = true;
+            Scheduler::GetCurrent()->schedule([weak = weakFactory.makeWeakPtr(), this] {
+                if (auto guard = weak.lock(); weak) {
+                    populatePending();
+                }
+            });
+        }
+        return;
+    }
     Tile* match = tilePyramid.getTile(demTile.id);
     if (match == nullptr) {
         // No contour tile at this coord yet — the createTile callback will

@@ -6,7 +6,9 @@
 
 #include <mapbox/std/weak.hpp>
 
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace mln {
@@ -58,6 +60,8 @@ private:
     TaggedScheduler threadPool;
     std::uint64_t requestedGeneration = 0;
     std::uint64_t appliedGeneration = 0;
+    // SCRATCH: the newest generation, for the jobs (lever c).
+    std::shared_ptr<std::atomic<std::uint64_t>> latestGeneration = std::make_shared<std::atomic<std::uint64_t>>(0);
 
     mapbox::base::WeakPtrFactory<ContourTile> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`.

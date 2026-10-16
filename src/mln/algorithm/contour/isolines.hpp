@@ -54,6 +54,12 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
                                                 int height,
                                                 const ContourThresholds& thresholds);
 
+// SCRATCH: the same output, faster.
+std::vector<ContourLineString> generateContoursFast(std::span<const std::int16_t> heights,
+                                                    int width,
+                                                    int height,
+                                                    const ContourThresholds& thresholds);
+
 } // namespace contour
 } // namespace algorithm
 } // namespace mln
