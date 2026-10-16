@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstring>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -130,4 +132,37 @@ TEST(ContourTile, PopulateResultsInOrderApplyTheNewest) {
     test.loop.runOnce();
 
     EXPECT_EQ(2u, tile.populatedGeneration());
+}
+
+// A snapshot keeps the DEM image as it was: the contour source populates from
+// it after the render thread's current messages, by when a backfill may have
+// changed the DEM tile, or the DEM tile may be gone.
+TEST(ContourTile, ASnapshotKeepsTheImageAsItWas) {
+    ContourTileTest test;
+    const OverscaledTileID id(1, 0, 0);
+    const auto params = test.parameters();
+    RasterDEMTile dem(id, "dem", params, test.tileset);
+    dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
+
+    const auto taken = ContourTile::snapshot(dem);
+    ASSERT_TRUE(taken);
+    EXPECT_EQ(16, taken->dim);
+    const PremultipliedImage before = taken->image->clone();
+
+    // The neighbour to the east, with every pixel set.
+    PremultipliedImage bright({16, 16});
+    std::fill(bright.data.get(), bright.data.get() + bright.bytes(), 0xFF);
+    const DEMData east(bright, Tileset::RasterEncoding::Mapbox);
+    dem.getBucket()->getDEMData().backfillBorder(east, 1, 0);
+    ASSERT_NE(0, std::memcmp(dem.getBucket()->getDEMData().getImage()->data.get(), before.data.get(), before.bytes()));
+
+    EXPECT_EQ(0, std::memcmp(taken->image->data.get(), before.data.get(), before.bytes()));
+}
+
+// A DEM tile with no data gives no snapshot.
+TEST(ContourTile, ADEMTileWithNoDataGivesNoSnapshot) {
+    ContourTileTest test;
+    const auto params = test.parameters();
+    RasterDEMTile dem(OverscaledTileID(0, 0, 0), "dem", params, test.tileset);
+    EXPECT_FALSE(ContourTile::snapshot(dem));
 }
