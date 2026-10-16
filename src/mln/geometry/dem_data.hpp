@@ -28,6 +28,12 @@ public:
 
     int32_t get(int32_t x, int32_t y) const;
     const std::array<float, 4>& getUnpackVector() const;
+    static const std::array<float, 4>& unpackVector(Tileset::RasterEncoding);
+
+    /// The height of one RGBA pixel of the buffered image, as `get` reads it.
+    static int32_t decode(const uint8_t* rgba, const std::array<float, 4>& unpack) {
+        return static_cast<int32_t>(rgba[0] * unpack[0] + rgba[1] * unpack[1] + rgba[2] * unpack[2] - unpack[3]);
+    }
 
     const PremultipliedImage* getImage() const { return &*image; }
     const std::shared_ptr<PremultipliedImage>& getImagePtr() const { return image; }

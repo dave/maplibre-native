@@ -59,7 +59,11 @@ cc_library(
             "**/*.test.cpp",
         ],
         exclude = ["renderer/wgsl_preprocessor.test.cpp"] + PLUGIN_API_TESTS,
-    ) + select({
+    ) + [
+        # The marching squares before it was made faster, for its tests.
+        "algorithm/contour/isolines_reference.cpp",
+        "algorithm/contour/isolines_reference.hpp",
+    ] + select({
         "//:webgpu_renderer": ["renderer/wgsl_preprocessor.test.cpp"],
         "//conditions:default": [],
     }) + select({
