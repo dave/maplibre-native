@@ -15,6 +15,8 @@
 #include <mapbox/feature.hpp>
 #include <mapbox/geometry.hpp>
 
+#include <array>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -246,8 +248,14 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
                                   double intervalDisplayUnits,
                                   std::int64_t majorMultiplier,
                                   const algorithm::contour::UnitConfig& unit) {
+    if (const auto taken = snapshot(demTile)) {
+        populate(*taken, intervalDisplayUnits, majorMultiplier, unit);
+    }
+}
+
+std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTile& demTile) {
     HillshadeBucket* bucket = demTile.getBucket();
-    if (bucket == nullptr) return;
+    if (bucket == nullptr) return std::nullopt;
     const DEMData& dem = bucket->getDEMData();
 
     // Snapshot the buffered DEMData view on the render thread. The DEM
@@ -269,17 +277,23 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
     // generation step.
     //
     // Snapshot here on the render thread because backfillBorder mutates
-    // the same image asynchronously when more neighbours arrive.
-    const int dim = dem.dim;
-    const int border = DEMData::border;
-    const int width = dim + 2 * border;
-    auto heights = std::make_shared<std::vector<std::int16_t>>();
-    heights->reserve(static_cast<std::size_t>(width) * width);
-    for (int y = -border; y < dim + border; y++) {
-        for (int x = -border; x < dim + border; x++) {
-            heights->push_back(static_cast<std::int16_t>(dem.get(x, y)));
-        }
-    }
+    // the same image when more neighbours arrive. The snapshot is a copy of
+    // the raw buffered image (one memcpy); the job decodes the heights, as
+    // DEMData::get would.
+    assert(dem.stride == dem.dim + 2 * DEMData::border);
+    return DEMSnapshot{std::make_shared<const PremultipliedImage>(dem.getImage()->clone()),
+                       dem.dim,
+                       dem.getUnpackVector()};
+}
+
+void ContourTile::populate(const DEMSnapshot& snapshot_,
+                           double intervalDisplayUnits,
+                           std::int64_t majorMultiplier,
+                           const algorithm::contour::UnitConfig& unit) {
+    const auto image = snapshot_.image;
+    const auto unpack = snapshot_.unpack;
+    const int dim = snapshot_.dim;
+    const int width = dim + 2 * DEMData::border;
 
     // The configured `intervalDisplayUnits` is in display units (feet,
     // metres, custom). Heights are always metres. Convert the threshold to
@@ -289,8 +303,21 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
     const double intervalMeters = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
 
     const std::uint64_t generation = ++requestedGeneration;
+    latestGeneration->store(generation);
     threadPool.scheduleAndReplyValue(
-        [heights, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit]() {
+        [image, unpack, width, dim, intervalMeters, intervalDisplayUnits, majorMultiplier, unit, generation,
+         latest = latestGeneration]() -> mapbox::feature::feature_collection<std::int16_t> {
+            // A newer call was made while this one waited: its result would be
+            // dropped on reply, so skip the work.
+            if (latest->load() != generation) {
+                return {};
+            }
+            std::vector<std::int16_t> heights(static_cast<std::size_t>(width) * width);
+            const uint8_t* rgba = image->data.get();
+            for (std::size_t i = 0; i < heights.size(); i++) {
+                heights[i] = static_cast<std::int16_t>(DEMData::decode(rgba + i * 4, unpack));
+            }
+
             algorithm::contour::ContourThresholds thresholds;
             thresholds.interval = intervalMeters;
             // Pixel-center coordinate mapping. We want:
@@ -314,7 +341,7 @@ void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
             // exactly at the seam.
             thresholds.extent = static_cast<int>(std::lround(
                 static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
-            const auto lines = algorithm::contour::generateContours(*heights, width, width, thresholds);
+            const auto lines = algorithm::contour::generateContours(heights, width, width, thresholds);
 
             // Shift so alg index `border` lands at +0.5cw (sample 0's
             // pixel-center position): the shift is (2·border − 1) half

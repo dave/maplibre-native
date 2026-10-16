@@ -1,11 +1,12 @@
 #include <mln/algorithm/contour/isolines.hpp>
 
+#include <mln/util/containers.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <deque>
-#include <limits>
 #include <unordered_map>
+#include <vector>
 
 namespace mln {
 namespace algorithm {
@@ -100,39 +101,50 @@ inline std::uint64_t edgeIndex(int width, int c, int r, Edge edge) {
 }
 
 // One in-progress polyline at a single threshold. `start` and `end` are edge
-// slot indices; `points` holds interleaved (x, y) tile-local int coords.
-// `merged` is set when this fragment has been folded into another and should
-// be ignored in the final emission pass.
-//
-// `points` is a deque (not vector) because polylines stitch from both ends:
-// each segment may extend the head or the tail of the fragment, and a vector
-// would force an O(N) shift on every head extension. Deque's O(1) push_front
-// keeps the inner-loop cost per segment constant; the per-emit copy into the
-// public std::vector is paid once per polyline, replacing N shifts incurred
-// during stitching.
+// slot indices. The points are interleaved (x, y) tile-local int coords, in
+// two vectors because a polyline grows at both ends: `tail` holds the
+// appended points in order, `head` the prepended ones as (x, y) pairs in
+// reverse, so the line is reversePairs(head) ++ tail. (A deque costs a 4 KB
+// block for every new fragment.) `merged` is set when this fragment has been
+// folded into another and should be ignored in the final emission pass.
 struct Fragment {
     std::uint64_t start;
     std::uint64_t end;
-    std::deque<std::int32_t> points;
+    std::vector<std::int32_t> head;
+    std::vector<std::int32_t> tail;
     bool merged = false;
+
+    std::size_t size() const { return head.size() + tail.size(); }
 };
 
 struct LevelState {
     std::vector<Fragment> fragments;
-    std::unordered_map<std::uint64_t, std::size_t> byStart;
-    std::unordered_map<std::uint64_t, std::size_t> byEnd;
+    mln::unordered_map<std::uint64_t, std::size_t> byStart;
+    mln::unordered_map<std::uint64_t, std::size_t> byEnd;
 };
 
-inline void appendPoint(Fragment& f, std::int32_t x, std::int32_t y) {
-    f.points.push_back(x);
-    f.points.push_back(y);
+// Appends the (x, y) pairs of `points` to `out`, last pair first.
+inline void appendReversedPairs(std::vector<std::int32_t>& out, const std::vector<std::int32_t>& points) {
+    for (std::size_t i = points.size(); i >= 2; i -= 2) {
+        out.push_back(points[i - 2]);
+        out.push_back(points[i - 1]);
+    }
 }
 
-inline void prependPoint(Fragment& f, std::int32_t x, std::int32_t y) {
-    // push_front pushes one element at a time; to land (x, y) at the front
-    // of the interleaved sequence in that order we push y first, then x.
-    f.points.push_front(y);
-    f.points.push_front(x);
+// f ++ g into f, copying the shorter of the two. g is left empty.
+inline void concatenate(Fragment& f, Fragment& g) {
+    if (g.size() <= f.size()) {
+        appendReversedPairs(f.tail, g.head);
+        f.tail.insert(f.tail.end(), g.tail.begin(), g.tail.end());
+    } else {
+        // Prepend f to g: g's head gains f reversed, that is reversePairs(f.tail) ++ f.head.
+        appendReversedPairs(g.head, f.tail);
+        g.head.insert(g.head.end(), f.head.begin(), f.head.end());
+        std::swap(f.head, g.head);
+        std::swap(f.tail, g.tail);
+    }
+    g.head.clear();
+    g.tail.clear();
 }
 
 } // namespace
@@ -156,15 +168,20 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
 
     // Per-threshold polyline accumulators. We key by level rounded to the
     // nearest interval-step, expressed as a signed integer multiple, to avoid
-    // floating-point map-key headaches.
+    // floating-point map-key headaches. The output is emitted in this map's
+    // order, so it stays a std::unordered_map filled in scan order; `byKey`
+    // finds a level's state without hashing (the map's elements stay in
+    // place, so the pointers stay valid).
     std::unordered_map<long long, LevelState> levels;
-
-    auto sample = [&](int x, int y) -> double {
-        if (x < 0 || x >= width || y < 0 || y >= height) {
-            return std::numeric_limits<double>::quiet_NaN();
-        }
-        return static_cast<double>(heights[y * width + x]);
-    };
+    const auto [minHeight, maxHeight] =
+        std::minmax_element(heights.begin(), heights.begin() + static_cast<std::ptrdiff_t>(width) * height);
+    // A tiny interval over a tall grid would make `byKey` huge; then every
+    // lookup hashes instead (the same result, only slower).
+    const long long minKey = static_cast<long long>(std::floor(*minHeight / interval)) - 1;
+    const long long maxKey = static_cast<long long>(std::ceil(*maxHeight / interval)) + 1;
+    constexpr long long maxCachedLevels = 1 << 16;
+    std::vector<LevelState*> byKey(
+        maxKey - minKey < maxCachedLevels ? static_cast<std::size_t>(maxKey - minKey + 1) : 0, nullptr);
 
     // Iterate cells in [1, width) × [1, height): each cell at (c, r)
     // samples corners at (c-1, r-1), (c, r-1), (c-1, r), (c, r), so this
@@ -172,14 +189,13 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
     // the grid edge are the caller's responsibility (e.g. by passing a
     // border-padded height grid).
     for (int r = 1; r < height; r++) {
+        const std::int16_t* above = heights.data() + static_cast<std::size_t>(r - 1) * width;
+        const std::int16_t* below = heights.data() + static_cast<std::size_t>(r) * width;
         for (int c = 1; c < width; c++) {
-            const double tl = sample(c - 1, r - 1);
-            const double tr = sample(c, r - 1);
-            const double bl = sample(c - 1, r);
-            const double br = sample(c, r);
-            if (std::isnan(tl) || std::isnan(tr) || std::isnan(bl) || std::isnan(br)) {
-                continue;
-            }
+            const double tl = static_cast<double>(above[c - 1]);
+            const double tr = static_cast<double>(above[c]);
+            const double bl = static_cast<double>(below[c - 1]);
+            const double br = static_cast<double>(below[c]);
 
             const double minV = std::min({tl, tr, bl, br});
             const double maxV = std::max({tl, tr, bl, br});
@@ -193,7 +209,15 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
                 if (nSegments == 0) continue;
 
                 const long long levelKey = std::llround(level / interval);
-                LevelState& state = levels[levelKey];
+                LevelState* found = nullptr;
+                if (byKey.empty()) {
+                    found = &levels[levelKey];
+                } else {
+                    LevelState*& slot = byKey[static_cast<std::size_t>(levelKey - minKey)];
+                    if (slot == nullptr) slot = &levels[levelKey];
+                    found = slot;
+                }
+                LevelState& state = *found;
 
                 for (int s = 0; s < nSegments; s++) {
                     const Segment seg = CASES[idx][s];
@@ -222,20 +246,22 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
                             state.byStart.erase(fByStart);
                             if (fIdx == gIdx) {
                                 // Closing a ring: append the closing point and emit f as-is.
-                                appendPoint(f, exi, eyi);
+                                f.tail.push_back(exi);
+                                f.tail.push_back(eyi);
                                 // Ring is complete; remove from any maps (already done) and
                                 // leave it in `fragments` to be emitted at the end.
                             } else {
                                 // Connect two distinct fragments.
                                 Fragment& g = state.fragments[gIdx];
-                                f.points.insert(f.points.end(), g.points.begin(), g.points.end());
+                                concatenate(f, g);
                                 f.end = g.end;
                                 g.merged = true;
                                 state.byEnd[f.end] = fIdx;
                             }
                         } else {
                             // Just extend f's tail with the new endpoint.
-                            appendPoint(f, exi, eyi);
+                            f.tail.push_back(exi);
+                            f.tail.push_back(eyi);
                             f.end = endIdx;
                             state.byEnd[endIdx] = fIdx;
                         }
@@ -244,14 +270,14 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
                         const std::size_t fIdx = fByStart->second;
                         Fragment& f = state.fragments[fIdx];
                         state.byStart.erase(fByStart);
-                        prependPoint(f, sxi, syi);
+                        f.head.push_back(sxi);
+                        f.head.push_back(syi);
                         f.start = startIdx;
                         state.byStart[startIdx] = fIdx;
                     } else {
                         // New fragment.
                         const std::size_t fIdx = state.fragments.size();
-                        Fragment newF{startIdx, endIdx, std::deque<std::int32_t>{sxi, syi, exi, eyi}, false};
-                        state.fragments.push_back(std::move(newF));
+                        state.fragments.push_back(Fragment{startIdx, endIdx, {}, {sxi, syi, exi, eyi}, false});
                         state.byStart[startIdx] = fIdx;
                         state.byEnd[endIdx] = fIdx;
                     }
@@ -260,18 +286,18 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
         }
     }
 
-    // Collect surviving fragments into ContourLineStrings. The internal
-    // deque is copied into the public vector once per polyline — cheaper
-    // than the O(N) per-prepend shifting the vector form would have cost.
+    // Collect surviving fragments into ContourLineStrings.
     std::vector<ContourLineString> result;
     for (auto& [levelKey, state] : levels) {
         const double level = static_cast<double>(levelKey) * interval;
         for (auto& f : state.fragments) {
             if (f.merged) continue;
-            if (f.points.size() < 4) continue;
+            if (f.size() < 4) continue;
             ContourLineString line;
             line.elevation = level;
-            line.points.assign(f.points.begin(), f.points.end());
+            line.points.reserve(f.size());
+            appendReversedPairs(line.points, f.head);
+            line.points.insert(line.points.end(), f.tail.begin(), f.tail.end());
             result.push_back(std::move(line));
         }
     }

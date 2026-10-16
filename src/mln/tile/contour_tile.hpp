@@ -6,7 +6,13 @@
 
 #include <mapbox/std/weak.hpp>
 
+#include <mln/util/image.hpp>
+
+#include <array>
+#include <atomic>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <vector>
 
 namespace mln {
@@ -16,11 +22,11 @@ class TileParameters;
 
 // A vector-tile that renders contour-line features for a single (z, x, y).
 //
-// `populateFromDEM` snapshots the buffered (dim + 2·border) DEM image on
-// the render thread, dispatches marching-squares + smoothing to the
-// background scheduler, and on reply (render thread) converts the
-// resulting line segments into MVT features and feeds them to the
-// standard `GeometryTile::setData` path. A `WeakPtrFactory` guards
+// `populateFromDEM` copies the buffered (dim + 2·border) DEM image on the
+// render thread; the background scheduler decodes the heights, runs the
+// marching squares and the smoothing and builds the features; on reply
+// (render thread) they go to the standard `GeometryTile::setData` path. A
+// job that a newer call has superseded skips its work. A `WeakPtrFactory` guards
 // against the tile being destroyed (panned away) before the background
 // work completes.
 //
@@ -50,6 +56,22 @@ public:
                          std::int64_t majorMultiplier,
                          const algorithm::contour::UnitConfig& unit);
 
+    // A copy of a DEM tile's buffered image as it is now, to populate from
+    // later: the DEM tile can change (a backfill) or go away meanwhile.
+    struct DEMSnapshot {
+        std::shared_ptr<const PremultipliedImage> image;
+        int dim = 0;
+        std::array<float, 4> unpack{};
+    };
+    // Nothing when the DEM tile has no data.
+    static std::optional<DEMSnapshot> snapshot(const RasterDEMTile&);
+
+    // As `populateFromDEM`, from a snapshot.
+    void populate(const DEMSnapshot&,
+                  double intervalDisplayUnits,
+                  std::int64_t majorMultiplier,
+                  const algorithm::contour::UnitConfig& unit);
+
     // The generation of the last result applied to the tile: 0 before any
     // result, otherwise the number of the `populateFromDEM` call it came from.
     std::uint64_t populatedGeneration() const { return appliedGeneration; }
@@ -58,6 +80,9 @@ private:
     TaggedScheduler threadPool;
     std::uint64_t requestedGeneration = 0;
     std::uint64_t appliedGeneration = 0;
+    // `requestedGeneration` for the jobs, which skip their work once a newer
+    // call has been made.
+    std::shared_ptr<std::atomic<std::uint64_t>> latestGeneration = std::make_shared<std::atomic<std::uint64_t>>(0);
 
     mapbox::base::WeakPtrFactory<ContourTile> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`.

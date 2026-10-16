@@ -8,7 +8,10 @@
 #include <mln/util/logging.hpp>
 #include <mln/util/string.hpp>
 
+#include <mln/actor/scheduler.hpp>
+
 #include <cmath>
+#include <utility>
 
 namespace mln {
 
@@ -153,18 +156,44 @@ void RenderContourSource::rebindUpstream(const TileParameters& parameters) {
 }
 
 void RenderContourSource::onUpstreamTileLoaded(const RasterDEMTile& demTile) {
-    Tile* match = tilePyramid.getTile(demTile.id);
-    if (match == nullptr) {
-        // No contour tile at this coord yet — the createTile callback will
-        // catch it on the next pyramid update via getRenderableTile, so
-        // missing the listener fire is harmless.
+    // One DEM arrival notifies its own tile and up to eight neighbours whose
+    // borders it backfilled, and several arrivals are often handled in one
+    // go. Keep the newest snapshot for each tile and populate each once,
+    // after the render thread's current messages. A snapshot, not the DEM
+    // tile: the DEM source and its tiles can go away before then.
+    auto taken = ContourTile::snapshot(demTile);
+    if (!taken) {
         return;
     }
-    const auto& opts = impl().getOptions();
-    const double zoom = static_cast<double>(demTile.id.canonical.z);
-    const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
-    const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
-    static_cast<ContourTile&>(*match).populateFromDEM(demTile, interval, major, opts.unit);
+    pendingPopulate.insert_or_assign(demTile.id, std::move(*taken));
+    if (populateScheduled) {
+        return;
+    }
+    populateScheduled = true;
+    Scheduler::GetCurrent()->schedule([weak = weakFactory.makeWeakPtr(), this] {
+        if (auto guard = weak.lock(); weak) {
+            populatePending();
+        }
+    });
+}
+
+void RenderContourSource::populatePending() {
+    populateScheduled = false;
+    const auto pending = std::exchange(pendingPopulate, {});
+    for (const auto& [id, taken] : pending) {
+        Tile* match = tilePyramid.getTile(id);
+        if (match == nullptr) {
+            // No contour tile at this coord (yet, or any more) — the createTile
+            // callback populates one made later via getRenderableTile, so
+            // missing the notify is harmless.
+            continue;
+        }
+        const auto& opts = impl().getOptions();
+        const double zoom = static_cast<double>(id.canonical.z);
+        const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
+        const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
+        static_cast<ContourTile&>(*match).populate(taken, interval, major, opts.unit);
+    }
 }
 
 } // namespace mln
