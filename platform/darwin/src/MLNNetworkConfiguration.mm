@@ -135,9 +135,12 @@ NSString *const kMLNDownloadPerformanceEvent = @"mobile.performance_trace";
 }
 
 - (void)startDownloadEvent:(NSString *)urlString type:(NSString *)resourceType {
-  if (urlString && resourceType && ![self eventDictionaryForKey:urlString]) {
-    NSDate *startDate = [NSDate date];
-    [self setEventDictionary:@{MLNStartTime : startDate, MLNResourceType : resourceType}
+  // The events are only for a metrics delegate: with none, record nothing.
+  if (!self.metricsDelegate) {
+    return;
+  }
+  if (urlString && resourceType) {
+    [self addEventDictionary:@{MLNStartTime : [NSDate date], MLNResourceType : resourceType}
                       forKey:urlString];
   }
 }
@@ -161,22 +164,40 @@ NSString *const kMLNDownloadPerformanceEvent = @"mobile.performance_trace";
 // MARK: - Event management
 
 - (void)sendEventForURLResponse:(NSURLResponse *)response withAction:(NSString *)action {
-  if ([response isKindOfClass:[NSURLResponse class]]) {
-    NSString *urlString = response.URL.relativePath;
-    if (urlString && [self eventDictionaryForKey:urlString]) {
-      NSDictionary *eventAttributes = [self eventAttributesForURL:response withAction:action];
-      [self removeEventDictionaryForKey:urlString];
-
-      dispatch_async(dispatch_get_main_queue(), ^{
-        [self.metricsDelegate networkConfiguration:self didGenerateMetricEvent:eventAttributes];
-      });
-    }
+  if (![response isKindOfClass:[NSURLResponse class]]) {
+    return;
   }
+  NSString *urlString = response.URL.relativePath;
+  if (!urlString) {
+    return;
+  }
+  // Read and remove the event in one step. Completions run concurrently (the
+  // session's delegate queue runs several at once), and two for one path share
+  // the key, which leaves out the query: a separate check, read and remove let
+  // both pass the check and one read nothing (a crash in the dictionary
+  // literal below).
+  NSDictionary *parameters = [self takeEventDictionaryForKey:urlString];
+  if (!parameters) {
+    // No start was recorded (no metrics delegate then), or another completion
+    // for the same path took it.
+    return;
+  }
+  id<MLNNetworkConfigurationMetricsDelegate> metricsDelegate = self.metricsDelegate;
+  if (!metricsDelegate) {
+    return;
+  }
+  NSDictionary *eventAttributes = [self eventAttributesForURL:response
+                                                   parameters:parameters
+                                                   withAction:action];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [metricsDelegate networkConfiguration:self didGenerateMetricEvent:eventAttributes];
+  });
 }
 
-- (NSDictionary *)eventAttributesForURL:(NSURLResponse *)response withAction:(NSString *)action {
+- (NSDictionary *)eventAttributesForURL:(NSURLResponse *)response
+                             parameters:(NSDictionary *)parameters
+                             withAction:(NSString *)action {
   NSString *urlString = response.URL.relativePath;
-  NSDictionary *parameters = [self eventDictionaryForKey:urlString];
   NSDate *startDate = [parameters objectForKey:MLNStartTime];
   NSDate *endDate = [NSDate date];
   NSTimeInterval elapsedTime = [endDate timeIntervalSinceDate:startDate];
@@ -214,26 +235,25 @@ NSString *const kMLNDownloadPerformanceEvent = @"mobile.performance_trace";
 
 // MARK: - Events dictionary access
 
-- (nullable NSDictionary *)eventDictionaryForKey:(nonnull NSString *)key {
+// Adds the event unless one is already recorded for the key, in one step.
+- (void)addEventDictionary:(nonnull NSDictionary *)dictionary forKey:(nonnull NSString *)key {
+  dispatch_barrier_async(self.eventsQueue, ^{
+    if (![self.events objectForKey:key]) {
+      [self.events setObject:dictionary forKey:key];
+    }
+  });
+}
+
+// Removes and returns the event for the key, in one step; nil if there is none.
+- (nullable NSDictionary *)takeEventDictionaryForKey:(nonnull NSString *)key {
   __block NSDictionary *dictionary;
-
-  dispatch_sync(self.eventsQueue, ^{
+  dispatch_barrier_sync(self.eventsQueue, ^{
     dictionary = [self.events objectForKey:key];
+    if (dictionary) {
+      [self.events removeObjectForKey:key];
+    }
   });
-
   return dictionary;
-}
-
-- (void)setEventDictionary:(nonnull NSDictionary *)dictionary forKey:(nonnull NSString *)key {
-  dispatch_barrier_async(self.eventsQueue, ^{
-    [self.events setObject:dictionary forKey:key];
-  });
-}
-
-- (void)removeEventDictionaryForKey:(nonnull NSString *)key {
-  dispatch_barrier_async(self.eventsQueue, ^{
-    [self.events removeObjectForKey:key];
-  });
 }
 
 @end
