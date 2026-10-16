@@ -102,18 +102,20 @@ void DEMData::backfillBorder(const DEMData& borderTileData, int8_t dx, int8_t dy
 }
 
 int32_t DEMData::get(const int32_t x, const int32_t y) const {
-    const auto& unpack = getUnpackVector();
-    const uint8_t* value = image->data.get() + idx(x, y) * 4;
-    return static_cast<int32_t>(value[0] * unpack[0] + value[1] * unpack[1] + value[2] * unpack[2] - unpack[3]);
+    return decode(image->data.get() + idx(x, y) * 4, getUnpackVector());
 }
 
 const std::array<float, 4>& DEMData::getUnpackVector() const {
+    return unpackVector(encoding);
+}
+
+const std::array<float, 4>& DEMData::unpackVector(const Tileset::RasterEncoding encoding_) {
     // https://www.mapbox.com/help/access-elevation-data/#mapbox-terrain-rgb
     static const std::array<float, 4> unpackMapbox = {{6553.6f, 25.6f, 0.1f, 10000.0f}};
     // https://aws.amazon.com/public-datasets/terrain/
     static const std::array<float, 4> unpackTerrarium = {{256.0f, 1.0f, 1.0f / 256.0f, 32768.0f}};
 
-    return encoding == Tileset::RasterEncoding::Terrarium ? unpackTerrarium : unpackMapbox;
+    return encoding_ == Tileset::RasterEncoding::Terrarium ? unpackTerrarium : unpackMapbox;
 }
 
 } // namespace mln
