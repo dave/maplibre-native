@@ -245,40 +245,70 @@ TEST(ContourMicro, Steps) {
             [](std::int64_t e) { return e != 0 && e % 100 == 0 && e % 200 != 0; },
             [](std::int64_t e) { return e % 20 == 0 && e % 100 != 0; },
         };
-        std::vector<double> layoutMs;
-        std::size_t vertices = 0, triangles = 0, inPoints = 0;
-        for (int r = 0; r < runs; r++) {
-            vertices = triangles = inPoints = 0;
-            const auto t0 = std::chrono::steady_clock::now();
-            for (const auto& keep : bands) {
-                LineBucket::PossiblyEvaluatedLayoutProperties layout;
-                LineBucket bucket{layout, {}, float(c.z), 1};
-                std::size_t n = 0;
-                for (const auto& f : features) {
-                    if (!keep(f.properties.at("ele").get<std::int64_t>())) continue;
-                    const auto& ls = f.geometry.get<mapbox::geometry::line_string<std::int16_t>>();
-                    GeometryCoordinates coords;
-                    coords.reserve(ls.size());
-                    for (const auto& p : ls) coords.emplace_back(p.x, p.y);
-                    GeometryCollection geom{std::move(coords)};
-                    inPoints += ls.size();
-                    bucket.addFeature(StubGeometryTileFeature{FeatureType::LineString, geom},
-                                      geom,
-                                      {},
-                                      PatternLayerMap(),
-                                      n++,
-                                      CanonicalTileID(0, 0, 0));
-                }
-                vertices += bucket.vertices.elements();
-                triangles += bucket.triangles.elements();
+        // As a Go-made vector tile would carry them: extent 4096, integer
+        // coordinates, repeated points dropped; the tile parser then scales
+        // them back to 8192 (VectorTileFeature::getGeometries).
+        auto asMVT = [](const mapbox::geometry::line_string<std::int16_t>& ls) {
+            GeometryCoordinates out;
+            out.reserve(ls.size());
+            for (const auto& p : ls) {
+                const int16_t x = static_cast<int16_t>(std::lround(p.x / 2.0) * 2);
+                const int16_t y = static_cast<int16_t>(std::lround(p.y / 2.0) * 2);
+                if (!out.empty() && out.back().x == x && out.back().y == y) continue;
+                out.emplace_back(x, y);
             }
-            layoutMs.push_back(
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            return out;
+        };
+        struct Arm {
+            const char* name;
+            bool mvt;
+            std::vector<double> ms;
+            std::size_t vertices = 0, triangles = 0, inPoints = 0;
+        };
+        Arm arms[] = {{"today (8192, every point)", false, {}}, {"as a 4096 MVT", true, {}}};
+        for (int r = 0; r < runs; r++) {
+            for (auto& arm : arms) {
+                arm.vertices = arm.triangles = arm.inPoints = 0;
+                const auto t0 = std::chrono::steady_clock::now();
+                for (const auto& keep : bands) {
+                    LineBucket::PossiblyEvaluatedLayoutProperties layout;
+                    LineBucket bucket{layout, {}, float(c.z), 1};
+                    std::size_t n = 0;
+                    for (const auto& f : features) {
+                        if (!keep(f.properties.at("ele").get<std::int64_t>())) continue;
+                        const auto& ls = f.geometry.get<mapbox::geometry::line_string<std::int16_t>>();
+                        GeometryCoordinates coords;
+                        if (arm.mvt) {
+                            coords = asMVT(ls);
+                        } else {
+                            coords.reserve(ls.size());
+                            for (const auto& p : ls) coords.emplace_back(p.x, p.y);
+                        }
+                        arm.inPoints += coords.size();
+                        GeometryCollection geom{std::move(coords)};
+                        bucket.addFeature(StubGeometryTileFeature{FeatureType::LineString, geom},
+                                          geom,
+                                          {},
+                                          PatternLayerMap(),
+                                          n++,
+                                          CanonicalTileID(0, 0, 0));
+                    }
+                    arm.vertices += bucket.vertices.elements();
+                    arm.triangles += bucket.triangles.elements();
+                }
+                arm.ms.push_back(
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            }
         }
-        std::printf("  line layout of 3 bands: %.2f ms (median), input points %zu, vertices %zu, triangles %zu\n",
-                    median(layoutMs),
-                    inPoints,
-                    vertices,
-                    triangles);
+        for (const auto& arm : arms) {
+            std::printf(
+                "  line layout of 3 bands, %s: %.2f ms (median, interleaved), input points %zu, vertices %zu, "
+                "triangles %zu\n",
+                arm.name,
+                median(arm.ms),
+                arm.inPoints,
+                arm.vertices,
+                arm.triangles);
+        }
     }
 }
