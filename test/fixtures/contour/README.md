@@ -10,7 +10,3 @@ Real terrarium DEM tiles (512 px WebP) for the contour tests in
 They come from the Viatrail elevation archive
 `https://tiles.viatrail.app/2026-10-13/elevation.pmtiles` (the tiles as served,
 unchanged).
-
-`expected-z11.png` and `expected-z11.4.png` are the contour lines of the
-3×3 block at the corner of 11/609/1341, drawn by fork 52b261a0e374 (before
-the contour work was made cheaper). `MLN_CONTOUR_UPDATE=1` writes them again.

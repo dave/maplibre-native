@@ -10,6 +10,7 @@
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_options.hpp>
 #include <mln/style/style.hpp>
+#include <mln/tile/contour_tile.hpp>
 #include <mln/util/image.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/run_loop.hpp>
@@ -17,7 +18,6 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -143,18 +143,22 @@ PremultipliedImage renderContours(double zoom) {
 
 } // namespace
 
-// The contour lines of nine real tiles draw exactly as they did before the
-// contour work was made cheaper (expected images from fork 52b261a0e374).
-// MLN_CONTOUR_UPDATE=1 writes new expected images.
-TEST(ContourLines, TheRenderMatchesTheExpectedImage) {
+// The contour lines of nine real tiles draw exactly as they do with the
+// marching squares from before it was made faster: both are drawn in this run,
+// on this renderer, so no stored image is needed.
+TEST(ContourLines, TheRenderMatchesTheReferenceMarchingSquares) {
     for (const auto& [zoom, name] : {std::pair{11.0, "z11"}, std::pair{11.4, "z11.4"}}) {
-        const auto actual = renderContours(zoom);
-        const std::string path = kFixtures + "expected-" + name + ".png";
-        if (std::getenv("MLN_CONTOUR_UPDATE")) {
-            util::write_file(path, encodePNG(actual));
-            continue;
+        ASSERT_EQ(&algorithm::contour::generateContours, ContourTile::marchingSquares.load());
+        PremultipliedImage expected;
+        {
+            // Put the production marching squares back however this scope ends.
+            struct Restore {
+                ~Restore() { ContourTile::marchingSquares = &algorithm::contour::generateContours; }
+            } restore;
+            ContourTile::marchingSquares = &algorithm::contour::generateContoursReference;
+            expected = renderContours(zoom);
         }
-        const auto expected = decodeImage(util::read_file(path));
+        const auto actual = renderContours(zoom);
         ASSERT_EQ(expected.size, actual.size) << name;
         std::size_t differing = 0;
         std::size_t dark = 0;

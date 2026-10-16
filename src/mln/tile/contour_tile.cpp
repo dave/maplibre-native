@@ -237,6 +237,8 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
 
 } // namespace
 
+std::atomic<ContourTile::MarchingSquares> ContourTile::marchingSquares{&algorithm::contour::generateContours};
+
 ContourTile::ContourTile(const OverscaledTileID& id_,
                          std::string sourceID_,
                          const TileParameters& parameters,
@@ -341,7 +343,7 @@ void ContourTile::populate(const DEMSnapshot& snapshot_,
             // exactly at the seam.
             thresholds.extent = static_cast<int>(std::lround(
                 static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
-            const auto lines = algorithm::contour::generateContours(heights, width, width, thresholds);
+            const auto lines = marchingSquares.load()(heights, width, width, thresholds);
 
             // Shift so alg index `border` lands at +0.5cw (sample 0's
             // pixel-center position): the shift is (2·border − 1) half
