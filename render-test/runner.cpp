@@ -900,6 +900,20 @@ void TestRunner::run(TestMetadata& metadata) {
         }
     }
 
+    if (metadata.expectedRenderError) {
+        // The test passes only if the render failed with the expected error.
+        if (!metadata.renderError) {
+            metadata.errorMessage = "Expected the render to fail with \"" + *metadata.expectedRenderError +
+                                    "\", and it drew an image";
+            metadata.renderErrored++;
+        } else if (metadata.renderError->find(*metadata.expectedRenderError) == std::string::npos) {
+            metadata.errorMessage = "Expected the render to fail with \"" + *metadata.expectedRenderError +
+                                    "\", and it failed with \"" + *metadata.renderError + "\"";
+            metadata.renderErrored++;
+        }
+        return;
+    }
+
     if (metadata.renderTest) {
         if (!metadata.ignoreProbing) {
             checkProbingResults(metadata);
@@ -942,6 +956,7 @@ mln::HeadlessFrontend::RenderResult TestRunner::runTest(TestMetadata& metadata, 
         if (metadata.outputsImage) result = ctx.getFrontend().render(ctx.getMap());
     } catch (const std::exception& e) {
         ctx.getMetadata().errorMessage = std::string("Renering raised an exception: ") + e.what();
+        ctx.getMetadata().renderError = std::string(e.what());
     }
     return result;
 }

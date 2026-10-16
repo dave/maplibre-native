@@ -2,6 +2,8 @@
   "version": 8,
   "metadata": {
     "test": {
+      "description": "A URL body that does not parse is a source error, not a silent empty source (fork f32f4feb6e63), so the still render fails.",
+      "expectedRenderError": "Failed to parse GeoJSON data: GeoJSON must be an object",
       "width": 512,
       "height": 512
     }
