@@ -4,6 +4,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/actor/actor_ref.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/intervals.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/isolines.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/algorithm/contour/isolines_reference.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/smoothing.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/units.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/update_renderables.test.cpp
@@ -97,6 +98,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/tile/custom_geometry_tile.test.cpp
     ${PROJECT_SOURCE_DIR}/test/tile/geojson_tile.test.cpp
     ${PROJECT_SOURCE_DIR}/test/tile/geometry_tile_data.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/tile/contour_fixtures.test.cpp
     ${PROJECT_SOURCE_DIR}/test/tile/contour_tile.test.cpp
     ${PROJECT_SOURCE_DIR}/test/tile/raster_dem_tile.test.cpp
     ${PROJECT_SOURCE_DIR}/test/tile/raster_tile.test.cpp
