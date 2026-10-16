@@ -582,6 +582,13 @@ TestMetadata parseTestMetadata(const TestPaths& paths) {
         }
     }
 
+    if (testValue.HasMember("expectedRenderError")) {
+        if (!testValue["expectedRenderError"].IsString()) {
+            throw std::runtime_error("expectedRenderError must be a string");
+        }
+        metadata.expectedRenderError = std::string(testValue["expectedRenderError"].GetString());
+    }
+
     if (testValue.HasMember("queryOptions")) {
         assert(testValue["queryOptions"].IsObject());
 

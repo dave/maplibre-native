@@ -154,6 +154,11 @@ struct TestMetadata {
     // unit test error by missing metric.json, can turn on 'ignoreProbing'
     // to prevent the unit test fail, and just verify the render result.
     bool ignoreProbing = true;
+    // Set by 'expectedRenderError': the still render must fail, and its error
+    // must contain this text. The test then checks no image.
+    std::optional<std::string> expectedRenderError;
+    // The error the still render raised, if it raised one.
+    std::optional<std::string> renderError;
 
     mln::Size size{512u, 512u};
     std::optional<float> maxPitch;
