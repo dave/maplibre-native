@@ -42,6 +42,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <mutex>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <thread>
@@ -705,6 +706,121 @@ TEST(LabelLane, AURLBodyAnsweredAgainIsANewBodyOnlyIfItDiffers) {
     ASSERT_TRUE(runUntil(loop, [&] { return loads == 2; }, "the second, different body"));
     EXPECT_EQ(2u, source.getDataGeneration());
     EXPECT_NE(firstData, source.impl().getData().lock());
+}
+
+// A URL request cancelled by inline data leaves the source ready to take
+// another URL: the style reloads on the description change, and the second
+// URL must be asked for. (The app empties a slot while its URL loads, then
+// gives the slot a new URL.)
+TEST(LabelLane, AURLAfterInlineDataCancelledTheLoadingURLIsRequested) {
+    util::RunLoop loop;
+    FakeFileSource fileSource;
+    StubStyleObserver observer;
+    int loads = 0;
+    observer.sourceLoaded = [&](Source&) {
+        ++loads;
+    };
+    // What the style does with a description change.
+    observer.sourceDescriptionChanged = [&](Source& changed) {
+        changed.loadDescription(fileSource);
+    };
+    GeoJSONSource source("source", laneOptions());
+    source.setObserver(&observer);
+    // The first load is the style's own, on adding the source.
+    source.loadDescription(fileSource);
+    EXPECT_EQ(1u, source.setURL("http://body/a"));
+    // A is in flight, unanswered.
+    source.loadDescription(fileSource);
+    ASSERT_EQ(1u, fileSource.requests.size());
+    EXPECT_EQ("http://body/a", fileSource.requests.front()->resource.url);
+
+    // Inline data cancels A's request.
+    source.setGeoJSON(GeoJSON{FeatureCollection{}});
+    EXPECT_TRUE(fileSource.requests.empty());
+
+    // B must be requested.
+    source.setURL("http://body/b");
+    ASSERT_EQ(1u, fileSource.requests.size()) << "the second URL was never requested";
+    EXPECT_EQ("http://body/b", fileSource.requests.front()->resource.url);
+
+    Response response;
+    response.data = std::make_shared<std::string>(kPoints);
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, response));
+    ASSERT_TRUE(runUntil(loop, [&] { return loads == 1; }, "the second URL's body"));
+}
+
+// The class of bug behind the test above, by random sequences: setURL, inline
+// data, the file source answering, failing or staying silent, and the style's
+// loadDescription, in any order. After the last setURL with no inline data
+// since, the source must have that URL requested or its body landed: never a
+// URL that is neither loaded nor requested. A failure prints the seed.
+TEST(LabelLane, ASourceNeverEndsWithAURLThatIsNeitherRequestedNorLoaded) {
+    util::RunLoop loop;
+    constexpr unsigned kSequences = 3000;
+    unsigned failures = 0;
+    for (unsigned seed = 0; seed < kSequences; ++seed) {
+        std::mt19937 rng(seed);
+        FakeFileSource fileSource;
+        StubStyleObserver observer;
+        // What the style does with a description change.
+        observer.sourceDescriptionChanged = [&](Source& changed) {
+            changed.loadDescription(fileSource);
+        };
+        GeoJSONSource source("source", (rng() & 1) ? laneOptions() : makeMutable<GeoJSONOptions>());
+        source.setObserver(&observer);
+        // The style loads a source when it adds it.
+        source.loadDescription(fileSource);
+
+        std::string lastURL; // the newest setURL, empty once inline data followed it
+        std::string landedURL;
+        std::string trace;
+        unsigned urls = 0;
+        const unsigned steps = 1 + rng() % 8;
+        for (unsigned step = 0; step < steps; ++step) {
+            switch (rng() % 6) {
+                case 0:
+                    lastURL = "http://body/" + std::to_string(++urls);
+                    source.setURL(lastURL);
+                    trace += " setURL(" + std::to_string(urls) + ")";
+                    break;
+                case 1:
+                    source.setGeoJSON(GeoJSON{FeatureCollection{}});
+                    lastURL.clear();
+                    trace += " setGeoJSON";
+                    break;
+                case 2: {
+                    Response response;
+                    response.data = std::make_shared<std::string>(kPoints);
+                    if (!fileSource.requests.empty()) landedURL = fileSource.requests.front()->resource.url;
+                    fileSource.respond(Resource::Kind::Source, response);
+                    trace += " answer";
+                    break;
+                }
+                case 3: {
+                    Response response;
+                    response.error = std::make_unique<Response::Error>(Response::Error::Reason::Connection, "down");
+                    fileSource.respond(Resource::Kind::Source, response);
+                    trace += " fail";
+                    break;
+                }
+                case 4:
+                    trace += " silence";
+                    break;
+                default:
+                    source.loadDescription(fileSource);
+                    trace += " loadDescription";
+                    break;
+            }
+        }
+        if (lastURL.empty()) continue;
+        const bool requested = std::ranges::any_of(
+            fileSource.requests, [&](const auto* request) { return request->resource.url == lastURL; });
+        if (!requested && landedURL != lastURL) {
+            if (++failures <= 5) ADD_FAILURE() << "seed " << seed << ": " << lastURL << " neither requested nor loaded after:" << trace;
+        }
+        loop.runOnce();
+    }
+    EXPECT_EQ(0u, failures) << "of " << kSequences << " sequences";
 }
 
 namespace {
