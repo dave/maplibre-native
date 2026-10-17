@@ -169,4 +169,29 @@
     [self waitForExpectations:@[delivered] timeout:10.0];
     XCTAssertEqual(metrics.eventCount, 0u);
 }
+// Three completions for one path at once, with no metrics delegate: the shape
+// of an app whose style has three sources on one tile URL, on a session whose
+// delegate queue runs completions concurrently. Before the fix this aborted
+// with the iPhone's stack (nil into the event's dictionary literal in
+// eventAttributesForURL:withAction:), on the 85defb9df882 code in 3 of 3 runs.
+- (void)testThreeCompletionsForOnePathWithoutAMetricsDelegateDoNotThrow {
+    MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
+    dispatch_queue_t queue = dispatch_queue_create("org.maplibre.testThreeCompletionsForOnePath",
+                                                   DISPATCH_QUEUE_CONCURRENT);
+    for (NSUInteger i = 0; i < 20000; i++) {
+        NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://example.com/tiles/5/16/%lu?w=0", (unsigned long)i]];
+        for (int k = 0; k < 3; k++) {
+            [configuration startDownloadEvent:url.relativePath type:@"tile"];
+        }
+        NSURLResponse *response = [[NSURLResponse alloc] initWithURL:url MIMEType:nil expectedContentLength:0 textEncodingName:nil];
+        dispatch_group_t group = dispatch_group_create();
+        for (int k = 0; k < 3; k++) {
+            dispatch_group_async(group, queue, ^{
+                [configuration stopDownloadEventForResponse:response];
+            });
+        }
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    }
+}
+
 @end
