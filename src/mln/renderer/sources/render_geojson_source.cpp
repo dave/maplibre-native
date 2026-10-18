@@ -83,6 +83,14 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
 
     enabled = needsRendering;
 
+    if (impl().getSourceInstance() != reportedInstance) {
+        // A different source object under the same id (a style rebuild): its
+        // generations start over, so what was reported belongs to the old one.
+        reportedInstance = impl().getSourceInstance();
+        reportedGeneration = 0;
+        laidOutGeneration = std::nullopt;
+    }
+
     auto data_ = impl().getData().lock();
     if (data.lock() != data_) {
         data = data_;
