@@ -465,6 +465,53 @@ TEST(LabelLane, TheLaidOutSignalComesOnceForEachBodyAfterItsLastTile) {
     EXPECT_EQ((std::vector<uint64_t>{1, 3, 5}), reported);
 }
 
+// The orchestrator keeps a render source across a style rebuild when the id
+// and type match, and the new style's source counts its generations from low
+// again. What the render source reported belongs to the old source object.
+TEST(LabelLane, ASourceOfANewStyleWithTheSameIDIsReportedFromItsFirstLayout) {
+    TileWorld world;
+    Log::setObserver(std::make_unique<Log::NullObserver>());
+    Transform transform;
+    transform.resize({512, 512});
+    transform.jumpTo(CameraOptions().withCenter(LatLng()).withZoom(1.5));
+    world.transformState = transform.getState();
+
+    GeoJSONSource oldSource("source", laneOptions());
+    EXPECT_EQ(1u, oldSource.setGeoJSON(points()));
+    EXPECT_EQ(2u, oldSource.setGeoJSON(points()));
+    EXPECT_EQ(3u, oldSource.setGeoJSON(points()));
+    RenderGeoJSONSource renderSource{staticImmutableCast<GeoJSONSource::Impl>(oldSource.baseImpl),
+                                     world.parameters(true).threadPool};
+    const std::vector<Immutable<LayerProperties>> layers{world.layerProperties};
+
+    std::vector<uint64_t> reported;
+    const auto updateUntilReported = [&](const GeoJSONSource& source, const std::string& what) {
+        return runUntil(
+            world.loop,
+            [&] {
+                renderSource.update(source.baseImpl, layers, true, false, world.parameters(true));
+                if (auto generation = renderSource.takeLaidOutGeneration()) {
+                    reported.push_back(*generation);
+                    return true;
+                }
+                return false;
+            },
+            what);
+    };
+    ASSERT_TRUE(updateUntilReported(oldSource, "the old style's generation 3"));
+    EXPECT_EQ(std::vector<uint64_t>{3}, reported);
+
+    // The style is rebuilt: a new source with the same id, generation 1.
+    GeoJSONSource newSource("source", laneOptions());
+    EXPECT_EQ(1u, newSource.setGeoJSON(points()));
+    ASSERT_TRUE(updateUntilReported(newSource, "the new style's generation 1"));
+    EXPECT_EQ((std::vector<uint64_t>{3, 1}), reported);
+
+    // Within the new source the order holds: an older number is not reported.
+    renderSource.update(newSource.baseImpl, layers, true, false, world.parameters(true));
+    EXPECT_FALSE(renderSource.takeLaidOutGeneration());
+}
+
 TEST(LabelLane, AURLBodyHasTheGenerationItsSetterAnswered) {
     util::RunLoop loop;
     auto fileSource = std::make_shared<StubFileSource>();
