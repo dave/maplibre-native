@@ -1,3 +1,4 @@
+#include <atomic>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/tile/tile_id.hpp>
 #include <mln/util/constants.hpp>
@@ -171,9 +172,17 @@ std::shared_ptr<GeoJSONData> GeoJSONData::create(const GeoJSON& geoJSON,
     return std::shared_ptr<GeoJSONData>(new GeoJSONVTData(geoJSON, vtOptions, std::move(sequencedScheduler), sourceID));
 }
 
+namespace {
+uint64_t nextSourceInstance() {
+    static std::atomic<uint64_t> last{0};
+    return ++last;
+}
+} // namespace
+
 GeoJSONSource::Impl::Impl(std::string id_, Immutable<GeoJSONOptions> options_)
     : Source::Impl(SourceType::GeoJSON, std::move(id_)),
-      options(std::move(options_)) {}
+      options(std::move(options_)),
+      sourceInstance(nextSourceInstance()) {}
 
 GeoJSONSource::Impl::Impl(const GeoJSONSource::Impl& other,
                           std::shared_ptr<GeoJSONData> data_,
@@ -182,6 +191,7 @@ GeoJSONSource::Impl::Impl(const GeoJSONSource::Impl& other,
       options(other.options),
       data(std::move(data_)),
       dataGeneration(dataGeneration_),
+      sourceInstance(other.sourceInstance),
       overrideSynchronousUpdate(other.overrideSynchronousUpdate) {}
 
 GeoJSONSource::Impl::~Impl() = default;

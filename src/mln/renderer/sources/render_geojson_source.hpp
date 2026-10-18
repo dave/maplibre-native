@@ -33,8 +33,11 @@ private:
     bool idealTilesLaidOut(const std::shared_ptr<style::GeoJSONData>&) const;
 
     std::weak_ptr<style::GeoJSONData> data;
-    // The last generation reported laid out; reported once each.
+    // The last generation reported laid out; reported once each. It belongs
+    // to the style source object `reportedInstance` names: this render source
+    // outlives a style rebuild, and the new source counts from low again.
     uint64_t reportedGeneration = 0;
+    uint64_t reportedInstance = 0;
     std::optional<uint64_t> laidOutGeneration;
 };
 
