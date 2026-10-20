@@ -295,6 +295,18 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
   _shape = shape;
 }
 
+- (NSNumber *)landingLimit {
+  MLNAssertStyleSourceIsValid();
+  const auto limit = self.rawSource->getLandingLimit();
+  return limit ? @(*limit) : nil;
+}
+
+- (void)setLandingLimit:(NSNumber *)landingLimit {
+  MLNAssertStyleSourceIsValid();
+  self.rawSource->setLandingLimit(
+      landingLimit ? std::optional<uint64_t>(landingLimit.unsignedLongLongValue) : std::nullopt);
+}
+
 - (uint64_t)dataGeneration {
   MLNAssertStyleSourceIsValid();
   // The core's, not an ivar: the core keeps only a weak link to this object,
