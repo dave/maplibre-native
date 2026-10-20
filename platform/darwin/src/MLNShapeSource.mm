@@ -295,6 +295,16 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
   _shape = shape;
 }
 
+- (BOOL)holdsLanding {
+  MLNAssertStyleSourceIsValid();
+  return self.rawSource->isHoldingLanding();
+}
+
+- (void)setHoldsLanding:(BOOL)holdsLanding {
+  MLNAssertStyleSourceIsValid();
+  self.rawSource->setHoldLanding(holdsLanding);
+}
+
 - (uint64_t)dataGeneration {
   MLNAssertStyleSourceIsValid();
   // The core's, not an ivar: the core keeps only a weak link to this object,

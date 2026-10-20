@@ -91,6 +91,13 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
         laidOutGeneration = std::nullopt;
     }
 
+    // Held bodies lay out but do not land; set before any new data reaches a
+    // tile, as a synchronous layout lands inside `updateData`.
+    const bool holdLanding = impl().holdsLanding();
+    for (const auto& pair : tilePyramid.getTiles()) {
+        static_cast<GeoJSONTile*>(pair.second.get())->setHoldLanding(holdLanding);
+    }
+
     auto data_ = impl().getData().lock();
     if (data.lock() != data_) {
         data = data_;
@@ -122,6 +129,10 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
                        [&, data_](const OverscaledTileID& tileID, TileObserver* observer_) {
                            return std::make_unique<GeoJSONTile>(tileID, impl().id, parameters, data_, observer_);
                        });
+    // Tiles the update made take the hold too.
+    for (const auto& pair : tilePyramid.getTiles()) {
+        static_cast<GeoJSONTile*>(pair.second.get())->setHoldLanding(holdLanding);
+    }
 
     const uint64_t generation = impl().getDataGeneration();
     if (generation > reportedGeneration && idealTilesLaidOut(data_)) {

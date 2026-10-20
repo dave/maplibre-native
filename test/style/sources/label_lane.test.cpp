@@ -5,6 +5,7 @@
 // wait ends on an event, and its 30 s bound only turns a missing event into a
 // failure instead of a hang.
 
+#include <iostream>
 #include <mln/test/fake_file_source.hpp>
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
@@ -30,6 +31,7 @@
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/style/style.hpp>
+#include <mln/style/transition_options.hpp>
 #include <mln/text/glyph_manager.hpp>
 #include <mln/tile/geojson_tile.hpp>
 #include <mln/util/io.hpp>
@@ -1202,4 +1204,95 @@ TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
     Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
     ASSERT_TRUE(runOneFrame(test, "the frame the lane's layouts bring"));
     EXPECT_EQ(1u, drawnCircles(test)) << "a frame drew a layout older than the inline one";
+}
+
+// Holding the landing (`GeoJSONSource::setHoldLanding`): a new body is cut and
+// laid out, and reported laid out, but the tiles keep drawing the old one
+// until the release; the release lands it in the frame that takes it.
+
+namespace {
+
+const std::string kOnePoint = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]})";
+
+GeoJSON onePoint() {
+    conversion::Error error;
+    auto geoJSON = conversion::parseGeoJSON(kOnePoint, error);
+    assert(geoJSON);
+    return *geoJSON;
+}
+
+/** The symbols of "labels" the last frame placed (a symbol query reads the collision index). */
+std::size_t placedLabels(LaneMap& test) {
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"labels"};
+    return test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options).size();
+}
+
+/** Placement transitions off, as the Viatrail app runs (its labels have no fade). */
+void placementTransitionsOff(LaneMap& test) {
+    TransitionOptions transitions = test.map->getStyle().getTransitionOptions();
+    transitions.enablePlacementTransitions = false;
+    test.map->getStyle().setTransitionOptions(transitions);
+}
+
+} // namespace
+
+TEST(LabelLane, AHeldBodyIsLaidOutButDrawnOnlyInTheFrameThatTakesTheRelease) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    test.labels().setHoldLanding(true);
+    const uint64_t body = test.labels().setGeoJSON(onePoint());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+        EXPECT_EQ(4u, drawnCircles(test)) << "a held body was drawn, frame " << i;
+    }
+
+    test.labels().setHoldLanding(false);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the released body was not drawn in the frame that took the release";
+}
+
+TEST(LabelLane, AReleasedBodysSymbolsArePlacedInTheReleaseFrameWithPlacementTransitionsOff) {
+    LaneMap test;
+    placementTransitionsOff(test);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return placedLabels(test) == 4u; }, "the body's four labels placed"));
+
+    test.labels().setHoldLanding(true);
+    const uint64_t body = test.labels().setGeoJSON(onePoint());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+        EXPECT_EQ(4u, placedLabels(test)) << "a held body's labels were placed, frame " << i;
+    }
+
+    test.labels().setHoldLanding(false);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, placedLabels(test)) << "the released labels were not placed in the frame that took the release";
+}
+
+// With placement transitions on (MapLibre's default), placement runs at most
+// once a period, so the released symbols may wait a frame or more: recorded,
+// not required.
+TEST(LabelLane, WithPlacementTransitionsOnAReleasedBodysSymbolsArePlacedWithinThePeriod) {
+    LaneMap test;
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return placedLabels(test) == 4u; }, "the body's four labels placed"));
+    test.labels().setHoldLanding(true);
+    const uint64_t body = test.labels().setGeoJSON(onePoint());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
+    test.labels().setHoldLanding(false);
+    int frames = 0;
+    while (frames < 60) {
+        ASSERT_TRUE(runOneFrame(test, "a frame after the release"));
+        ++frames;
+        if (placedLabels(test) == 1u) break;
+    }
+    EXPECT_LE(frames, 60);
+    std::cout << "[hold-landing] placement transitions on: placed after " << frames << " frame(s)\n";
 }

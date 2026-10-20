@@ -452,11 +452,21 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
     takenCorrelationID = resultCorrelationID;
 
     loaded = true;
-    renderable = true;
     if (resultCorrelationID == correlationID) {
         pending = false;
         observer->onTileAction(id, sourceID, TileOperation::EndParse);
     }
+
+    if (holdLanding) {
+        // Laid out, not landed: the tile keeps drawing its last layout until
+        // the release. The change is still reported, so the source learns it
+        // is laid out.
+        heldResult = std::move(result);
+        hasHeldResult = true;
+        observer->onTileChanged(*this);
+        return;
+    }
+    renderable = true;
 
     const ErrorScope errorScope{observer};
 
@@ -482,6 +492,19 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
             }
         }
     }
+}
+
+void GeometryTile::setHoldLanding(bool hold) {
+    if (hold == holdLanding) return;
+    holdLanding = hold;
+    if (hold || !hasHeldResult) return;
+    hasHeldResult = false;
+    renderable = true;
+    layoutResult = std::move(heldResult);
+    if (!atlasTextures) {
+        atlasTextures = std::make_shared<TileAtlasTextures>();
+    }
+    observer->onTileChanged(*this);
 }
 
 void GeometryTile::setObserver(TileObserver* observer_) {

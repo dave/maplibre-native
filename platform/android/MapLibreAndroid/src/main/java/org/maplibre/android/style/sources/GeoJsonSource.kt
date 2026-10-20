@@ -572,6 +572,30 @@ class GeoJsonSource : Source {
         nativeSetOverrideSynchronousUpdate(override)
     }
 
+    /**
+     * Holds the landing of new bodies. While true, a body set on the source is cut
+     * and laid out as usual, and reported laid out, but the map keeps drawing the
+     * body it drew before. False lands every held layout at once, in the frame that
+     * takes the change. With the style's placement transitions off, its symbols are
+     * placed in that frame too. Core: `GeoJSONSource::setHoldLanding`.
+     */
+    fun setHoldLanding(hold: Boolean) {
+        checkThread()
+        nativeSetHoldLanding(hold)
+    }
+
+    /** Whether new bodies are held (see [setHoldLanding]). */
+    fun isHoldingLanding(): Boolean {
+        checkThread()
+        return nativeIsHoldingLanding()
+    }
+
+    @Keep
+    private external fun nativeSetHoldLanding(hold: Boolean)
+
+    @Keep
+    private external fun nativeIsHoldingLanding(): Boolean
+
     @Keep
     private external fun nativeIsUpdateSynchronous(): Boolean
 

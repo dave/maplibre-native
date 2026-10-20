@@ -253,6 +253,18 @@ bool GeoJSONSource::isUpdateSynchronous() const noexcept {
     return baseImpl->isUpdateSynchronous();
 }
 
+void GeoJSONSource::setHoldLanding(bool value) {
+    if (value == impl().holdsLanding()) return;
+    auto next = makeMutable<Impl>(impl(), impl().getData().lock(), impl().getDataGeneration());
+    next->setHoldLanding(value);
+    baseImpl = std::move(next);
+    observer->onSourceChanged(*this);
+}
+
+bool GeoJSONSource::isHoldingLanding() const {
+    return impl().holdsLanding();
+}
+
 void GeoJSONSource::setOverrideSynchronousUpdate(bool value) {
     if (value && impl().getOptions()->labelLane) {
         throw std::logic_error("GeoJSON source " + getID() + ": labelLane refuses a synchronous update override");

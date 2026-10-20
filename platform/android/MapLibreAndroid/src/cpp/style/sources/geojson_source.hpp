@@ -87,6 +87,8 @@ private:
 
     jboolean isUpdateSynchronous(jni::JNIEnv&);
     void setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean);
+    void setHoldLanding(jni::JNIEnv&, jni::jboolean);
+    jboolean isHoldingLanding(jni::JNIEnv&);
 
 }; // class GeoJSONSource
 

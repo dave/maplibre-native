@@ -25,6 +25,11 @@ class TileAtlasTextures;
 
 class GeometryTile : public Tile, public GlyphRequestor, public ImageRequestor {
 public:
+    /// While held, a new layout is kept aside and the tile keeps drawing its
+    /// last one; releasing lands the kept layout at once
+    /// (`GeoJSONSource::setHoldLanding`).
+    void setHoldLanding(bool);
+
     const std::thread::id renderThreadID = std::this_thread::get_id();
 
     GeometryTile(const OverscaledTileID&,
@@ -172,6 +177,10 @@ private:
 
     std::shared_ptr<LayoutResult> layoutResult;
     std::shared_ptr<TileAtlasTextures> atlasTextures;
+    // `setHoldLanding`: a layout that came while held, landed on release.
+    bool holdLanding = false;
+    bool hasHeldResult = false;
+    std::shared_ptr<LayoutResult> heldResult;
 
     const MapMode mode;
 

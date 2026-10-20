@@ -146,6 +146,16 @@ public:
     /// Throws `std::logic_error` for `true` on a `labelLane` source.
     void setOverrideSynchronousUpdate(bool);
 
+    /// Holds the landing of new bodies: while true, a body set on the source
+    /// is cut and laid out as usual (and reported laid out), but every tile
+    /// keeps drawing the layout it drew before. `false` lands every held
+    /// layout at once, so the new body is drawn in the frame that takes the
+    /// change (an app shows it in the same frame as other changes of that
+    /// turn). Placement of the landed symbols runs in that frame when the
+    /// style's placement transitions are off.
+    void setHoldLanding(bool);
+    bool isHoldingLanding() const;
+
 protected:
     Mutable<Source::Impl> createMutable() const noexcept final;
 
