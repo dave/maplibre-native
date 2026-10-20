@@ -386,6 +386,18 @@ MLN_EXPORT
 @property (nonatomic, readonly) uint64_t dataGeneration;
 
 /**
+ The landing limit, a data generation (`dataGeneration`), or `nil` for none
+ (the default). While set, a body whose generation is above it is cut and laid
+ out as usual, and reported laid out (`-mapView:sourceDidLayOut:generation:`),
+ but the map keeps drawing the newest body at or below it. Raising it lands,
+ in the frame that takes the change, the newest body at or below the new
+ value; `nil` lands the newest. A tile made while a body is held draws the
+ landed body. With the style's placement transitions off, the landed symbols
+ are placed in that frame too. Core: `GeoJSONSource::setLandingLimit`.
+ */
+@property (nonatomic, copy, nullable) NSNumber *landingLimit;
+
+/**
  The step recorder, for debug builds and tests: when on, every shape source's
  off-thread steps and tile hops record the thread they ran on and their
  times. Off by default.
