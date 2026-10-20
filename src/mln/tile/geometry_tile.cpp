@@ -472,7 +472,15 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
         // Laid out, not landed: the tile keeps drawing its landed layout
         // until the limit reaches this body. The change is still reported, so
         // the source learns it is laid out.
+        if (auto& slot = keptResults[generation]) {
+            freeLayout(std::move(slot));
+        }
         keptResults[generation] = std::move(result);
+        // Bounded: a stream of bodies during one hold keeps the newest few.
+        while (keptResults.size() > maxKeptLayouts) {
+            freeLayout(std::move(keptResults.begin()->second));
+            keptResults.erase(keptResults.begin());
+        }
         observer->onTileChanged(*this);
         return;
     }
@@ -532,13 +540,23 @@ void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
     auto newest = std::prev(end);
     std::shared_ptr<LayoutResult> result = std::move(newest->second);
     const uint64_t generation = newest->first;
+    // Every kept layout at or below the limit goes: the newest lands, the
+    // others are freed.
+    for (auto it = keptResults.begin(); it != newest; ++it) {
+        freeLayout(std::move(it->second));
+    }
     keptResults.erase(keptResults.begin(), end);
     if (generation >= landedGeneration) {
         land(std::move(result), generation);
-    } else if (result) {
-        threadPool.runOnRenderThread(
-            [result_{std::move(result)}]() { result_->dynamicTextureAtlas->removeUnusedDynamicTextures(); });
+    } else {
+        freeLayout(std::move(result));
     }
+}
+
+void GeometryTile::freeLayout(std::shared_ptr<LayoutResult>&& result) {
+    if (!result) return;
+    threadPool.runOnRenderThread(
+        [result_{std::move(result)}]() { result_->dynamicTextureAtlas->removeUnusedDynamicTextures(); });
 }
 
 void GeometryTile::setObserver(TileObserver* observer_) {

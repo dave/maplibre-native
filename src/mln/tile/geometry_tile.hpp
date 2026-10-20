@@ -32,6 +32,10 @@ public:
     void setLandingLimit(std::optional<uint64_t>);
     /// The data generation of the body the next `setData` gives the worker.
     void setBodyGeneration(uint64_t generation) { bodyGeneration = generation; }
+    /// How many layouts are kept above the landing limit (for the tests).
+    std::size_t keptLayoutCount() const { return keptResults.size(); }
+    /// The most layouts kept above the limit; an older one beyond it is freed.
+    static constexpr std::size_t maxKeptLayouts = 4;
 
 protected:
     /// A layout landed (drawn from the next frame).
@@ -196,6 +200,7 @@ private:
     uint64_t landedGeneration = 0;
     std::map<uint64_t, std::shared_ptr<LayoutResult>> keptResults;
     void land(std::shared_ptr<LayoutResult>&&, uint64_t generation);
+    void freeLayout(std::shared_ptr<LayoutResult>&&);
 
     const MapMode mode;
 
