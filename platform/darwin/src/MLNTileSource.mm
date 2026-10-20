@@ -13,6 +13,9 @@
 #import <Cocoa/Cocoa.h>
 #endif
 
+#import "MLNSource_Private.h"
+
+#include <mln/style/source.hpp>
 #include <mln/util/tileset.hpp>
 
 const MLNTileSourceOption MLNTileSourceOptionMinimumZoomLevel =
@@ -49,6 +52,21 @@ const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem =
 - (NSString *)attributionHTMLString {
   [NSException raise:MLNAbstractClassException format:@"MLNTileSource is an abstract class"];
   return nil;
+}
+
+- (NSNumber *)prefetchZoomDelta {
+  MLNAssertStyleSourceIsValid();
+  const auto delta = self.rawSource->getPrefetchZoomDelta();
+  return delta ? @(*delta) : nil;
+}
+
+- (void)setPrefetchZoomDelta:(NSNumber *)prefetchZoomDelta {
+  MLNAssertStyleSourceIsValid();
+  std::optional<uint8_t> delta;
+  if (prefetchZoomDelta) {
+    delta = static_cast<uint8_t>(MIN(MAX(prefetchZoomDelta.integerValue, 0), 255));
+  }
+  self.rawSource->setPrefetchZoomDelta(delta);
 }
 
 @end
