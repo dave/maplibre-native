@@ -1191,6 +1191,10 @@ void RenderOrchestrator::onTileError(RenderSource& source, const OverscaledTileI
                "Failed to load tile " + util::toString(tileID) + " for source " + source.baseImpl->id + ": " +
                    util::toString(error));
     observer->onResourceError(error);
+    // A failed tile is complete, as a loaded one is: the map has something
+    // new to say (loaded, idle), so it asks for a frame as onTileChanged does.
+    // Without it a still map whose last tile failed rendered nothing more.
+    observer->onInvalidate();
 }
 
 void RenderOrchestrator::onTileChanged(RenderSource&, const OverscaledTileID&) {
