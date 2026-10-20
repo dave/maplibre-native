@@ -14,27 +14,49 @@ GeoJSONTile::GeoJSONTile(const OverscaledTileID& overscaledTileID,
                          std::string sourceID_,
                          const TileParameters& parameters,
                          std::shared_ptr<style::GeoJSONData> data_,
-                         TileObserver* observer_)
+                         TileObserver* observer_,
+                         uint64_t dataGeneration)
     : GeometryTile(overscaledTileID, std::move(sourceID_), parameters, observer_) {
-    updateData(std::move(data_), false /*needsRelayout*/, parameters.isUpdateSynchronous);
+    updateData(std::move(data_), false /*needsRelayout*/, parameters.isUpdateSynchronous, dataGeneration);
 }
 
-void GeoJSONTile::updateData(std::shared_ptr<style::GeoJSONData> data_, bool needsRelayout, bool runSynchronously) {
+void GeoJSONTile::updateData(std::shared_ptr<style::GeoJSONData> data_,
+                             bool needsRelayout,
+                             bool runSynchronously,
+                             uint64_t dataGeneration) {
     MLN_TRACE_FUNC();
 
     assert(data_);
+    // A newer body replaces one waiting for a landing.
+    dataAfterLanding = nullptr;
     data = std::move(data_);
     if (needsRelayout) reset();
     data->getTile(
         id.canonical,
-        [this, self = weakFactory.makeWeakPtr(), capturedData = data.get()](TileFeatures features) {
+        [this, self = weakFactory.makeWeakPtr(), capturedData = data.get(), dataGeneration](TileFeatures features) {
             // If the data has changed, a new request is being processed, ignore this one
             if (auto guard = self.lock(); self && data.get() == capturedData) {
                 dataInWorker = data;
+                setBodyGeneration(dataGeneration);
                 setData(std::make_unique<GeoJSONTileData>(std::move(features)));
             }
         },
         runSynchronously);
+}
+
+void GeoJSONTile::updateDataAfterLanding(std::shared_ptr<style::GeoJSONData> data_,
+                                         bool runSynchronously,
+                                         uint64_t dataGeneration) {
+    dataAfterLanding = std::move(data_);
+    generationAfterLanding = dataGeneration;
+    synchronousAfterLanding = runSynchronously;
+}
+
+void GeoJSONTile::onLanded() {
+    if (!dataAfterLanding) return;
+    auto next = std::move(dataAfterLanding);
+    dataAfterLanding = nullptr;
+    updateData(std::move(next), false, synchronousAfterLanding, generationAfterLanding);
 }
 
 bool GeoJSONTile::isLaidOutWith(const std::shared_ptr<style::GeoJSONData>& data_) const {

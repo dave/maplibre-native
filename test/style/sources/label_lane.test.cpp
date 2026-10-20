@@ -5,6 +5,7 @@
 // wait ends on an event, and its 30 s bound only turns a missing event into a
 // failure instead of a hang.
 
+#include <iostream>
 #include <mln/test/fake_file_source.hpp>
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
@@ -31,16 +32,19 @@
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/style/style.hpp>
+#include <mln/style/transition_options.hpp>
 #include <mln/text/glyph_manager.hpp>
 #include <mln/tile/geojson_tile.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/label_steps.hpp>
+#include <mln/util/platform.hpp>
 #include <mln/util/logging.hpp>
 #include <mln/util/run_loop.hpp>
 #include <mln/util/timer.hpp>
 
 #include <algorithm>
 #include <condition_variable>
+#include <latch>
 #include <mutex>
 #include <random>
 #include <set>
@@ -573,12 +577,15 @@ public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut.emplace_back(sourceID, generation);
     }
-    void onDidFinishRenderingFrame(const RenderFrameStatus&) override {
+    void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
         ++frames;
+        fullFrames = status.mode == RenderMode::Full ? fullFrames + 1 : 0;
         if (onFrame) onFrame();
     }
     // Called at the end of each frame, inside it (as an app's delegate is).
     std::function<void()> onFrame;
+    /// Consecutive fully rendered frames: every tile in view is drawn.
+    int fullFrames = 0;
     bool has(const std::string& sourceID, uint64_t generation) const {
         return std::ranges::find(laidOut, std::make_pair(sourceID, generation)) != laidOut.end();
     }
@@ -623,6 +630,29 @@ public:
     }
 };
 
+// The threads a scheduler runs its tasks on: `count` tasks that each wait for
+// all the others to start, so each holds one of the scheduler's `count`
+// threads. A test then tells threads apart by identity, not by name (not
+// every platform names its threads).
+std::set<std::thread::id> threadsOf(Scheduler& scheduler, std::ptrdiff_t count) {
+    std::mutex mutex;
+    std::set<std::thread::id> ids;
+    std::latch started(count);
+    std::latch done(count);
+    for (std::ptrdiff_t i = 0; i < count; ++i) {
+        scheduler.schedule([&] {
+            {
+                const std::scoped_lock lock(mutex);
+                ids.insert(std::this_thread::get_id());
+            }
+            started.arrive_and_wait();
+            done.count_down();
+        });
+    }
+    done.wait();
+    return ids;
+}
+
 } // namespace
 
 // The thread test: every recorded step of a lane source runs on the lane,
@@ -635,17 +665,21 @@ TEST(LabelLane, EveryStepOfALaneSourceRunsOnTheLane) {
         [&] { return test.observer.has("labels", 1) && test.observer.has("plain", 1); },
         "both sources laid out"));
 
+    // The lane's two threads, and the lane source's own slicer thread.
+    std::set<std::thread::id> lane = threadsOf(*Scheduler::GetLabelLane(), 2);
+    lane.merge(threadsOf(*test.labels().getSliceScheduler(), 1));
+    ASSERT_EQ(3u, lane.size()) << "the lane's two threads and the slicer are three threads";
+
     std::set<std::string> laneSteps;
     std::set<std::string> plainSteps;
     for (const auto& step : recording.steps()) {
         if (step.hop) continue;
         if (step.sourceID == "labels") {
             laneSteps.insert(step.name);
-            // Darwin names a thread "org.maplibre.mbgl." and the name given.
-            EXPECT_NE(std::string::npos, step.thread.find("Label lane")) << step.name << " ran on " << step.thread;
+            EXPECT_TRUE(lane.contains(step.threadID)) << step.name << " ran on " << step.thread;
         } else if (step.sourceID == "plain") {
             plainSteps.insert(step.name);
-            EXPECT_EQ(std::string::npos, step.thread.find("Label lane")) << step.name << " ran on " << step.thread;
+            EXPECT_FALSE(lane.contains(step.threadID)) << step.name << " ran on " << step.thread;
         }
     }
     EXPECT_EQ((std::set<std::string>{"parse-url", "index", "slice", "tile-parse", "tile-layout"}), laneSteps);
@@ -854,7 +888,8 @@ TEST(LabelLane, ASourceNeverEndsWithAURLThatIsNeitherRequestedNorLoaded) {
         const bool requested = std::ranges::any_of(
             fileSource.requests, [&](const auto* request) { return request->resource.url == lastURL; });
         if (!requested && landedURL != lastURL) {
-            if (++failures <= 5) ADD_FAILURE() << "seed " << seed << ": " << lastURL << " neither requested nor loaded after:" << trace;
+            if (++failures <= 5)
+                ADD_FAILURE() << "seed " << seed << ": " << lastURL << " neither requested nor loaded after:" << trace;
         }
         loop.runOnce();
     }
@@ -1295,11 +1330,182 @@ TEST(LabelLane, IOSReproAFilterChangeOnALaneSourceIsDrawnInTheFirstFrame) {
     ASSERT_EQ(1u, drawn("overlay-circles")) << "precondition";
 
     std::vector<std::pair<std::size_t, std::size_t>> seen;
-    observer.onFrame = [&] { seen.emplace_back(drawn("lane-circles"), drawn("overlay-circles")); };
+    observer.onFrame = [&] {
+        seen.emplace_back(drawn("lane-circles"), drawn("overlay-circles"));
+    };
     map.getStyle().getLayer("lane-circles")->setFilter(*filterFrom(R"(["==", ["get", "id"], "none"])"));
     map.getStyle().getLayer("overlay-circles")->setFilter(*filterFrom(R"(["==", ["get", "id"], "none"])"));
     ASSERT_TRUE(runUntil(loop, [&] { return !seen.empty(); }, "a frame after the turn"));
     observer.onFrame = nullptr;
     EXPECT_EQ(std::make_pair(std::size_t{0}, std::size_t{0}), seen.front())
         << "the first frame after the turn drew lane " << seen.front().first << ", overlay " << seen.front().second;
+}
+
+// The landing limit (`GeoJSONSource::setLandingLimit`): a body above it is
+// cut and laid out, and reported laid out, but the tiles keep drawing the
+// newest body at or below it; raising the limit lands it in the frame that
+// takes the change.
+
+namespace {
+
+const std::string kOnePoint = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]})";
+const std::string kTwoPoints = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [-20, 20]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [20, -20]}}]})";
+
+GeoJSON body(const std::string& text) {
+    conversion::Error error;
+    auto geoJSON = conversion::parseGeoJSON(text, error);
+    assert(geoJSON);
+    return *geoJSON;
+}
+
+/** The symbols of "labels" the last frame placed (a symbol query reads the collision index). */
+std::size_t placedLabels(LaneMap& test) {
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"labels"};
+    return test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options).size();
+}
+
+/** Placement transitions off, as the Viatrail app runs (its labels have no fade). */
+void placementTransitionsOff(LaneMap& test) {
+    TransitionOptions transitions = test.map->getStyle().getTransitionOptions();
+    transitions.enablePlacementTransitions = false;
+    test.map->getStyle().setTransitionOptions(transitions);
+}
+
+} // namespace
+
+TEST(LabelLane, ABodyAboveTheLimitIsLaidOutButDrawnOnlyInTheFrameThatRaisesIt) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the held body laid out"));
+    for (int i = 0; i < 3; ++i) {
+        test.map->triggerRepaint(); // a still map draws no frame of its own
+        ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+        EXPECT_EQ(4u, drawnCircles(test)) << "a held body was drawn, frame " << i;
+    }
+
+    test.labels().setLandingLimit(one);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the released body was not drawn in the frame that took the release";
+}
+
+// A fast stream (audit C2): two bodies held; raising the limit to the first
+// lands the first, not the newest, and the newest stays held.
+TEST(LabelLane, RaisingTheLimitLandsTheBodyAtItNotANewerOne) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the first held body laid out"));
+    const uint64_t two = test.labels().setGeoJSON(body(kTwoPoints));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", two); }, "the second held body laid out"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame with both held"));
+    EXPECT_EQ(4u, drawnCircles(test));
+
+    test.labels().setLandingLimit(one);
+    ASSERT_TRUE(runOneFrame(test, "the frame that lands the first"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the limit landed a body other than the one at it";
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that lands the newest"));
+    EXPECT_EQ(2u, drawnCircles(test)) << "clearing the limit did not land the newest body";
+}
+
+// A tile made during a hold (a pan; audit I1) draws the landed body, not
+// nothing: the pan goes where no tile was ever loaded, so no parent tile can
+// stand in for it.
+TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
+    // Zoom 5 from the start: only tiles near (0, 0) are ever loaded.
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    // The landed body: four points far east, off the screen.
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    const uint64_t landedBody = test.labels().setGeoJSON(body(east));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", landedBody); }, "the east body laid out"));
+    // Held: one point, also far east.
+    test.labels().setLandingLimit(landedBody);
+    // Marked, so a frame that draws it is told apart from one that has landed
+    // only some of the new tiles' landed body: each of the four tiles holds
+    // one of its points, and the tiles land in their own frames.
+    const std::string eastOne = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"held": true}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})";
+    const uint64_t heldBody = test.labels().setGeoJSON(body(eastOne));
+    // The pan: new tiles, made while the hold is on, where no tile (and no
+    // parent tile) was ever loaded.
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{0, 135}));
+    const auto drawsHeld = [&] {
+        RenderedQueryOptions options;
+        options.layerIDs = std::vector<std::string>{"circles"};
+        const auto features = test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}},
+                                                                                  options);
+        return std::ranges::any_of(features,
+                                   [](const Feature& feature) { return feature.properties.contains("held"); });
+    };
+    bool drewHeld = false;
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            drewHeld = drewHeld || drawsHeld();
+            return drawnCircles(test) == 4;
+        },
+        "the new tiles draw the landed body"));
+    EXPECT_FALSE(drewHeld) << "a new tile drew the held body before the release";
+    // They lay out the held body after the landed one: wait until every tile
+    // in view holds it (the laid-out report), as a client does before it
+    // releases.
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", heldBody); }, "the held body laid out"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame after the held body is laid out"));
+    EXPECT_EQ(4u, drawnCircles(test)) << "the new tiles drew the held body before the release";
+    EXPECT_FALSE(drawsHeld()) << "the new tiles drew the held body before the release";
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' held body did not land with the release";
+}
+
+// Placement transitions OFF is what makes it one frame: `PlacementController::
+// placementIsRecent` is then false every frame, so the landed symbols are
+// placed in the frame that lands them. With them on (MapLibre's default),
+// placement runs at most once a period (the probe measured 22 frames), so the
+// app's one-frame labels depend on its no-fade setting. A test of the
+// transitions-on case cannot pin a frame count: the period is time, not
+// frames (audit N1).
+TEST(LabelLane, AReleasedBodysSymbolsArePlacedInTheReleaseFrameWithPlacementTransitionsOff) {
+    LaneMap test;
+    placementTransitionsOff(test);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return placedLabels(test) == 4u; }, "the body's four labels placed"));
+
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the held body laid out"));
+    for (int i = 0; i < 3; ++i) {
+        test.map->triggerRepaint(); // a still map draws no frame of its own
+        ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+        EXPECT_EQ(4u, placedLabels(test)) << "a held body's labels were placed, frame " << i;
+    }
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, placedLabels(test)) << "the released labels were not placed in the frame that took the release";
 }

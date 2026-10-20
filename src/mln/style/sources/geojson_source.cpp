@@ -20,7 +20,7 @@ namespace style {
 
 namespace {
 
-const Immutable<GeoJSONOptions>& checkedOptions(const Immutable<GeoJSONOptions>& options) {
+Immutable<GeoJSONOptions> checkedOptions(const Immutable<GeoJSONOptions>& options) {
     if (options->labelLane && options->synchronousUpdate) {
         throw std::invalid_argument("GeoJSON source labelLane cannot be set with synchronousUpdate");
     }
@@ -251,6 +251,18 @@ Mutable<Source::Impl> GeoJSONSource::createMutable() const noexcept {
 
 bool GeoJSONSource::isUpdateSynchronous() const noexcept {
     return baseImpl->isUpdateSynchronous();
+}
+
+void GeoJSONSource::setLandingLimit(std::optional<uint64_t> limit) {
+    if (limit == impl().getLandingLimit()) return;
+    auto next = makeMutable<Impl>(impl(), impl().getData().lock(), impl().getDataGeneration());
+    next->setLandingLimit(limit);
+    baseImpl = std::move(next);
+    observer->onSourceChanged(*this);
+}
+
+std::optional<uint64_t> GeoJSONSource::getLandingLimit() const {
+    return impl().getLandingLimit();
 }
 
 void GeoJSONSource::setOverrideSynchronousUpdate(bool value) const {
