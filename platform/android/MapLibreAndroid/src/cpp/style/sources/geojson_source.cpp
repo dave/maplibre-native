@@ -221,12 +221,14 @@ void GeoJSONSource::setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean new
     source.as<style::GeoJSONSource>()->setOverrideSynchronousUpdate(newOverride);
 }
 
-void GeoJSONSource::setHoldLanding(jni::JNIEnv&, jni::jboolean hold) {
-    source.as<style::GeoJSONSource>()->setHoldLanding(hold);
+void GeoJSONSource::setLandingLimit(jni::JNIEnv&, jni::jlong limit) {
+    source.as<style::GeoJSONSource>()->setLandingLimit(
+        limit < 0 ? std::nullopt : std::optional<uint64_t>(static_cast<uint64_t>(limit)));
 }
 
-jboolean GeoJSONSource::isHoldingLanding(jni::JNIEnv&) {
-    return source.as<style::GeoJSONSource>()->isHoldingLanding();
+jni::jlong GeoJSONSource::getLandingLimit(jni::JNIEnv&) {
+    const auto limit = source.as<style::GeoJSONSource>()->getLandingLimit();
+    return limit ? static_cast<jni::jlong>(*limit) : -1;
 }
 
 void GeoJSONSource::registerNative(jni::JNIEnv& env) {
@@ -255,8 +257,8 @@ void GeoJSONSource::registerNative(jni::JNIEnv& env) {
         METHOD(&GeoJSONSource::getClusterExpansionZoom, "nativeGetClusterExpansionZoom"),
         METHOD(&GeoJSONSource::isUpdateSynchronous, "nativeIsUpdateSynchronous"),
         METHOD(&GeoJSONSource::setOverrideSynchronousUpdate, "nativeSetOverrideSynchronousUpdate"),
-        METHOD(&GeoJSONSource::setHoldLanding, "nativeSetHoldLanding"),
-        METHOD(&GeoJSONSource::isHoldingLanding, "nativeIsHoldingLanding"));
+        METHOD(&GeoJSONSource::setLandingLimit, "nativeSetLandingLimit"),
+        METHOD(&GeoJSONSource::getLandingLimit, "nativeGetLandingLimit"));
 }
 
 void FeatureConverter::convertJson(std::shared_ptr<std::string> json, ActorRef<GeoJSONDataCallback> callback) {

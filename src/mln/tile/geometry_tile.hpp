@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <mln/actor/optional_actor.hpp>
 #include <mln/geometry/feature_index.hpp>
 #include <mln/gfx/dynamic_texture_atlas.hpp>
@@ -25,10 +26,18 @@ class TileAtlasTextures;
 
 class GeometryTile : public Tile, public GlyphRequestor, public ImageRequestor {
 public:
-    /// While held, a new layout is kept aside and the tile keeps drawing its
-    /// last one; releasing lands the kept layout at once
-    /// (`GeoJSONSource::setHoldLanding`).
-    void setHoldLanding(bool);
+    /// A layout of a body above the limit is kept aside and the tile keeps
+    /// drawing its landed one; raising the limit lands the newest kept
+    /// layout at or below it, at once (`GeoJSONSource::setLandingLimit`).
+    void setLandingLimit(std::optional<uint64_t>);
+    /// The data generation of the body the next `setData` gives the worker.
+    void setBodyGeneration(uint64_t generation) { bodyGeneration = generation; }
+
+protected:
+    /// A layout landed (drawn from the next frame).
+    virtual void onLanded() {}
+
+public:
 
     const std::thread::id renderThreadID = std::this_thread::get_id();
 
@@ -177,10 +186,16 @@ private:
 
     std::shared_ptr<LayoutResult> layoutResult;
     std::shared_ptr<TileAtlasTextures> atlasTextures;
-    // `setHoldLanding`: a layout that came while held, landed on release.
-    bool holdLanding = false;
-    bool hasHeldResult = false;
-    std::shared_ptr<LayoutResult> heldResult;
+    // `setLandingLimit`: the body generation of each correlation ID sent to
+    // a worker, the generation of the layout drawn, and the layouts kept
+    // aside above the limit (the newest per generation).
+    uint64_t nextCorrelationID();
+    uint64_t bodyGeneration = 0;
+    std::map<uint64_t, uint64_t> generationOfCorrelation;
+    std::optional<uint64_t> landingLimit;
+    uint64_t landedGeneration = 0;
+    std::map<uint64_t, std::shared_ptr<LayoutResult>> keptResults;
+    void land(std::shared_ptr<LayoutResult>&&, uint64_t generation);
 
     const MapMode mode;
 

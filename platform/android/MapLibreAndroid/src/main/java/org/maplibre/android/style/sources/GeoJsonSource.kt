@@ -573,28 +573,33 @@ class GeoJsonSource : Source {
     }
 
     /**
-     * Holds the landing of new bodies. While true, a body set on the source is cut
-     * and laid out as usual, and reported laid out, but the map keeps drawing the
-     * body it drew before. False lands every held layout at once, in the frame that
-     * takes the change. With the style's placement transitions off, its symbols are
-     * placed in that frame too. Core: `GeoJSONSource::setHoldLanding`.
+     * The landing limit, a data generation, or null for none (the default). While set,
+     * a body whose generation is above it is cut and laid out as usual, and reported
+     * laid out, but the map keeps drawing the newest body at or below it. Raising it
+     * lands, in the frame that takes the change, the newest body at or below the new
+     * value; null lands the newest. A tile made while a body is held draws the landed
+     * body. With the style's placement transitions off, the landed symbols are placed
+     * in that frame too. Core: `GeoJSONSource::setLandingLimit`.
      */
-    fun setHoldLanding(hold: Boolean) {
-        checkThread()
-        nativeSetHoldLanding(hold)
-    }
+    var landingLimit: Long?
+        get() {
+            checkThread()
+            val limit = nativeGetLandingLimit()
+            return if (limit < 0) null else limit
+        }
+        set(value) {
+            checkThread()
+            require(value == null || value >= 0) { "a landing limit is a data generation, 0 or more" }
+            nativeSetLandingLimit(value ?: -1)
+        }
 
-    /** Whether new bodies are held (see [setHoldLanding]). */
-    fun isHoldingLanding(): Boolean {
-        checkThread()
-        return nativeIsHoldingLanding()
-    }
-
+    /** `limit` < 0: none. */
     @Keep
-    private external fun nativeSetHoldLanding(hold: Boolean)
+    private external fun nativeSetLandingLimit(limit: Long)
 
+    /** < 0: none. */
     @Keep
-    private external fun nativeIsHoldingLanding(): Boolean
+    private external fun nativeGetLandingLimit(): Long
 
     @Keep
     private external fun nativeIsUpdateSynchronous(): Boolean

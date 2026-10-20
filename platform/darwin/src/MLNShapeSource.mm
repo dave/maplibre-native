@@ -295,14 +295,16 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
   _shape = shape;
 }
 
-- (BOOL)holdsLanding {
+- (NSNumber *)landingLimit {
   MLNAssertStyleSourceIsValid();
-  return self.rawSource->isHoldingLanding();
+  const auto limit = self.rawSource->getLandingLimit();
+  return limit ? @(*limit) : nil;
 }
 
-- (void)setHoldsLanding:(BOOL)holdsLanding {
+- (void)setLandingLimit:(NSNumber *)landingLimit {
   MLNAssertStyleSourceIsValid();
-  self.rawSource->setHoldLanding(holdsLanding);
+  self.rawSource->setLandingLimit(landingLimit ? std::optional<uint64_t>(landingLimit.unsignedLongLongValue)
+                                               : std::nullopt);
 }
 
 - (uint64_t)dataGeneration {

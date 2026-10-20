@@ -250,6 +250,14 @@ GeometryTile::~GeometryTile() {
                 layoutResult_->dynamicTextureAtlas->removeUnusedDynamicTextures();
             });
     }
+    // The layouts kept aside above the landing limit hold atlas entries too.
+    for (auto& kept : keptResults) {
+        if (kept.second) {
+            threadPool.runOnRenderThread([result_{std::move(kept.second)}]() {
+                result_->dynamicTextureAtlas->removeUnusedDynamicTextures();
+            });
+        }
+    }
 }
 
 void GeometryTile::cancel() {
@@ -287,7 +295,7 @@ void GeometryTile::setData(std::unique_ptr<const GeometryTileData> data_) {
         lastData = data_ ? data_->clone() : nullptr;
     }
 
-    ++correlationID;
+    nextCorrelationID();
     worker.self().invoke(
         &GeometryTileWorker::setData, std::move(data_), imageManager->getAvailableImages(), correlationID);
 }
@@ -307,7 +315,7 @@ void GeometryTile::reset() {
     loaded = false;
 
     // Reset the worker to the `NeedsParse` state.
-    ++correlationID;
+    nextCorrelationID();
     worker.self().invoke(&GeometryTileWorker::reset, correlationID);
 }
 
@@ -328,7 +336,7 @@ void GeometryTile::setLayers(const std::vector<Immutable<LayerProperties>>& laye
         observer->onTileAction(id, sourceID, TileOperation::StartParse);
     }
 
-    ++correlationID;
+    nextCorrelationID();
     worker.self().invoke(&GeometryTileWorker::setLayers,
                          layersForZoom(layers),
                          std::move(globalState),
@@ -372,7 +380,7 @@ void GeometryTile::setLayersInline(const std::vector<Immutable<LayerProperties>>
         pending = true;
         observer->onTileAction(id, sourceID, TileOperation::StartParse);
     }
-    ++correlationID;
+    nextCorrelationID();
     const auto images = imageManager->getAvailableImages();
     // The lane's worker takes the layers for the bodies to come, and lays
     // nothing out with them: this tile does, below. Its layouts for the old
@@ -435,7 +443,7 @@ void GeometryTile::setShowCollisionBoxes(const bool showCollisionBoxes_) {
 
     if (showCollisionBoxes != showCollisionBoxes_) {
         showCollisionBoxes = showCollisionBoxes_;
-        ++correlationID;
+        nextCorrelationID();
         worker.self().invoke(&GeometryTileWorker::setShowCollisionBoxes, showCollisionBoxes, correlationID);
     }
 }
@@ -457,15 +465,18 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
         observer->onTileAction(id, sourceID, TileOperation::EndParse);
     }
 
-    if (holdLanding) {
-        // Laid out, not landed: the tile keeps drawing its last layout until
-        // the release. The change is still reported, so the source learns it
-        // is laid out.
-        heldResult = std::move(result);
-        hasHeldResult = true;
+    const auto found = generationOfCorrelation.find(resultCorrelationID);
+    const uint64_t generation = found != generationOfCorrelation.end() ? found->second : bodyGeneration;
+    generationOfCorrelation.erase(generationOfCorrelation.begin(), generationOfCorrelation.upper_bound(resultCorrelationID));
+    if (landingLimit && generation > *landingLimit) {
+        // Laid out, not landed: the tile keeps drawing its landed layout
+        // until the limit reaches this body. The change is still reported, so
+        // the source learns it is laid out.
+        keptResults[generation] = std::move(result);
         observer->onTileChanged(*this);
         return;
     }
+    landedGeneration = generation;
     renderable = true;
 
     const ErrorScope errorScope{observer};
@@ -492,19 +503,42 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
             }
         }
     }
+    onLanded();
 }
 
-void GeometryTile::setHoldLanding(bool hold) {
-    if (hold == holdLanding) return;
-    holdLanding = hold;
-    if (hold || !hasHeldResult) return;
-    hasHeldResult = false;
+uint64_t GeometryTile::nextCorrelationID() {
+    ++correlationID;
+    generationOfCorrelation[correlationID] = bodyGeneration;
+    return correlationID;
+}
+
+void GeometryTile::land(std::shared_ptr<LayoutResult>&& result, uint64_t generation) {
+    landedGeneration = generation;
     renderable = true;
-    layoutResult = std::move(heldResult);
+    layoutResult = std::move(result);
     if (!atlasTextures) {
         atlasTextures = std::make_shared<TileAtlasTextures>();
     }
     observer->onTileChanged(*this);
+    onLanded();
+}
+
+void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
+    if (limit == landingLimit) return;
+    landingLimit = limit;
+    // The newest kept layout the limit now lets land, if newer than the drawn one.
+    auto end = limit ? keptResults.upper_bound(*limit) : keptResults.end();
+    if (end == keptResults.begin()) return;
+    auto newest = std::prev(end);
+    std::shared_ptr<LayoutResult> result = std::move(newest->second);
+    const uint64_t generation = newest->first;
+    keptResults.erase(keptResults.begin(), end);
+    if (generation >= landedGeneration) {
+        land(std::move(result), generation);
+    } else if (result) {
+        threadPool.runOnRenderThread(
+            [result_{std::move(result)}]() { result_->dynamicTextureAtlas->removeUnusedDynamicTextures(); });
+    }
 }
 
 void GeometryTile::setObserver(TileObserver* observer_) {

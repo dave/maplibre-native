@@ -386,15 +386,16 @@ MLN_EXPORT
 @property (nonatomic, readonly) uint64_t dataGeneration;
 
 /**
- Holds the landing of new bodies. While `YES`, a body set on the source (by
- URL or shape) is cut and laid out as usual, and reported laid out
- (`-mapView:sourceDidLayOut:generation:`), but the map keeps drawing the body
- it drew before. Setting `NO` lands every held layout at once: the new body is
- drawn in the frame that takes the change, with whatever else changed in that
- turn. With the style's placement transitions off, its symbols are placed in
- that frame too. `NO` by default. Core: `GeoJSONSource::setHoldLanding`.
+ The landing limit, a data generation (`dataGeneration`), or `nil` for none
+ (the default). While set, a body whose generation is above it is cut and laid
+ out as usual, and reported laid out (`-mapView:sourceDidLayOut:generation:`),
+ but the map keeps drawing the newest body at or below it. Raising it lands,
+ in the frame that takes the change, the newest body at or below the new
+ value; `nil` lands the newest. A tile made while a body is held draws the
+ landed body. With the style's placement transitions off, the landed symbols
+ are placed in that frame too. Core: `GeoJSONSource::setLandingLimit`.
  */
-@property (nonatomic) BOOL holdsLanding;
+@property (nonatomic, copy, nullable) NSNumber *landingLimit;
 
 /**
  The step recorder, for debug builds and tests: when on, every shape source's

@@ -193,7 +193,7 @@ GeoJSONSource::Impl::Impl(const GeoJSONSource::Impl& other,
       dataGeneration(dataGeneration_),
       sourceInstance(other.sourceInstance),
       overrideSynchronousUpdate(other.overrideSynchronousUpdate),
-      holdLanding(other.holdLanding) {}
+      landingLimit(other.landingLimit) {}
 
 GeoJSONSource::Impl::~Impl() = default;
 

@@ -562,7 +562,12 @@ public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut.emplace_back(sourceID, generation);
     }
-    void onDidFinishRenderingFrame(const RenderFrameStatus&) override { ++frames; }
+    void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
+        ++frames;
+        fullFrames = status.mode == RenderMode::Full ? fullFrames + 1 : 0;
+    }
+    /// Consecutive fully rendered frames: every tile in view is drawn.
+    int fullFrames = 0;
     bool has(const std::string& sourceID, uint64_t generation) const {
         return std::ranges::find(laidOut, std::make_pair(sourceID, generation)) != laidOut.end();
     }
@@ -1206,18 +1211,22 @@ TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
     EXPECT_EQ(1u, drawnCircles(test)) << "a frame drew a layout older than the inline one";
 }
 
-// Holding the landing (`GeoJSONSource::setHoldLanding`): a new body is cut and
-// laid out, and reported laid out, but the tiles keep drawing the old one
-// until the release; the release lands it in the frame that takes it.
+// The landing limit (`GeoJSONSource::setLandingLimit`): a body above it is
+// cut and laid out, and reported laid out, but the tiles keep drawing the
+// newest body at or below it; raising the limit lands it in the frame that
+// takes the change.
 
 namespace {
 
 const std::string kOnePoint = R"({"type": "FeatureCollection", "features": [
     {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]})";
+const std::string kTwoPoints = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [-20, 20]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [20, -20]}}]})";
 
-GeoJSON onePoint() {
+GeoJSON body(const std::string& text) {
     conversion::Error error;
-    auto geoJSON = conversion::parseGeoJSON(kOnePoint, error);
+    auto geoJSON = conversion::parseGeoJSON(text, error);
     assert(geoJSON);
     return *geoJSON;
 }
@@ -1238,61 +1247,114 @@ void placementTransitionsOff(LaneMap& test) {
 
 } // namespace
 
-TEST(LabelLane, AHeldBodyIsLaidOutButDrawnOnlyInTheFrameThatTakesTheRelease) {
+TEST(LabelLane, ABodyAboveTheLimitIsLaidOutButDrawnOnlyInTheFrameThatRaisesIt) {
     LaneMap test(circleStyleJSON());
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
     ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
     ASSERT_EQ(4u, drawnCircles(test));
 
-    test.labels().setHoldLanding(true);
-    const uint64_t body = test.labels().setGeoJSON(onePoint());
-    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the held body laid out"));
     for (int i = 0; i < 3; ++i) {
+        test.map->triggerRepaint(); // a still map draws no frame of its own
         ASSERT_TRUE(runOneFrame(test, "a frame while held"));
         EXPECT_EQ(4u, drawnCircles(test)) << "a held body was drawn, frame " << i;
     }
 
-    test.labels().setHoldLanding(false);
+    test.labels().setLandingLimit(one);
     ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
     EXPECT_EQ(1u, drawnCircles(test)) << "the released body was not drawn in the frame that took the release";
 }
 
+// A fast stream (audit C2): two bodies held; raising the limit to the first
+// lands the first, not the newest, and the newest stays held.
+TEST(LabelLane, RaisingTheLimitLandsTheBodyAtItNotANewerOne) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
+    ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the first held body laid out"));
+    const uint64_t two = test.labels().setGeoJSON(body(kTwoPoints));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", two); }, "the second held body laid out"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame with both held"));
+    EXPECT_EQ(4u, drawnCircles(test));
+
+    test.labels().setLandingLimit(one);
+    ASSERT_TRUE(runOneFrame(test, "the frame that lands the first"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the limit landed a body other than the one at it";
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that lands the newest"));
+    EXPECT_EQ(2u, drawnCircles(test)) << "clearing the limit did not land the newest body";
+}
+
+// A tile made during a hold (a pan; audit I1) draws the landed body, not
+// nothing: the pan goes where no tile was ever loaded, so no parent tile can
+// stand in for it.
+TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
+    // Zoom 5 from the start: only tiles near (0, 0) are ever loaded.
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    // The landed body: four points far east, off the screen.
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    const uint64_t landedBody = test.labels().setGeoJSON(body(east));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", landedBody); }, "the east body laid out"));
+    // Held: one point, also far east.
+    test.labels().setLandingLimit(landedBody);
+    const std::string eastOne = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})";
+    test.labels().setGeoJSON(body(eastOne));
+    // The pan: new tiles, made while the hold is on, where no tile (and no
+    // parent tile) was ever loaded.
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{0, 135}));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.fullFrames >= 2; }, "the new tiles fully drawn"));
+    EXPECT_EQ(4u, drawnCircles(test)) << "the new tiles did not draw the landed body";
+    // They lay out the held body after the landed one: let the lane finish.
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame after the lane's work"));
+    EXPECT_EQ(4u, drawnCircles(test)) << "the new tiles drew the held body before the release";
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' held body did not land with the release";
+}
+
+// Placement transitions OFF is what makes it one frame: `PlacementController::
+// placementIsRecent` is then false every frame, so the landed symbols are
+// placed in the frame that lands them. With them on (MapLibre's default),
+// placement runs at most once a period (the probe measured 22 frames), so the
+// app's one-frame labels depend on its no-fade setting. A test of the
+// transitions-on case cannot pin a frame count: the period is time, not
+// frames (audit N1).
 TEST(LabelLane, AReleasedBodysSymbolsArePlacedInTheReleaseFrameWithPlacementTransitionsOff) {
     LaneMap test;
     placementTransitionsOff(test);
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
     ASSERT_TRUE(runUntil(test.loop, [&] { return placedLabels(test) == 4u; }, "the body's four labels placed"));
 
-    test.labels().setHoldLanding(true);
-    const uint64_t body = test.labels().setGeoJSON(onePoint());
-    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    const uint64_t one = test.labels().setGeoJSON(body(kOnePoint));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", one); }, "the held body laid out"));
     for (int i = 0; i < 3; ++i) {
+        test.map->triggerRepaint(); // a still map draws no frame of its own
         ASSERT_TRUE(runOneFrame(test, "a frame while held"));
         EXPECT_EQ(4u, placedLabels(test)) << "a held body's labels were placed, frame " << i;
     }
 
-    test.labels().setHoldLanding(false);
+    test.labels().setLandingLimit(std::nullopt);
     ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
     EXPECT_EQ(1u, placedLabels(test)) << "the released labels were not placed in the frame that took the release";
-}
-
-// With placement transitions on (MapLibre's default), placement runs at most
-// once a period, so the released symbols may wait a frame or more: recorded,
-// not required.
-TEST(LabelLane, WithPlacementTransitionsOnAReleasedBodysSymbolsArePlacedWithinThePeriod) {
-    LaneMap test;
-    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
-    ASSERT_TRUE(runUntil(test.loop, [&] { return placedLabels(test) == 4u; }, "the body's four labels placed"));
-    test.labels().setHoldLanding(true);
-    const uint64_t body = test.labels().setGeoJSON(onePoint());
-    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", body); }, "the held body laid out"));
-    test.labels().setHoldLanding(false);
-    int frames = 0;
-    while (frames < 60) {
-        ASSERT_TRUE(runOneFrame(test, "a frame after the release"));
-        ++frames;
-        if (placedLabels(test) == 1u) break;
-    }
-    EXPECT_LE(frames, 60);
-    std::cout << "[hold-landing] placement transitions on: placed after " << frames << " frame(s)\n";
 }

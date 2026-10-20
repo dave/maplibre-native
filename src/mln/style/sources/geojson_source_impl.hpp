@@ -33,9 +33,9 @@ public:
     bool isUpdateSynchronous() const final;
     bool usesLabelLane() const final;
     void setOverrideSynchronousUpdate(bool newOverride) const;
-    /// Bodies are laid out but not landed (`GeoJSONSource::setHoldLanding`).
-    bool holdsLanding() const { return holdLanding; }
-    void setHoldLanding(bool value) { holdLanding = value; }
+    /// Bodies above it are laid out but not landed (`GeoJSONSource::setLandingLimit`).
+    std::optional<uint64_t> getLandingLimit() const { return landingLimit; }
+    void setLandingLimit(std::optional<uint64_t> value) { landingLimit = value; }
 
 private:
     Immutable<GeoJSONOptions> options;
@@ -43,7 +43,7 @@ private:
     uint64_t dataGeneration = 0;
     uint64_t sourceInstance = 0;
     mutable bool overrideSynchronousUpdate = false;
-    bool holdLanding = false;
+    std::optional<uint64_t> landingLimit;
 };
 
 } // namespace style
