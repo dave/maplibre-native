@@ -119,6 +119,34 @@ public class GeoJsonSourceTests extends EspressoTest {
   }
 
   @Test
+  public void testSynchronousBodyLandsInTheCallThatSetsIt() {
+    // A synchronous source's body must be in the render update of the turn
+    // that sets it, with the turn's other style changes. It used to land one
+    // main-loop task later (an Actor reply), so a frame could draw the other
+    // changes of the turn with the old body.
+    validateTestSetup();
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      GeoJsonSource source = new GeoJsonSource("source", new GeoJsonOptions().withSynchronousUpdate(true));
+      maplibreMap.getStyle().addSource(source);
+      maplibreMap.getStyle().addLayer(new CircleLayer("layer", source.getId()));
+
+      long collection = source.setGeoJson(FeatureCollection.fromFeatures(new Feature[] {
+          Feature.fromGeometry(Point.fromLngLat(20, 55))}));
+      assertEquals("a collection lands in its own call", collection, source.getLandedGeneration());
+      long geometry = source.setGeoJson(Point.fromLngLat(0, 0));
+      assertEquals("a geometry lands in its own call", geometry, source.getLandedGeneration());
+      long json = source.setGeoJson(ResourceUtils.readRawResource(rule.getActivity(), R.raw.test_feature_properties));
+      assertEquals("a string lands in its own call", json, source.getLandedGeneration());
+
+      source.setGeoJson(Point.fromLngLat(20, 55));
+      TestingAsyncUtils.INSTANCE.waitForLayer(uiController, mapView);
+      assertEquals(1, maplibreMap.queryRenderedFeatures(
+              maplibreMap.getProjection().toScreenLocation(
+                      new LatLng(55, 20)), "layer").size());
+    });
+  }
+
+  @Test
   public void testFeatureStateUpdatesStyleOwnedSourceImmediately() {
     validateTestSetup();
     MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
