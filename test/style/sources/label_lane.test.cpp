@@ -1320,8 +1320,16 @@ TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
     // The pan: new tiles, made while the hold is on, where no tile (and no
     // parent tile) was ever loaded.
     test.map->jumpTo(CameraOptions().withCenter(LatLng{0, 135}));
-    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.fullFrames >= 2; }, "the new tiles fully drawn"));
-    EXPECT_EQ(4u, drawnCircles(test)) << "the new tiles did not draw the landed body";
+    bool drewHeld = false;
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            const std::size_t drawn = drawnCircles(test);
+            drewHeld = drewHeld || drawn == 1;
+            return drawn == 4;
+        },
+        "the new tiles draw the landed body"));
+    EXPECT_FALSE(drewHeld) << "a new tile drew the held body before the release";
     // They lay out the held body after the landed one: let the lane finish.
     Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
     test.map->triggerRepaint();
