@@ -22,7 +22,13 @@
 
 #include <string>
 
-// GeoJSONSource uses a "coalescing" model for high frequency asynchronous data
+// A synchronous source (`synchronousUpdate`) converts and lands each body in
+// the call that sets it, so a body set in a main-thread turn is in the render
+// update that turn makes, with the turn's other style changes. It used to
+// convert inline but land through an Actor message, one main-loop task later:
+// a frame could draw the turn's other changes with the old body.
+//
+// An asynchronous source uses a "coalescing" model for high frequency data
 // update calls, which in practice means, that any update that started
 // processing is going to finish and the last scheduled update is going to
 // finish as well. Any updates scheduled during processing can be canceled. Conversion
@@ -82,6 +88,14 @@ GeoJSONSource::~GeoJSONSource() = default;
 
 jni::jlong GeoJSONSource::setGeoJSONString(jni::JNIEnv& env, const jni::String& jString) {
     std::shared_ptr<std::string> json = std::make_shared<std::string>(jni::Make<std::string>(env, jString));
+
+    auto& core = *source.as<style::GeoJSONSource>();
+    if (core.isUpdateSynchronous()) {
+        const uint64_t generation = beginSynchronousUpdate();
+        land(generation,
+             style::GeoJSONData::parse(*json, core.getSliceScheduler(), core.impl().getOptions(), core.getID()));
+        return static_cast<jni::jlong>(generation);
+    }
 
     OptionalActorRef<FeatureConverter> converterRef = converter->self();
     Update::Converter converterFn = [converterRef, json](ActorRef<GeoJSONDataCallback> _callback) {
@@ -190,6 +204,16 @@ jni::Local<jni::Object<Source>> GeoJSONSource::createJavaPeer(jni::JNIEnv& env) 
 
 template <class JNIType>
 jni::jlong GeoJSONSource::setCollectionAsync(jni::JNIEnv& env, const jni::Object<JNIType>& jObject) {
+    auto& core = *source.as<style::GeoJSONSource>();
+    if (core.isUpdateSynchronous()) {
+        const uint64_t generation = beginSynchronousUpdate();
+        auto geometry = JNIType::convert(env, jObject);
+        land(generation,
+             style::GeoJSONData::ParseResult(style::GeoJSONData::create(
+                 geometry, core.getSliceScheduler(), core.impl().getOptions(), core.getID())));
+        return static_cast<jni::jlong>(generation);
+    }
+
     auto global = jni::NewGlobal<jni::EnvAttachingDeleter>(env, jObject);
     auto object = std::make_shared<decltype(global)>(std::move(global));
 
@@ -212,13 +236,7 @@ jni::jlong GeoJSONSource::setAsync(Update::Converter converterFn) {
                 // conversion from Java features to core ones finished
                 android::UniqueEnv _env = android::AttachEnv();
 
-                // Update the core source, or report why the body could not be made.
-                auto& core = *source.as<mln::style::GeoJSONSource>();
-                if (auto* error = std::get_if<std::string>(&result)) {
-                    core.setGeoJSONError(generation, *error);
-                } else {
-                    core.setGeoJSONData(std::get<std::shared_ptr<style::GeoJSONData>>(std::move(result)), generation);
-                }
+                land(generation, std::move(result));
 
                 // if there is an awaiting update, execute it, otherwise, release resources
                 if (awaitingUpdate) {
@@ -238,6 +256,30 @@ jni::jlong GeoJSONSource::setAsync(Update::Converter converterFn) {
     update = std::move(awaitingUpdate);
     update->converterFn(update->callback->self());
     return static_cast<jni::jlong>(generation);
+}
+
+uint64_t GeoJSONSource::beginSynchronousUpdate() {
+    // A body still converting from before the source became synchronous (a
+    // runtime override) is older than this one: drop it, so it cannot land
+    // over this body later. Its generation is never reported, as for a body
+    // coalesced away.
+    awaitingUpdate.reset();
+    update.reset();
+    return source.as<mln::style::GeoJSONSource>()->nextDataGeneration();
+}
+
+void GeoJSONSource::land(uint64_t generation, style::GeoJSONData::ParseResult result) {
+    // Update the core source, or report why the body could not be made.
+    auto& core = *source.as<mln::style::GeoJSONSource>();
+    if (auto* error = std::get_if<std::string>(&result)) {
+        core.setGeoJSONError(generation, *error);
+    } else {
+        core.setGeoJSONData(std::get<std::shared_ptr<style::GeoJSONData>>(std::move(result)), generation);
+    }
+}
+
+jni::jlong GeoJSONSource::getLandedGeneration(jni::JNIEnv&) {
+    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getDataGeneration());
 }
 
 jni::jlong GeoJSONSource::getDataGeneration(jni::JNIEnv&) {
@@ -293,6 +335,7 @@ void GeoJSONSource::registerNative(jni::JNIEnv& env) {
         METHOD(&GeoJSONSource::getClusterExpansionZoom, "nativeGetClusterExpansionZoom"),
         METHOD(&GeoJSONSource::isUpdateSynchronous, "nativeIsUpdateSynchronous"),
         METHOD(&GeoJSONSource::getDataGeneration, "nativeGetDataGeneration"),
+        METHOD(&GeoJSONSource::getLandedGeneration, "nativeGetLandedGeneration"),
         METHOD(&GeoJSONSource::setOverrideSynchronousUpdate, "nativeSetOverrideSynchronousUpdate"),
         METHOD(&GeoJSONSource::setLandingLimit, "nativeSetLandingLimit"),
         METHOD(&GeoJSONSource::getLandingLimit, "nativeGetLandingLimit"));

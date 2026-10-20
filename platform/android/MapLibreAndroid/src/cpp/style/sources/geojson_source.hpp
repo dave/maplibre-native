@@ -95,11 +95,17 @@ private:
 
     jni::jlong setAsync(Update::Converter);
 
+    /// A synchronous body's generation, after dropping any body still converting.
+    uint64_t beginSynchronousUpdate();
+    /// Lands a converted body, or reports why it could not be made.
+    void land(uint64_t generation, style::GeoJSONData::ParseResult);
+
     template <class JNIType>
     void setCollectionSync(jni::JNIEnv&, const jni::Object<JNIType>&);
 
     jboolean isUpdateSynchronous(jni::JNIEnv&);
     jni::jlong getDataGeneration(jni::JNIEnv&);
+    jni::jlong getLandedGeneration(jni::JNIEnv&);
     void setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean);
     void setLandingLimit(jni::JNIEnv&, jni::jlong);
     jni::jlong getLandingLimit(jni::JNIEnv&);

@@ -601,6 +601,22 @@ class GeoJsonSource : Source {
     private external fun nativeGetDataGeneration(): Long
 
     /**
+     * The generation of the body the source holds now: the one the next render update
+     * draws (core `GeoJSONSource::getDataGeneration`). For a synchronous source
+     * ([GeoJsonOptions.withSynchronousUpdate]) it is the generation a setter answered,
+     * as soon as the setter returns. For an asynchronous source it trails until the
+     * body has converted.
+     */
+    val landedGeneration: Long
+        get() {
+            checkThread()
+            return nativeGetLandedGeneration()
+        }
+
+    @Keep
+    private external fun nativeGetLandedGeneration(): Long
+
+    /**
      * The landing limit, a data generation, or null for none (the default). While set,
      * a body whose generation is above it is cut and laid out as usual, and reported
      * laid out, but the map keeps drawing the newest body at or below it. Raising it
