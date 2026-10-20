@@ -101,6 +101,8 @@ private:
     jboolean isUpdateSynchronous(jni::JNIEnv&);
     jni::jlong getDataGeneration(jni::JNIEnv&);
     void setOverrideSynchronousUpdate(jni::JNIEnv&, jni::jboolean);
+    void setLandingLimit(jni::JNIEnv&, jni::jlong);
+    jni::jlong getLandingLimit(jni::JNIEnv&);
 
 }; // class GeoJSONSource
 

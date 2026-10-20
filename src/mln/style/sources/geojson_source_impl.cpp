@@ -192,7 +192,8 @@ GeoJSONSource::Impl::Impl(const GeoJSONSource::Impl& other,
       data(std::move(data_)),
       dataGeneration(dataGeneration_),
       sourceInstance(other.sourceInstance),
-      overrideSynchronousUpdate(other.overrideSynchronousUpdate) {}
+      overrideSynchronousUpdate(other.overrideSynchronousUpdate),
+      landingLimit(other.landingLimit) {}
 
 GeoJSONSource::Impl::~Impl() = default;
 

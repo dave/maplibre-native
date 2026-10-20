@@ -146,6 +146,19 @@ public:
     /// Throws `std::logic_error` for `true` on a `labelLane` source.
     void setOverrideSynchronousUpdate(bool);
 
+    /// The landing limit: while set, a body whose data generation is above
+    /// it is cut and laid out as usual (and reported laid out), but every
+    /// tile keeps drawing the newest layout at or below it; the later ones
+    /// are kept aside, one per generation. Raising the limit lands, in the
+    /// frame that takes the change, each tile's newest kept layout at or
+    /// below the new limit; `std::nullopt` lands the newest and holds
+    /// nothing. A tile made while held lays out the landed body first.
+    /// Placement of the landed symbols runs in that frame when the style's
+    /// placement transitions are off (with them on, it waits for the next
+    /// placement period).
+    void setLandingLimit(std::optional<uint64_t>);
+    std::optional<uint64_t> getLandingLimit() const;
+
 protected:
     Mutable<Source::Impl> createMutable() const noexcept final;
 

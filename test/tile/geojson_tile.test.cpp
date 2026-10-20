@@ -165,6 +165,36 @@ TEST(GeoJSONTile, ALayoutOlderThanTheOneTakenIsDropped) {
     EXPECT_EQ(sameIndex, tile.getFeatureIndex().get()) << "a layout as new as the last one was dropped";
 }
 
+// The landing limit's kept layouts are bounded (lead, 2026-10-20): a stream of
+// ten bodies during one hold keeps at most `maxKeptLayouts`, and raising the
+// limit frees every kept layout at or below it but the one that lands.
+TEST(GeoJSONTile, AStreamOfBodiesDuringOneHoldKeepsABoundedNumberOfLayouts) {
+    GeoJSONTileTest test;
+    GeoJSONTile tile(OverscaledTileID(0, 0, 0),
+                     "source",
+                     test.tileParameters,
+                     std::make_shared<FakeGeoJSONData>(mapbox::feature::feature_collection<int16_t>{}));
+    const auto layout = [] {
+        return std::make_shared<GeometryTile::LayoutResult>(mln::unordered_map<std::string, LayerRenderData>{},
+                                                            std::make_shared<FeatureIndex>(nullptr),
+                                                            gfx::GlyphAtlas{},
+                                                            gfx::ImageAtlas{},
+                                                            nullptr);
+    };
+    tile.setLandingLimit(0);
+    for (uint64_t generation = 1; generation <= 10; ++generation) {
+        tile.setBodyGeneration(generation);
+        tile.onLayout(layout(), 100 + generation);
+        EXPECT_LE(tile.keptLayoutCount(), GeometryTile::maxKeptLayouts) << "after body " << generation;
+    }
+    EXPECT_EQ(GeometryTile::maxKeptLayouts, tile.keptLayoutCount());
+    // Kept: 7..10. Raising the limit to 8 lands 8 and frees 7; 9 and 10 stay.
+    tile.setLandingLimit(8);
+    EXPECT_EQ(2u, tile.keptLayoutCount());
+    tile.setLandingLimit(std::nullopt);
+    EXPECT_EQ(0u, tile.keptLayoutCount());
+}
+
 // Tests that tiles remain renderable if they have been renderable and then had
 // an error sent to them, e.g. when revalidating/refreshing the request.
 TEST(GeoJSONTile, Issue9927) {

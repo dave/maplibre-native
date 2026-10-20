@@ -600,6 +600,35 @@ class GeoJsonSource : Source {
     @Keep
     private external fun nativeGetDataGeneration(): Long
 
+    /**
+     * The landing limit, a data generation, or null for none (the default). While set,
+     * a body whose generation is above it is cut and laid out as usual, and reported
+     * laid out, but the map keeps drawing the newest body at or below it. Raising it
+     * lands, in the frame that takes the change, the newest body at or below the new
+     * value; null lands the newest. A tile made while a body is held draws the landed
+     * body. With the style's placement transitions off, the landed symbols are placed
+     * in that frame too. Core: `GeoJSONSource::setLandingLimit`.
+     */
+    var landingLimit: Long?
+        get() {
+            checkThread()
+            val limit = nativeGetLandingLimit()
+            return if (limit < 0) null else limit
+        }
+        set(value) {
+            checkThread()
+            require(value == null || value >= 0) { "a landing limit is a data generation, 0 or more" }
+            nativeSetLandingLimit(value ?: -1)
+        }
+
+    /** `limit` < 0: none. */
+    @Keep
+    private external fun nativeSetLandingLimit(limit: Long)
+
+    /** < 0: none. */
+    @Keep
+    private external fun nativeGetLandingLimit(): Long
+
     @Keep
     private external fun nativeIsUpdateSynchronous(): Boolean
 

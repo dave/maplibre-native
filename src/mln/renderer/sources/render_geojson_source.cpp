@@ -91,7 +91,22 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
         laidOutGeneration = std::nullopt;
     }
 
+    // Bodies above the landing limit lay out but do not land; set before any
+    // new data reaches a tile, as a synchronous layout lands inside
+    // `updateData`.
+    const std::optional<uint64_t> landingLimit = impl().getLandingLimit();
+    for (const auto& pair : tilePyramid.getTiles()) {
+        static_cast<GeoJSONTile*>(pair.second.get())->setLandingLimit(landingLimit);
+    }
+
     auto data_ = impl().getData().lock();
+    const uint64_t dataGeneration = impl().getDataGeneration();
+    // The landed body: the newest at or below the limit. A tile made while
+    // held lays it out first, so a pan or zoom during a hold draws labels.
+    if (!landingLimit || dataGeneration <= *landingLimit || !landedData) {
+        landedData = data_;
+        landedDataGeneration = dataGeneration;
+    }
     if (data.lock() != data_) {
         data = data_;
         if (parameters.mode != MapMode::Continuous) {
@@ -103,7 +118,7 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
             for (const auto& pair : tilePyramid.getTiles()) {
                 if (pair.first.canonical.z <= maxZ) {
                     static_cast<GeoJSONTile*>(pair.second.get())
-                        ->updateData(data_, needsRelayout, parameters.isUpdateSynchronous);
+                        ->updateData(data_, needsRelayout, parameters.isUpdateSynchronous, dataGeneration);
                 }
             }
         }
@@ -120,7 +135,20 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
                        impl().getZoomRange(),
                        std::optional<LatLngBounds>{},
                        [&, data_](const OverscaledTileID& tileID, TileObserver* observer_) {
-                           return std::make_unique<GeoJSONTile>(tileID, impl().id, parameters, data_, observer_);
+                           const bool held = landedData && landedData != data_;
+                           auto tile = std::make_unique<GeoJSONTile>(tileID,
+                                                                     impl().id,
+                                                                     parameters,
+                                                                     held ? landedData : data_,
+                                                                     observer_,
+                                                                     held ? landedDataGeneration : dataGeneration);
+                           tile->setLandingLimit(landingLimit);
+                           if (held) {
+                               // After the landed body lands: a worker given two
+                               // bodies lays out only the newer.
+                               tile->updateDataAfterLanding(data_, parameters.isUpdateSynchronous, dataGeneration);
+                           }
+                           return tile;
                        });
 
     const uint64_t generation = impl().getDataGeneration();
