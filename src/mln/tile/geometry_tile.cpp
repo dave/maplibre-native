@@ -1,3 +1,4 @@
+#include <mln/util/probe_atrace.hpp>
 #include <mln/tile/geometry_tile.hpp>
 
 #include <mln/actor/scheduler.hpp>
@@ -276,6 +277,7 @@ void GeometryTile::setError(std::exception_ptr err) {
 
 void GeometryTile::setData(std::unique_ptr<const GeometryTileData> data_) {
     MLN_TRACE_FUNC();
+    MLN_PROBE_SLICE("mln.tile.setData " + sourceID + " " + util::toString(id));
     const util::LabelSteps::Scope step(sourceID, "hop-data", true);
 
     if (obsolete) {
@@ -369,6 +371,9 @@ std::vector<Immutable<LayerProperties>> GeometryTile::layersForZoom(
 void GeometryTile::setLayersInline(const std::vector<Immutable<LayerProperties>>& layers,
                                    std::shared_ptr<const GlobalStateMap> globalState) {
     MLN_TRACE_FUNC();
+    MLN_PROBE_SLICE("mln.tile.setLayersInline " + sourceID + " " + util::toString(id) +
+                    " layers=" + std::to_string(layers.size()) +
+                    (laysOutInline && lastData && !obsolete ? " inline" : " worker"));
 
     if (!laysOutInline || !lastData || obsolete) {
         // Nothing to lay out here yet (no data has come): the worker does it.

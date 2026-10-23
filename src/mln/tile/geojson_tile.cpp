@@ -1,3 +1,4 @@
+#include <mln/util/probe_atrace.hpp>
 #include <mln/renderer/query.hpp>
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/style/sources/geojson_source.hpp>
@@ -25,6 +26,8 @@ void GeoJSONTile::updateData(std::shared_ptr<style::GeoJSONData> data_,
                              bool runSynchronously,
                              uint64_t dataGeneration) {
     MLN_TRACE_FUNC();
+    MLN_PROBE_SLICE("mln.tile.updateData " + sourceID + " " + util::toString(id) +
+                    (runSynchronously ? " sync" : " async") + " gen=" + std::to_string(dataGeneration));
 
     assert(data_);
     // A newer body replaces one waiting for a landing.
