@@ -466,6 +466,29 @@ MLN_EXPORT
 @property (nonatomic, assign) MLNMapViewPreferredFramesPerSecond preferredFramesPerSecond;
 
 /**
+ A Boolean value indicating whether the map view keeps rendering after its
+ view tree leaves the window, for example under a pushed navigation page.
+
+ When this property is `YES` and the map view leaves its window while it keeps
+ its superview, the display link stays on, on the screen of the window it left.
+ Frames, layout and the rendering delegate callbacks
+ (`-mapViewDidFinishRenderingFrame:fullyRendered:`,
+ `-mapView:sourceDidLayOut:generation:`) continue, so a change made off the
+ window is drawn before the map view comes back. Only rendering continues:
+ annotations, callouts and gestures are not changed.
+
+ The flag acts when the map view leaves a window with a running display link.
+ A map view that leaves its superview stops as before. Setting this property to
+ `NO` while the map view is off its window stops rendering at once. While the
+ map view renders off its window the display link keeps it alive: set this
+ property to `NO` before you discard a map view that is off its window.
+
+ The default value of this property is `NO`, which stops rendering when the map
+ view leaves its window.
+ */
+@property (nonatomic, assign) BOOL keepsRenderingOffWindow;
+
+/**
  A Boolean value indicating whether the map should prefetch tiles.
 
  When this property is set to `YES`, the map view prefetches tiles designed for

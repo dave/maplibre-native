@@ -447,6 +447,9 @@ public:
 // Display Link
 @property (nonatomic, weak) UIScreen *displayLinkScreen;
 @property (nonatomic) CADisplayLink *displayLink;
+/// The screen of the window the map left while `keepsRenderingOffWindow` held
+/// its display link; nil while the map is in a window or does not render off it.
+@property (nonatomic, weak) UIScreen *offWindowScreen;
 @property (nonatomic, assign) BOOL needsDisplayRefresh;
 
 // Plugin Layers
@@ -1592,7 +1595,7 @@ public:
 
   // Not "visible" - this isn't a full definition of visibility, but if
   // the map view doesn't have a window then it *cannot* be visible.
-  if (!self.window) {
+  if (!self.window && !self.rendersOffWindow) {
     return;
   }
 
@@ -1642,6 +1645,21 @@ public:
   self.needsDisplayRefresh = YES;
 }
 
+- (void)setKeepsRenderingOffWindow:(BOOL)keepsRenderingOffWindow {
+  MLNAssertIsMainThread();
+  _keepsRenderingOffWindow = keepsRenderingOffWindow;
+
+  // Cleared off a window: stop, as a map that left its window without the flag.
+  if (!keepsRenderingOffWindow && self.offWindowScreen) {
+    self.offWindowScreen = nil;
+    [self destroyDisplayLink];
+  }
+}
+
+- (BOOL)rendersOffWindow {
+  return !self.window && self.offWindowScreen;
+}
+
 - (void)willTerminate {
   MLNAssertIsMainThread();
 
@@ -1662,6 +1680,10 @@ public:
 }
 
 - (UIScreen *)windowScreen {
+  if (self.rendersOffWindow) {
+    return self.offWindowScreen;
+  }
+
   UIScreen *screen;
 
 #ifdef SUPPORT_UIWINDOWSCENE
@@ -1700,6 +1722,13 @@ public:
     [_displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
     self.needsDisplayRefresh = YES;
     [self updateFromDisplayLink:_displayLink];
+  } else if (!isVisible && _displayLink && self.rendersOffWindow) {
+    // keepsRenderingOffWindow holds the display link only while the map keeps
+    // its superview. A map that leaves its superview stops.
+    if (!self.superview) {
+      self.offWindowScreen = nil;
+      [self destroyDisplayLink];
+    }
   } else if (!isVisible && _displayLink) {
     [_displayLink invalidate];
     _displayLink = nil;
@@ -1761,9 +1790,17 @@ public:
     _mbglView->setPresentsWithTransaction(NO);
   }
 
+  // A map that keeps rendering off a window keeps its display link, on the
+  // screen of the window it leaves.
+  BOOL keepsDisplayLink =
+      !newWindow && self.keepsRenderingOffWindow && self.displayLink && [self windowScreen];
+  self.offWindowScreen = keepsDisplayLink ? [self windowScreen] : nil;
+
   // Changing windows regardless of whether it's a new one, or the map is being
   // removed from the hierarchy
-  [self destroyDisplayLink];
+  if (!keepsDisplayLink) {
+    [self destroyDisplayLink];
+  }
 
   if (self.window) {
 #ifdef SUPPORT_UIWINDOWSCENE
@@ -1915,14 +1952,15 @@ public:
   MLNLogDebug(@"[%p]", self);
 
   // Create and start the display link in a *paused* state
+  // Off a window, keepsRenderingOffWindow renders on the screen the map left.
+  UIScreen *screen = self.window ? self.window.screen : self.offWindowScreen;
   MLNAssert(!self.displayLinkScreen, @"");
   MLNAssert(!self.displayLink, @"");
-  MLNAssert(self.window, @"");
-  MLNAssert(self.window.screen, @"");
+  MLNAssert(self.window || self.rendersOffWindow, @"");
+  MLNAssert(screen, @"");
 
-  self.displayLinkScreen = self.window.screen;
-  self.displayLink = [self.window.screen displayLinkWithTarget:self
-                                                      selector:@selector(updateFromDisplayLink:)];
+  self.displayLinkScreen = screen;
+  self.displayLink = [screen displayLinkWithTarget:self selector:@selector(updateFromDisplayLink:)];
   self.displayLink.paused = YES;
 
   [self updateDisplayLinkPreferredFramesPerSecond];
