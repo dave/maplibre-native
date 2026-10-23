@@ -7080,6 +7080,7 @@ static void *windowScreenContext = &windowScreenContext;
     return;
   }
 
+  MLNProbeWillStarts++;
   MLNPROBE(@"willStart map=%p", self);
   if ([self.delegate respondsToSelector:@selector(mapViewWillStartRenderingFrame:)]) {
     [self.delegate mapViewWillStartRenderingFrame:self];
@@ -7092,6 +7093,7 @@ static void *windowScreenContext = &windowScreenContext;
     return;
   }
 
+  MLNProbeDidFinishes++;
   MLNPROBE(@"didFinish map=%p fully=%d", self, fullyRendered);
   if (_isChangingAnnotationLayers) {
     _isChangingAnnotationLayers = NO;

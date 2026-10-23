@@ -7,6 +7,8 @@
 
 /// The id of the last drawInMTKView (the real Metal frame).
 extern uint64_t MLNProbeDrawID;
+/// Frame callbacks and swaps seen inside the current drawInMTKView.
+extern int MLNProbeWillStarts, MLNProbeDidFinishes, MLNProbeSwaps;
 
 #define MLNPROBE(fmt, ...) \
-  NSLog(@"MLNPROBE t=%.6f id=%llu " fmt, CACurrentMediaTime(), MLNProbeDrawID, ##__VA_ARGS__)
+  NSLog(@"mln-present t=%.6f id=%llu " fmt, CACurrentMediaTime(), MLNProbeDrawID, ##__VA_ARGS__)

@@ -6,6 +6,7 @@
 #import "MLNProbe.h"
 
 uint64_t MLNProbeDrawID = 0;
+int MLNProbeWillStarts = 0, MLNProbeDidFinishes = 0, MLNProbeSwaps = 0;
 
 #import <mln/mtl/renderable_resource.hpp>
 
@@ -34,9 +35,14 @@ uint64_t MLNProbeDrawID = 0;
 
 - (void)drawInMTKView:(MTKView*)view {
   MLNProbeDrawID++;
+  MLNProbeWillStarts = MLNProbeDidFinishes = MLNProbeSwaps = 0;
   MLNPROBE(@"draw begin view=%p window=%d", view, view.window != nil);
   _impl->render();
-  MLNPROBE(@"draw end view=%p", view);
+  MLNPROBE(@"draw end view=%p willStart=%d didFinish=%d swaps=%d%@", view, MLNProbeWillStarts,
+           MLNProbeDidFinishes, MLNProbeSwaps,
+           (MLNProbeSwaps > 0 && (MLNProbeWillStarts == 0 || MLNProbeDidFinishes == 0))
+               ? @" UNREPORTED-RENDER"
+               : @"");
 }
 
 @end
@@ -79,21 +85,22 @@ public:
   void swap() override {
     id<CAMetalDrawable> currentDrawable = [mtlView currentDrawable];
     {
+      MLNProbeSwaps++;
       const uint64_t drawID = MLNProbeDrawID;
       MLNPROBE(@"swap drawable=%d presentsWithTransaction=%d inTransaction=%@",
                currentDrawable != nil, presentsWithTransaction,
                [NSThread isMainThread] ? @"main" : @"other");
       [commandBuffer addScheduledHandler:^(id<MTLCommandBuffer>) {
-        NSLog(@"MLNPROBE t=%.6f id=%llu scheduled", CACurrentMediaTime(), drawID);
+        NSLog(@"mln-present t=%.6f id=%llu scheduled", CACurrentMediaTime(), drawID);
       }];
       [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
-        NSLog(@"MLNPROBE t=%.6f id=%llu completed status=%ld", CACurrentMediaTime(), drawID, (long)cb.status);
+        NSLog(@"mln-present t=%.6f id=%llu completed status=%ld", CACurrentMediaTime(), drawID, (long)cb.status);
       }];
       if (currentDrawable) {
         SEL sel = NSSelectorFromString(@"addPresentedHandler:");
         if ([currentDrawable respondsToSelector:sel]) {
           void (^handler)(id) = ^(id d) {
-            NSLog(@"MLNPROBE t=%.6f id=%llu presented presentedTime=%@", CACurrentMediaTime(), drawID,
+            NSLog(@"mln-present t=%.6f id=%llu presented presentedTime=%@", CACurrentMediaTime(), drawID,
                   [d valueForKey:@"presentedTime"]);
           };
 #pragma clang diagnostic push
