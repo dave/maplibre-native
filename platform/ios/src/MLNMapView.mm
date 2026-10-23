@@ -450,6 +450,8 @@ public:
 /// The screen of the window the map left while `keepsRenderingOffWindow` held
 /// its display link; nil while the map is in a window or does not render off it.
 @property (nonatomic, weak) UIScreen *offWindowScreen;
+/// The screen of the last window the map left.
+@property (nonatomic, weak) UIScreen *lastWindowScreen;
 @property (nonatomic, assign) BOOL needsDisplayRefresh;
 
 // Plugin Layers
@@ -1654,6 +1656,17 @@ public:
     self.offWindowScreen = nil;
     [self destroyDisplayLink];
   }
+
+  // Set off a window: start at once, on the screen of the window the map left.
+  if (keepsRenderingOffWindow && !self.window && self.superview && !self.offWindowScreen) {
+    if (!self.lastWindowScreen) {
+      MLNLogError(@"keepsRenderingOffWindow set on a map that was never in a window");
+      MLNAssert(NO, @"keepsRenderingOffWindow set on a map that was never in a window");
+      return;
+    }
+    self.offWindowScreen = self.lastWindowScreen;
+    [self resumeRenderingIfNecessary];
+  }
 }
 
 - (BOOL)rendersOffWindow {
@@ -1788,6 +1801,10 @@ public:
     // slow down. The exact cause of this is unknown, but this work around
     // appears to lessen the effects.
     _mbglView->setPresentsWithTransaction(NO);
+  }
+
+  if (self.window) {
+    self.lastWindowScreen = [self windowScreen];
   }
 
   // A map that keeps rendering off a window keeps its display link, on the

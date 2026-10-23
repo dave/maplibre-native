@@ -149,6 +149,17 @@
     XCTAssertGreaterThan(self.plainFrames, 0);
 }
 
+/// Setting the flag on a map that is already off its window starts it at once.
+- (void)testSettingTheFlagOffTheWindowStartsTheMap {
+    [self.plainHost removeFromSuperview];
+    XCTAssertNil(self.plainMap.window);
+    self.plainMap.keepsRenderingOffWindow = YES;
+
+    MLNShapeSource *source = [self addSource:@"late" toMap:self.plainMap];
+    [self waitForLaidOut:source onMap:self.plainMap];
+    XCTAssertFalse(self.laidOutInWindow, @"the body is laid out off the window");
+}
+
 /// Clearing the flag off the window stops the map at once.
 - (void)testClearingTheFlagOffTheWindowStopsTheMap {
     [self.flaggedHost removeFromSuperview];
