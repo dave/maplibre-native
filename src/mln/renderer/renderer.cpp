@@ -1,3 +1,4 @@
+#include <mln/util/probe_atrace.hpp>
 #include <mln/renderer/renderer.hpp>
 
 #include <mln/annotation/annotation_manager.hpp>
@@ -47,8 +48,17 @@ void Renderer::render(const std::shared_ptr<UpdateParameters>& updateParameters)
         auto& context = impl->backend.getContext();
         impl->dynamicTextureAtlas = std::make_unique<gfx::DynamicTextureAtlas>(context);
     }
-    if (auto renderTree = impl->orchestrator.createRenderTree(updateParameters, impl->dynamicTextureAtlas)) {
-        renderTree->prepare();
+    std::unique_ptr<RenderTree> renderTree;
+    {
+        MLN_PROBE_SLICE("mln.createRenderTree");
+        renderTree = impl->orchestrator.createRenderTree(updateParameters, impl->dynamicTextureAtlas);
+    }
+    if (renderTree) {
+        {
+            MLN_PROBE_SLICE("mln.renderTree.prepare");
+            renderTree->prepare();
+        }
+        MLN_PROBE_SLICE("mln.Impl::render");
         impl->render(*renderTree, updateParameters);
     }
 }

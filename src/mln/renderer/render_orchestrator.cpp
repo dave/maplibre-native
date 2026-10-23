@@ -1,3 +1,4 @@
+#include <mln/util/probe_atrace.hpp>
 #include <mln/renderer/render_orchestrator.hpp>
 
 #include <mln/annotation/annotation_manager.hpp>
@@ -526,7 +527,11 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         // this frame draws, as a synchronous source does; its bodies stay on
         // the lane.
         tileParameters.relayoutInline = tileParameters.labelLane && sourceLayersChanged;
-        source->update(sourceImpl, filteredLayersForSource, sourceNeedsRendering, sourceNeedsRelayout, tileParameters);
+        {
+            MLN_PROBE_SLICE("mln.source.update " + sourceImpl->id);
+            source->update(
+                sourceImpl, filteredLayersForSource, sourceNeedsRendering, sourceNeedsRelayout, tileParameters);
+        }
         filteredLayersForSource.clear();
         if (const auto generation = source->takeLaidOutGeneration()) {
             observer->onSourceLaidOut(sourceImpl->id, *generation);
@@ -547,6 +552,7 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     }
 
     // Prepare. Update all matrices and generate data that we should upload to the GPU.
+    MLN_PROBE_SLICE("mln.orchestrator.prepare");
     for (const auto& [name, renderSource] : renderSources) {
         MLN_TRACE_ZONE(prepare source);
         if (renderSource->isEnabled()) {
@@ -587,6 +593,7 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     const auto longitude = static_cast<float>(updateParameters->transformState.getLatLng().longitude());
     for (auto it = layersNeedPlacement.crbegin(); it != layersNeedPlacement.crend(); ++it) {
         MLN_TRACE_ZONE(placement layer);
+        MLN_PROBE_SLICE("mln.crossTileIndex " + it->get().getID());
         RenderLayer& layer = *it;
         auto result = crossTileSymbolIndex.addLayer(layer, longitude);
         if (isMapModeContinuous) {
@@ -598,6 +605,7 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
 
     if (isMapModeContinuous) {
         MLN_TRACE_ZONE(placement);
+        MLN_PROBE_SLICE("mln.placement");
 
         // If the view is not tilted, we want *the new* symbols to show up
         // faster, however simple setting `placementChanged` to `true` would
@@ -622,7 +630,10 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         symbolBucketsChanged |= renderTreeParameters->placementChanged;
         if (renderTreeParameters->placementChanged) {
             Mutable<Placement> placement = Placement::create(updateParameters, placementController.getPlacement());
-            placement->placeLayers(layersNeedPlacement);
+            {
+                MLN_PROBE_SLICE("mln.placeLayers");
+                placement->placeLayers(layersNeedPlacement);
+            }
             placementController.setPlacement(std::move(placement));
             crossTileSymbolIndex.pruneUnusedLayers(usedSymbolLayers);
             for (const auto& entry : renderSources) {
