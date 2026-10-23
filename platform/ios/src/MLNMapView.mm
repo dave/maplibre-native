@@ -447,6 +447,11 @@ public:
 // Display Link
 @property (nonatomic, weak) UIScreen *displayLinkScreen;
 @property (nonatomic) CADisplayLink *displayLink;
+/// The screen of the window the map left while `keepsRenderingOffWindow` held
+/// its display link; nil while the map is in a window or does not render off it.
+@property (nonatomic, weak) UIScreen *offWindowScreen;
+/// The screen of the last window the map left.
+@property (nonatomic, weak) UIScreen *lastWindowScreen;
 @property (nonatomic, assign) BOOL needsDisplayRefresh;
 
 // Plugin Layers
@@ -1592,7 +1597,7 @@ public:
 
   // Not "visible" - this isn't a full definition of visibility, but if
   // the map view doesn't have a window then it *cannot* be visible.
-  if (!self.window) {
+  if (!self.window && !self.rendersOffWindow) {
     return;
   }
 
@@ -1642,6 +1647,32 @@ public:
   self.needsDisplayRefresh = YES;
 }
 
+- (void)setKeepsRenderingOffWindow:(BOOL)keepsRenderingOffWindow {
+  MLNAssertIsMainThread();
+  _keepsRenderingOffWindow = keepsRenderingOffWindow;
+
+  // Cleared off a window: stop, as a map that left its window without the flag.
+  if (!keepsRenderingOffWindow && self.offWindowScreen) {
+    self.offWindowScreen = nil;
+    [self destroyDisplayLink];
+  }
+
+  // Set off a window: start at once, on the screen of the window the map left.
+  if (keepsRenderingOffWindow && !self.window && self.superview && !self.offWindowScreen) {
+    if (!self.lastWindowScreen) {
+      MLNLogError(@"keepsRenderingOffWindow set on a map that was never in a window");
+      MLNAssert(NO, @"keepsRenderingOffWindow set on a map that was never in a window");
+      return;
+    }
+    self.offWindowScreen = self.lastWindowScreen;
+    [self resumeRenderingIfNecessary];
+  }
+}
+
+- (BOOL)rendersOffWindow {
+  return !self.window && self.offWindowScreen;
+}
+
 - (void)willTerminate {
   MLNAssertIsMainThread();
 
@@ -1662,6 +1693,10 @@ public:
 }
 
 - (UIScreen *)windowScreen {
+  if (self.rendersOffWindow) {
+    return self.offWindowScreen;
+  }
+
   UIScreen *screen;
 
 #ifdef SUPPORT_UIWINDOWSCENE
@@ -1700,6 +1735,13 @@ public:
     [_displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
     self.needsDisplayRefresh = YES;
     [self updateFromDisplayLink:_displayLink];
+  } else if (!isVisible && _displayLink && self.rendersOffWindow) {
+    // keepsRenderingOffWindow holds the display link only while the map keeps
+    // its superview. A map that leaves its superview stops.
+    if (!self.superview) {
+      self.offWindowScreen = nil;
+      [self destroyDisplayLink];
+    }
   } else if (!isVisible && _displayLink) {
     [_displayLink invalidate];
     _displayLink = nil;
@@ -1761,9 +1803,21 @@ public:
     _mbglView->setPresentsWithTransaction(NO);
   }
 
+  if (self.window) {
+    self.lastWindowScreen = [self windowScreen];
+  }
+
+  // A map that keeps rendering off a window keeps its display link, on the
+  // screen of the window it leaves.
+  BOOL keepsDisplayLink =
+      !newWindow && self.keepsRenderingOffWindow && self.displayLink && [self windowScreen];
+  self.offWindowScreen = keepsDisplayLink ? [self windowScreen] : nil;
+
   // Changing windows regardless of whether it's a new one, or the map is being
   // removed from the hierarchy
-  [self destroyDisplayLink];
+  if (!keepsDisplayLink) {
+    [self destroyDisplayLink];
+  }
 
   if (self.window) {
 #ifdef SUPPORT_UIWINDOWSCENE
@@ -1915,14 +1969,15 @@ public:
   MLNLogDebug(@"[%p]", self);
 
   // Create and start the display link in a *paused* state
+  // Off a window, keepsRenderingOffWindow renders on the screen the map left.
+  UIScreen *screen = self.window ? self.window.screen : self.offWindowScreen;
   MLNAssert(!self.displayLinkScreen, @"");
   MLNAssert(!self.displayLink, @"");
-  MLNAssert(self.window, @"");
-  MLNAssert(self.window.screen, @"");
+  MLNAssert(self.window || self.rendersOffWindow, @"");
+  MLNAssert(screen, @"");
 
-  self.displayLinkScreen = self.window.screen;
-  self.displayLink = [self.window.screen displayLinkWithTarget:self
-                                                      selector:@selector(updateFromDisplayLink:)];
+  self.displayLinkScreen = screen;
+  self.displayLink = [screen displayLinkWithTarget:self selector:@selector(updateFromDisplayLink:)];
   self.displayLink.paused = YES;
 
   [self updateDisplayLinkPreferredFramesPerSecond];
@@ -3984,7 +4039,8 @@ static void *windowScreenContext = &windowScreenContext;
     animationOptions.duration.emplace(MLNDurationFromTimeInterval(duration));
     animationOptions.easing.emplace(MLNUnitBezierForMediaTimingFunction(function));
     // Where the zoom stops, from the same zoom on a copy of the state.
-    [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoomLevel, anchor) duration:duration];
+    [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoomLevel, anchor)
+                     duration:duration];
   }
   self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
                       animationOptions);
@@ -4056,10 +4112,8 @@ static void *windowScreenContext = &windowScreenContext;
   // extends beyond ±180° instead of spanning the world.
   CGRect rect = self.bounds;
   std::vector<mln::ScreenCoordinate> pixels = {
-      {CGRectGetMinX(rect), CGRectGetMinY(rect)},
-      {CGRectGetMaxX(rect), CGRectGetMinY(rect)},
-      {CGRectGetMaxX(rect), CGRectGetMaxY(rect)},
-      {CGRectGetMinX(rect), CGRectGetMaxY(rect)},
+      {CGRectGetMinX(rect), CGRectGetMinY(rect)}, {CGRectGetMaxX(rect), CGRectGetMinY(rect)},
+      {CGRectGetMaxX(rect), CGRectGetMaxY(rect)}, {CGRectGetMinX(rect), CGRectGetMaxY(rect)},
       {CGRectGetMidX(rect), CGRectGetMidY(rect)},
   };
   mln::CameraOptions camera = mln::CameraOptions()
@@ -4082,8 +4136,8 @@ static void *windowScreenContext = &windowScreenContext;
 /// Tells the delegate where a glide that starts now ends
 /// (`-mapView:willGlideToCenter:...`).
 - (void)reportGlideToCamera:(const mln::CameraOptions &)end duration:(NSTimeInterval)duration {
-  if (![self.delegate respondsToSelector:@selector(mapView:
-                                            willGlideToCenter:zoomLevel:direction:pitch:duration:)]) {
+  if (![self.delegate respondsToSelector:@selector
+                      (mapView:willGlideToCenter:zoomLevel:direction:pitch:duration:)]) {
     return;
   }
   [self.delegate mapView:self

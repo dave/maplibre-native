@@ -2,6 +2,7 @@
 #import "MLNFoundation_Private.h"
 #import "MLNLoggingConfiguration_Private.h"
 #import "MLNMapView+Metal.h"
+#import "MLNMapView_Private.h"
 
 #import <mln/mtl/renderable_resource.hpp>
 
@@ -148,6 +149,13 @@ void MLNMapViewMetalImpl::display() {
   // Since we use `presentsWithTransaction` to synchronize with UIView
   // annotations, we now let the system handle when the view is rendered. This
   // has the potential to increase latency
+  //
+  // Off a window Core Animation never displays the view, so a map that
+  // keepsRenderingOffWindow draws at once instead.
+  if (mapView.rendersOffWindow) {
+    [resource.mtlView draw];
+    return;
+  }
   [resource.mtlView setNeedsDisplay];
 }
 
@@ -214,13 +222,19 @@ void MLNMapViewMetalImpl::layoutChanged() {
   // layout pass caused a feedback loop under iOS 26 Smart Display Zoom (non-integer scale).
   // Also skip pre-layout/detached passes — MLNEffectiveScaleFactorForView falls back to
   // mainScreen without a window, wrong for CarPlay.
+  // A map that keepsRenderingOffWindow lays out off its window too, at the
+  // scale factor it last had in the window.
   auto& resource = getResource<MLNMapViewMetalRenderableResource>();
   const auto viewSize = mapView.bounds.size;
-  if (!resource.mtlView || viewSize.width <= 0 || viewSize.height <= 0 || !mapView.window) {
+  if (!resource.mtlView || viewSize.width <= 0 || viewSize.height <= 0 ||
+      !(mapView.window || mapView.rendersOffWindow)) {
     return;
   }
+  MLNCAssert(mapView.window || resource.lastAppliedScaleFactor > 0,
+             @"a map renders off its window only after a layout in it");
 
-  const auto scaleFactor = MLNEffectiveScaleFactorForView(mapView);
+  const auto scaleFactor =
+      mapView.window ? MLNEffectiveScaleFactorForView(mapView) : resource.lastAppliedScaleFactor;
   const CGSize target = CGSizeMake(std::round(viewSize.width * scaleFactor),
                                    std::round(viewSize.height * scaleFactor));
 
