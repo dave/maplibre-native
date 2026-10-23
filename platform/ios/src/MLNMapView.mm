@@ -1,5 +1,6 @@
 #import "MLNMapView+Impl.h"
 #import "MLNMapView_Private.h"
+#import "MLNProbe.h"
 
 #include <mln/annotation/annotation.hpp>
 #include <mln/layermanager/layer_manager.hpp>
@@ -1612,6 +1613,8 @@ public:
     return;
   }
 
+  MLNPROBE(@"tick map=%p linkTimestamp=%.6f target=%.6f needsRefresh=%d", self,
+           displayLink.timestamp, displayLink.targetTimestamp, self.needsDisplayRefresh);
   if (self.needsDisplayRefresh || (self.pendingCompletionBlocks.count > 0)) {
     // UIView update logic has moved into `renderSync` above, which now gets
     // triggered by a call to setNeedsDisplay.
@@ -7077,6 +7080,7 @@ static void *windowScreenContext = &windowScreenContext;
     return;
   }
 
+  MLNPROBE(@"willStart map=%p", self);
   if ([self.delegate respondsToSelector:@selector(mapViewWillStartRenderingFrame:)]) {
     [self.delegate mapViewWillStartRenderingFrame:self];
   }
@@ -7088,6 +7092,7 @@ static void *windowScreenContext = &windowScreenContext;
     return;
   }
 
+  MLNPROBE(@"didFinish map=%p fully=%d", self, fullyRendered);
   if (_isChangingAnnotationLayers) {
     _isChangingAnnotationLayers = NO;
     [self.style didChangeValueForKey:@"layers"];

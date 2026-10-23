@@ -36,6 +36,7 @@ MLN_IOS_PRIVATE_HEADERS = [
     "src/MLNAnnotationView_Private.h",
     "src/MLNCompassButton_Private.h",
     "src/MLNMapView_Private.h",
+    "src/MLNProbe.h",
     "src/MLNUserLocationAnnotationView_Private.h",
     "src/MLNUserLocation_Private.h",
     "src/MLNCompactCalloutView.h",
