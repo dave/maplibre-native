@@ -35,6 +35,31 @@
 
 @end
 
+
+// PROBE (throwaway branch probe/ios-turn-atomicity, task T4 of
+// one-frame-by-construction-plan.md). After each frame is encoded, before it
+// is presented, a blit copies one pixel row of the drawable into a shared
+// buffer; the command buffer's completion hands the row to the handler with
+// the CPU time at which the frame was encoded.
+typedef void (^MLNTurnProbeHandler)(const uint8_t* bgra, NSUInteger width, uint64_t encodedNs);
+
+@interface MLNTurnProbe : NSObject
++ (void)setHandler:(MLNTurnProbeHandler)handler;
++ (void)setRow:(NSNumber*)row;
+@end
+
+static MLNTurnProbeHandler gTurnProbeHandler = nil;
+static NSInteger gTurnProbeRow = 0;
+
+@implementation MLNTurnProbe
++ (void)setHandler:(MLNTurnProbeHandler)handler {
+  gTurnProbeHandler = [handler copy];
+}
++ (void)setRow:(NSNumber*)row {
+  gTurnProbeRow = row.integerValue;
+}
+@end
+
 class MLNMapViewMetalRenderableResource final : public mln::mtl::RenderableResource {
 public:
   MLNMapViewMetalRenderableResource(MLNMapViewMetalImpl& backend_)
@@ -72,6 +97,28 @@ public:
 
   void swap() override {
     id<CAMetalDrawable> currentDrawable = [mtlView currentDrawable];
+    MLNTurnProbeHandler probe = gTurnProbeHandler;
+    if (currentDrawable && probe) {
+      id<MTLTexture> texture = currentDrawable.texture;
+      const NSUInteger width = texture.width;
+      const NSUInteger row = MIN((NSUInteger)MAX(gTurnProbeRow, (NSInteger)0), texture.height - 1);
+      id<MTLBuffer> buffer = [mtlView.device newBufferWithLength:width * 4 options:MTLResourceStorageModeShared];
+      id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+      [blit copyFromTexture:texture
+                     sourceSlice:0
+                     sourceLevel:0
+                    sourceOrigin:MTLOriginMake(0, row, 0)
+                      sourceSize:MTLSizeMake(width, 1, 1)
+                        toBuffer:buffer
+               destinationOffset:0
+          destinationBytesPerRow:width * 4
+        destinationBytesPerImage:width * 4];
+      [blit endEncoding];
+      const uint64_t encodedNs = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+      [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer>) {
+        probe((const uint8_t*)buffer.contents, width, encodedNs);
+      }];
+    }
     if (currentDrawable) {
       if (presentsWithTransaction) {
         [commandBuffer commit];
@@ -182,6 +229,8 @@ void MLNMapViewMetalImpl::createView() {
   resource.mtlView.opaque = mapView.opaque;
   resource.mtlView.layer.opaque = mapView.opaque;
   resource.mtlView.enableSetNeedsDisplay = YES;
+  // PROBE: the turn-atomicity probe blits from the drawable.
+  resource.mtlView.framebufferOnly = NO;
   CAMetalLayer* metalLayer = MLN_OBJC_DYNAMIC_CAST(resource.mtlView.layer, CAMetalLayer);
   metalLayer.presentsWithTransaction = resource.presentsWithTransaction;
 
