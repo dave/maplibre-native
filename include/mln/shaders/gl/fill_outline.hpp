@@ -47,8 +47,8 @@ layout (location = 1) in highp vec4 a_outline_color;
 out highp vec4 outline_color;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 2) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 2) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 
 void main() {
@@ -58,9 +58,9 @@ outline_color = unpack_mix_color(a_outline_color, u_outline_color_t);
 highp vec4 outline_color = u_outline_color;
 #endif
     #ifndef HAS_UNIFORM_u_opacity
-opacity = unpack_mix_vec2(a_opacity, u_opacity_t);
+opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
 
     gl_Position = u_matrix * vec4(a_pos, 0, 1);

@@ -118,7 +118,7 @@ fn main(in: VertexInput) -> VertexOutput {
     var opacity: f32;
     opacity = props.opacity;
 #ifndef HAS_UNIFORM_u_opacity
-    opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     var gapwidth: f32;
@@ -333,7 +333,7 @@ fn main(in: VertexInput) -> VertexOutput {
         blur = props.blur;
     }
 
-    var opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    var opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
     if ((mask & LINE_EXPRESSION_OPACITY) != 0u) {
         opacity = props.opacity;
     }
@@ -560,7 +560,7 @@ fn main(in: VertexInput) -> VertexOutput {
 
     var opacity = props.opacity;
 #ifndef HAS_UNIFORM_u_opacity
-    opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     var gapwidth = props.gapwidth;
@@ -886,7 +886,7 @@ fn main(in: VertexInput) -> VertexOutput {
         blur = props.blur;
     }
 
-    var opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    var opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
     if ((mask & LINE_EXPRESSION_OPACITY) != 0u) {
         opacity = props.opacity;
     }
@@ -1160,7 +1160,7 @@ fn main(in: VertexInput) -> VertexOutput {
         blur = props.blur;
     }
 
-    var opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    var opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
     if ((mask & LINE_EXPRESSION_OPACITY) != 0u) {
         opacity = props.opacity;
     }

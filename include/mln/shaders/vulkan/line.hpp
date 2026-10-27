@@ -115,7 +115,7 @@ void main() {
 #endif
 
 #ifndef HAS_UNIFORM_u_opacity
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #ifndef HAS_UNIFORM_u_gapwidth
@@ -343,7 +343,7 @@ void main() {
 #endif
 
 #ifndef HAS_UNIFORM_u_opacity
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #ifndef HAS_UNIFORM_u_gapwidth
@@ -589,7 +589,7 @@ void main() {
 #endif
 
 #ifndef HAS_UNIFORM_u_opacity
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #ifndef HAS_UNIFORM_u_gapwidth
@@ -923,7 +923,7 @@ void main() {
 #endif
 
 #ifndef HAS_UNIFORM_u_opacity
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #ifndef HAS_UNIFORM_u_floorwidth
@@ -1215,7 +1215,7 @@ void main() {
 #endif
 
 #ifndef HAS_UNIFORM_u_opacity
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #ifndef HAS_UNIFORM_u_floorwidth

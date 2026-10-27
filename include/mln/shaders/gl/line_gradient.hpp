@@ -90,7 +90,7 @@ blur = unpack_mix_vec2(a_blur, u_blur_t);
 lowp float blur = u_blur;
 #endif
     #ifndef HAS_UNIFORM_u_opacity
-opacity = unpack_mix_vec2(a_opacity, u_opacity_t);
+opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
 lowp float opacity = u_opacity;
 #endif
