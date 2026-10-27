@@ -19,11 +19,11 @@ layout (std140) uniform FillEvaluatedPropsUBO {
 layout (location = 0) in vec2 a_pos;
 
 #pragma mapbox: define highp vec4 color
-#pragma mapbox: define lowp float opacity
+#pragma mapbox: define highp float opacity
 
 void main() {
     #pragma mapbox: initialize highp vec4 color
-    #pragma mapbox: initialize lowp float opacity
+    #pragma mapbox: initialize highp float opacity
 
     gl_Position = u_matrix * vec4(a_pos, 0, 1);
 }

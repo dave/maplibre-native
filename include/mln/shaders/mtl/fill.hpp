@@ -187,7 +187,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .color    = half4(unpack_mix_color(vertx.color, drawable.color_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity  = half(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
+        .opacity  = half(saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t))),
 #endif
     };
 }
@@ -260,7 +260,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .outline_color  = half4(unpack_mix_color(vertx.outline_color, drawable.outline_color_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity        = half(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
+        .opacity        = half(saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t))),
 #endif
     };
 }
@@ -384,7 +384,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .pattern_to     = half4(pattern_to),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity        = half(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
+        .opacity        = half(saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t))),
 #endif
     };
 }
@@ -504,7 +504,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    const auto opacity      = unpack_mix_float(vertx.opacity, drawable.opacity_t);
+    const auto opacity      = saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t));
 #endif
 
     const float2 pattern_tl_a = pattern_from.xy;

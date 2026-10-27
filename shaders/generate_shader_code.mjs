@@ -152,8 +152,13 @@ ${name} = a_${name};
 ${precision} ${type} ${name} = u_${name};
 #endif`;
                 } else {
+                    // A data-driven opacity is clamped to 0..1. A style can then give each feature
+                    // an unclamped straight line in zoom that crosses 0 and 1 at the feature's own
+                    // zooms, and the clamp turns it into a per-feature step or fade.
+                    const unpacked = `unpack_mix_${unpackType}(a_${name}, u_${name}_t)`;
+                    const value = name === 'opacity' ? `clamp(${unpacked}, 0.0, 1.0)` : unpacked;
                     return `#ifndef HAS_UNIFORM_u_${name}
-${name} = unpack_mix_${unpackType}(a_${name}, u_${name}_t);
+${name} = ${value};
 #else
 ${precision} ${type} ${name} = u_${name};
 #endif`;

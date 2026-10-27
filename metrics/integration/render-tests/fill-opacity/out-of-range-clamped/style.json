@@ -1,0 +1,112 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 32
+    }
+  },
+  "center": [
+    0,
+    0
+  ],
+  "zoom": 8,
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "o": 50
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -0.0714111328125,
+                    -0.0274658203125
+                  ],
+                  [
+                    -0.0714111328125,
+                    0.0274658203125
+                  ],
+                  [
+                    -0.0164794921875,
+                    0.0274658203125
+                  ],
+                  [
+                    -0.0164794921875,
+                    -0.0274658203125
+                  ],
+                  [
+                    -0.0714111328125,
+                    -0.0274658203125
+                  ]
+                ]
+              ]
+            }
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "o": -50
+            },
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    0.0164794921875,
+                    -0.0274658203125
+                  ],
+                  [
+                    0.0164794921875,
+                    0.0274658203125
+                  ],
+                  [
+                    0.0714111328125,
+                    0.0274658203125
+                  ],
+                  [
+                    0.0714111328125,
+                    -0.0274658203125
+                  ],
+                  [
+                    0.0164794921875,
+                    -0.0274658203125
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "white"
+      }
+    },
+    {
+      "id": "fill",
+      "type": "fill",
+      "source": "geojson",
+      "paint": {
+        "fill-color": "rgb(0, 128, 0)",
+        "fill-outline-color": "rgb(128, 0, 0)",
+        "fill-opacity": [
+          "get",
+          "o"
+        ]
+      }
+    }
+  ]
+}
