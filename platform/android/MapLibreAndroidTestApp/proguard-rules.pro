@@ -28,3 +28,9 @@
 -dontwarn org.openjsse.javax.net.ssl.SSLParameters
 -dontwarn org.openjsse.javax.net.ssl.SSLSocket
 -dontwarn org.openjsse.net.ssl.OpenJSSE
+
+# PROBE (probe/android-turn-atomicity): the release androidTest APK calls
+# library and Kotlin runtime code the app itself does not use.
+-keep class org.maplibre.** { *; }
+-keep class kotlin.** { *; }
+-dontwarn kotlin.**

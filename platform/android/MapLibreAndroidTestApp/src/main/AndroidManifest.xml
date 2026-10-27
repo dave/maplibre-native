@@ -988,6 +988,9 @@
                 android:value=".activity.FeatureOverviewActivity" />
         </activity> <!-- TextureView -->
         <activity
+            android:name=".activity.turnprobe.TurnProbeActivity"
+            android:exported="false" />
+        <activity
             android:name=".activity.textureview.TextureViewDebugModeActivity"
             android:description="@string/description_textureview_debug"
             android:exported="true"

@@ -52,6 +52,17 @@ public abstract class MapRenderer implements MapRendererScheduler {
   private double expectedRenderTime = 0;
   private MapLibreMap.OnFpsChangedListener onFpsChangedListener;
 
+  /**
+   * PROBE (throwaway branch probe/android-turn-atomicity): called on the
+   * render thread after each nativeRender, before the swap, with the GL
+   * context current. A turn-atomicity test reads pixels here.
+   */
+  public interface FrameProbe {
+    void onFrameRendered(MapRenderer renderer);
+  }
+
+  public static volatile FrameProbe frameProbe;
+
   public static MapRenderer create(MapLibreMapOptions options, @NonNull Context context, Runnable initCallback) {
 
     MapRenderer renderer = null;
@@ -130,6 +141,10 @@ public abstract class MapRenderer implements MapRendererScheduler {
       nativeRender();
     } catch (java.lang.Error error) {
       Logger.e(TAG, error.getMessage());
+    }
+    FrameProbe probe = frameProbe;
+    if (probe != null) {
+      probe.onFrameRendered(this);
     }
     long renderTime = System.nanoTime() - startTime;
     if (renderTime < expectedRenderTime) {
