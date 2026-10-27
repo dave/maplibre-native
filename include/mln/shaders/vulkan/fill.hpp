@@ -70,7 +70,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     gl_Position = drawable.matrix * vec4(in_position, 0.0, 1.0);
@@ -176,7 +176,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     gl_Position = drawable.matrix * vec4(in_position, 0.0, 1.0);
@@ -348,7 +348,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     const vec2 pattern_tl_a = frag_pattern_from.xy;
@@ -596,7 +596,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     const vec2 pattern_tl_a = frag_pattern_from.xy;

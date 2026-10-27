@@ -309,7 +309,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .blur        = unpack_mix_float(vertx.blur,    drawable.blur_t),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity     = unpack_mix_float(vertx.opacity, drawable.opacity_t),
+        .opacity     = saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
 #endif
     };
 }
@@ -416,7 +416,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
     const auto blur     = unpack_mix_float(vertx.blur,     drawable.blur_t);
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-    const auto opacity  = unpack_mix_float(vertx.opacity,  drawable.opacity_t);
+    const auto opacity  = saturate(unpack_mix_float(vertx.opacity,  drawable.opacity_t));
 #endif
 #if defined(HAS_UNIFORM_u_gapwidth)
     const auto gapwidth = props.gapwidth / 2;
@@ -671,7 +671,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .blur         = half(unpack_mix_float(vertx.blur, drawable.blur_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity      = half(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
+        .opacity      = half(saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t))),
 #endif
 #if !defined(HAS_UNIFORM_u_pattern_from)
         .pattern_from = half4(vertx.pattern_from),
@@ -923,7 +923,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .blur         = unpack_mix_float(vertx.blur, drawable.blur_t),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity      = unpack_mix_float(vertx.opacity, drawable.opacity_t),
+        .opacity      = saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_floorwidth)
         .floorwidth   = floorwidth,
@@ -1138,7 +1138,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .blur         = unpack_mix_float(vertx.blur, drawable.blur_t),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity      = unpack_mix_float(vertx.opacity, drawable.opacity_t),
+        .opacity      = saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_floorwidth)
         .floorwidth   = floorwidth,
