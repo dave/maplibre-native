@@ -117,7 +117,7 @@ halo_color = unpack_mix_color(a_halo_color, u_halo_color_t);
 highp vec4 halo_color = u_halo_color;
 #endif
     #ifndef HAS_UNIFORM_u_opacity
-opacity = unpack_mix_vec2(a_opacity, u_opacity_t);
+opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
 lowp float opacity = u_opacity;
 #endif

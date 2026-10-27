@@ -37,7 +37,7 @@ layout (std140) uniform LineDrawableUBO {
     // Interpolations
     lowp float u_color_t;
     lowp float u_blur_t;
-    lowp float u_opacity_t;
+    highp float u_opacity_t;
     lowp float u_gapwidth_t;
     lowp float u_offset_t;
     lowp float u_width_t;
@@ -70,8 +70,8 @@ layout (location = 3) in lowp vec2 a_blur;
 out lowp float blur;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 4) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 4) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 #ifndef HAS_UNIFORM_u_gapwidth
 layout (location = 5) in mediump vec2 a_gapwidth;
@@ -95,9 +95,9 @@ blur = unpack_mix_vec2(a_blur, u_blur_t);
 lowp float blur = u_blur;
 #endif
     #ifndef HAS_UNIFORM_u_opacity
-opacity = unpack_mix_vec2(a_opacity, u_opacity_t);
+opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
     #ifndef HAS_UNIFORM_u_gapwidth
 mediump float gapwidth = unpack_mix_vec2(a_gapwidth, u_gapwidth_t);
