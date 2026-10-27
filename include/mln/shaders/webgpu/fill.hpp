@@ -83,7 +83,7 @@ fn main(in: VertexInput) -> VertexOutput {
 #ifdef HAS_UNIFORM_u_opacity
     opacity = props.opacity;
 #else
-    opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     out.color = color;
@@ -224,7 +224,7 @@ fn main(in: VertexInput) -> VertexOutput {
 #ifdef HAS_UNIFORM_u_opacity
     opacity = props.opacity;
 #else
-    opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     out.color = color;
@@ -436,7 +436,7 @@ fn main(in: VertexInput) -> VertexOutput {
     out.pattern_to = pattern_to;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-    out.opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    out.opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     return out;
@@ -719,7 +719,7 @@ fn main(in: VertexInput) -> VertexOutput {
     out.pattern_to = pattern_to;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-    out.opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    out.opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     return out;

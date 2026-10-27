@@ -82,7 +82,7 @@ color = unpack_mix_color(a_color, u_color_t);
 highp vec4 color = u_color;
 #endif
     #ifndef HAS_UNIFORM_u_opacity
-opacity = unpack_mix_vec2(a_opacity, u_opacity_t);
+opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
 lowp float opacity = u_opacity;
 #endif
