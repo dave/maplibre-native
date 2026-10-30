@@ -482,6 +482,10 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
             keptResults.erase(keptResults.begin());
         }
         observer->onTileChanged(*this);
+        // A layout kept aside is still a layout done: a body waiting for it
+        // (`GeoJSONTile::updateDataAfterLanding`) goes on now, or a limit
+        // below the landed body would keep the newer one from ever laying out.
+        onLayoutTaken();
         return;
     }
     landedGeneration = generation;
@@ -511,7 +515,7 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
             }
         }
     }
-    onLanded();
+    onLayoutTaken();
 }
 
 uint64_t GeometryTile::nextCorrelationID() {
@@ -528,7 +532,7 @@ void GeometryTile::land(std::shared_ptr<LayoutResult>&& result, uint64_t generat
         atlasTextures = std::make_shared<TileAtlasTextures>();
     }
     observer->onTileChanged(*this);
-    onLanded();
+    onLayoutTaken();
 }
 
 void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
@@ -551,6 +555,20 @@ void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
     } else {
         freeLayout(std::move(result));
     }
+}
+
+void GeometryTile::startGenerationsOver() {
+    // The old object's bodies, laid out or in flight, are generation 0 now:
+    // at or below any limit of the new object, and older than its bodies.
+    landedGeneration = 0;
+    bodyGeneration = 0;
+    for (auto& entry : generationOfCorrelation) {
+        entry.second = 0;
+    }
+    for (auto& kept : keptResults) {
+        freeLayout(std::move(kept.second));
+    }
+    keptResults.clear();
 }
 
 void GeometryTile::freeLayout(std::shared_ptr<LayoutResult>&& result) {
