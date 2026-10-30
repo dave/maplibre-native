@@ -89,6 +89,12 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
         reportedInstance = impl().getSourceInstance();
         reportedGeneration = 0;
         laidOutGeneration = std::nullopt;
+        // Its landed body too: the old object's body is not the new one's.
+        landedData = nullptr;
+        landedDataGeneration = 0;
+        for (const auto& pair : tilePyramid.getTiles()) {
+            static_cast<GeoJSONTile*>(pair.second.get())->startGenerationsOver();
+        }
     }
 
     // Bodies above the landing limit lay out but do not land; set before any
