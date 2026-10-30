@@ -52,7 +52,7 @@ void GeoJSONTile::updateDataAfterLanding(std::shared_ptr<style::GeoJSONData> dat
     synchronousAfterLanding = runSynchronously;
 }
 
-void GeoJSONTile::onLanded() {
+void GeoJSONTile::onLayoutTaken() {
     if (!dataAfterLanding) return;
     auto next = std::move(dataAfterLanding);
     dataAfterLanding = nullptr;
