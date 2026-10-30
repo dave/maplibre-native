@@ -27,8 +27,9 @@ public:
                     bool runSynchronously,
                     uint64_t dataGeneration = 0);
 
-    /// `updateData`, once the tile has landed a layout (a tile made during a
-    /// landing hold lays out the landed body first, then this one).
+    /// `updateData`, once the tile has taken a layout, landed or kept above
+    /// the limit (a tile made during a landing hold lays out the landed body
+    /// first, then this one).
     void updateDataAfterLanding(std::shared_ptr<style::GeoJSONData> data,
                                 bool runSynchronously,
                                 uint64_t dataGeneration);
@@ -45,11 +46,11 @@ private:
     // The data whose cut the worker was last given. Weak, and compared by
     // owner, so a new body at a freed one's address never matches it.
     std::weak_ptr<style::GeoJSONData> dataInWorker;
-    // `updateDataAfterLanding`'s body, until a layout lands.
+    // `updateDataAfterLanding`'s body, until a layout is taken.
     std::shared_ptr<style::GeoJSONData> dataAfterLanding;
     uint64_t generationAfterLanding = 0;
     bool synchronousAfterLanding = false;
-    void onLanded() override;
+    void onLayoutTaken() override;
     mapbox::base::WeakPtrFactory<GeoJSONTile> weakFactory{this};
     // Do not add members here, see `WeakPtrFactory`
 };

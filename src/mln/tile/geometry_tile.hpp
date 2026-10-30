@@ -38,8 +38,9 @@ public:
     static constexpr std::size_t maxKeptLayouts = 4;
 
 protected:
-    /// A layout landed (drawn from the next frame).
-    virtual void onLanded() {}
+    /// A layout was taken: landed (drawn from the next frame), or kept aside
+    /// above the landing limit.
+    virtual void onLayoutTaken() {}
 
 public:
 

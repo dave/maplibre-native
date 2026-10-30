@@ -56,12 +56,27 @@ namespace {
 constexpr auto kBound = std::chrono::seconds(30);
 
 /** Runs the loop until `done()`. False, with a failure, if it has not come within the bound. */
+#if defined(__APPLE__)
+extern "C" void* objc_autoreleasePoolPush(void);
+extern "C" void objc_autoreleasePoolPop(void*);
+#endif
+
 bool runUntil(util::RunLoop& loop, const std::function<bool()>& done, const std::string& what) {
     bool late = false;
     util::Timer watchdog;
     watchdog.start(kBound, Duration::zero(), [&] { late = true; });
     while (!done() && !late) {
+        // On Apple, inside an autorelease pool: the headless Metal backend's
+        // command buffers are autoreleased, and with no pool drained between
+        // frames the 65th frame waits for ever in -[MTLCommandQueue
+        // commandBuffer], so the bound above never fires.
+#if defined(__APPLE__)
+        void* pool = objc_autoreleasePoolPush();
         loop.runOnce();
+        objc_autoreleasePoolPop(pool);
+#else
+        loop.runOnce();
+#endif
     }
     EXPECT_FALSE(late) << what << ": not within " << kBound.count() << " s";
     return !late;
@@ -1338,6 +1353,35 @@ TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
     test.labels().setLandingLimit(std::nullopt);
     ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
     EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' held body did not land with the release";
+}
+
+// A limit below the landed body (R1, issue #166): a tile made then lays out
+// the landed body, which the limit keeps aside. That layout must not block
+// the newest body: the tile lays it out too, the source is reported laid out
+// at its generation, and clearing the limit draws it.
+TEST(LabelLane, ATileMadeWithTheLimitBelowTheLandedBodyIsReportedAtTheNewestBody) {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    const uint64_t landedBody = test.labels().setGeoJSON(body(east));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", landedBody); }, "the east body laid out"));
+    // The limit goes below the landed body.
+    test.labels().setLandingLimit(landedBody - 1);
+    const std::string eastOne = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})";
+    const uint64_t newest = test.labels().setGeoJSON(body(eastOne));
+    // The pan: new tiles, made with the limit below the landed body.
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{0, 135}));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", newest); }, "the newest body reported"));
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' newest body did not land with the release";
 }
 
 // Placement transitions OFF is what makes it one frame: `PlacementController::
