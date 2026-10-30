@@ -30,6 +30,12 @@ public:
     /// drawing its landed one; raising the limit lands the newest kept
     /// layout at or below it, at once (`GeoJSONSource::setLandingLimit`).
     void setLandingLimit(std::optional<uint64_t>);
+
+    /// A new source object under the same id counts its generations from low
+    /// again: the old object's bodies count as generation 0, and the layouts
+    /// kept above the old object's limit are freed. The tile keeps drawing its
+    /// layout.
+    void startGenerationsOver();
     /// The data generation of the body the next `setData` gives the worker.
     void setBodyGeneration(uint64_t generation) { bodyGeneration = generation; }
     /// How many layouts are kept above the landing limit (for the tests).

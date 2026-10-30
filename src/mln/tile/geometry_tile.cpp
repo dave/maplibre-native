@@ -557,6 +557,20 @@ void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
     }
 }
 
+void GeometryTile::startGenerationsOver() {
+    // The old object's bodies, laid out or in flight, are generation 0 now:
+    // at or below any limit of the new object, and older than its bodies.
+    landedGeneration = 0;
+    bodyGeneration = 0;
+    for (auto& entry : generationOfCorrelation) {
+        entry.second = 0;
+    }
+    for (auto& kept : keptResults) {
+        freeLayout(std::move(kept.second));
+    }
+    keptResults.clear();
+}
+
 void GeometryTile::freeLayout(std::shared_ptr<LayoutResult>&& result) {
     if (!result) return;
     threadPool.runOnRenderThread(

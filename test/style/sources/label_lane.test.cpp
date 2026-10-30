@@ -1384,6 +1384,120 @@ TEST(LabelLane, ATileMadeWithTheLimitBelowTheLandedBodyIsReportedAtTheNewestBody
     EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' newest body did not land with the release";
 }
 
+// A new source object under the same id (a style rebuild) counts its
+// generations from low again. The body the old object landed is not the new
+// object's landed body: a tile made under the new object's hold must not lay
+// it out, and releasing the hold must draw the new object's newest body.
+TEST(LabelLane, ANewSourceUnderTheSameIDDoesNotDrawTheOldSourcesLandedBody) {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    // The old object lands four points far east at generation 3.
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    test.labels().setGeoJSON(body(east));
+    const uint64_t oldLanded = test.labels().setGeoJSON(body(east));
+    ASSERT_EQ(3u, oldLanded);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", oldLanded); }, "the old body laid out"));
+
+    // The rebuild: a new object under the same id, held from its first body.
+    auto& mapStyle = test.map->getStyle();
+    mapStyle.removeLayer("circles");
+    mapStyle.removeSource("labels");
+    auto fresh = std::make_unique<GeoJSONSource>("labels", laneOptions());
+    fresh->setLandingLimit(0);
+    fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})"));
+    const uint64_t newest = fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134.5, 0]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135.5, 0]}}]})"));
+    ASSERT_EQ(2u, newest);
+    mapStyle.addSource(std::move(fresh));
+    mapStyle.addLayer(std::make_unique<CircleLayer>("circles", "labels"));
+    const std::size_t reportsBefore = test.observer.laidOut.size();
+
+    // The pan: new tiles, made under the new object's hold.
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{0, 135}));
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            return std::find(test.observer.laidOut.begin() + static_cast<std::ptrdiff_t>(reportsBefore),
+                             test.observer.laidOut.end(),
+                             std::make_pair(std::string("labels"), newest)) != test.observer.laidOut.end();
+        },
+        "the new object's newest body reported"));
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+    EXPECT_EQ(0u, drawnCircles(test)) << "a held tile drew a body before the release";
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(2u, drawnCircles(test)) << "the release did not draw the new object's newest body";
+}
+
+// The same, in the tiles the old object left (no pan).
+TEST(LabelLane, ANewSourceUnderTheSameIDLandsItsBodyInTheTilesTheOldOneLeft) {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    style.replace(style.find("\"center\": [0, 0]"), std::string("\"center\": [0, 0]").size(), "\"center\": [135, 0]");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    // The old object lands four points far east at generation 3.
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    test.labels().setGeoJSON(body(east));
+    const uint64_t oldLanded = test.labels().setGeoJSON(body(east));
+    ASSERT_EQ(3u, oldLanded);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", oldLanded); }, "the old body laid out"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame with the old body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    // The rebuild: a new object under the same id, held from its first body.
+    auto& mapStyle = test.map->getStyle();
+    mapStyle.removeLayer("circles");
+    mapStyle.removeSource("labels");
+    auto fresh = std::make_unique<GeoJSONSource>("labels", laneOptions());
+    fresh->setLandingLimit(0);
+    fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})"));
+    const uint64_t newest = fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134.5, 0]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135.5, 0]}}]})"));
+    ASSERT_EQ(2u, newest);
+    mapStyle.addSource(std::move(fresh));
+    mapStyle.addLayer(std::make_unique<CircleLayer>("circles", "labels"));
+    const std::size_t reportsBefore = test.observer.laidOut.size();
+
+    // No pan: the tiles the old object laid out take the new bodies.
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            return std::find(test.observer.laidOut.begin() + static_cast<std::ptrdiff_t>(reportsBefore),
+                             test.observer.laidOut.end(),
+                             std::make_pair(std::string("labels"), newest)) != test.observer.laidOut.end();
+        },
+        "the new object's newest body reported"));
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame while held"));
+    // A held tile keeps drawing the layout it drew (no blank frame), as in a
+    // hold within one object.
+    EXPECT_EQ(4u, drawnCircles(test)) << "a held tile did not keep the layout it drew";
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
+    EXPECT_EQ(2u, drawnCircles(test)) << "the release did not draw the new object's newest body";
+}
+
 // Placement transitions OFF is what makes it one frame: `PlacementController::
 // placementIsRecent` is then false every frame, so the landed symbols are
 // placed in the frame that lands them. With them on (MapLibre's default),
