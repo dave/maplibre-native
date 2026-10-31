@@ -564,11 +564,16 @@ void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
 }
 
 void GeometryTile::startGenerationsOver() {
-    // Only the drawn body carries over: it is generation 0 now, at or below
-    // any limit of the new object and older than its bodies. Every other old
-    // body (on its way to the worker, in the worker, or kept aside) never
-    // lands: its layouts are freed when they arrive.
-    const auto carry = [this](uint64_t generation) { return generation == landedGeneration ? 0 : neverLands; };
+    // The drawn body, and any body the old object released (at or below its
+    // limit, or with no limit) that is still on its way, carry over: they
+    // are generation 0 now, at or below any limit of the new object and older
+    // than its bodies. A body the old object held above its limit (on its
+    // way, in the worker, or kept aside) never lands: its layouts are freed
+    // when they arrive. `landingLimit` is still the old object's here.
+    const auto carry = [this](uint64_t generation) {
+        const bool released = generation == landedGeneration || !landingLimit || generation <= *landingLimit;
+        return released ? 0 : neverLands;
+    };
     bodyGeneration = carry(bodyGeneration);
     for (auto& entry : generationOfCorrelation) {
         entry.second = carry(entry.second);

@@ -1655,6 +1655,196 @@ TEST(LabelLane, ARebuildDoesNotDrawTheOldObjectsHeldBody) {
     EXPECT_EQ(2u, drawnCircles(test));
 }
 
+
+// Rebuilds under the same id (audits of 0be25ff3a7b2 and 251b26064057): the
+// drawn body and any body the old object released carry over; a body it
+// held never lands.
+namespace {
+
+const char* kFour = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+const char* kOne = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})";
+const char* kTwo = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134.5, 0]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135.5, 0]}}]})";
+const char* kThree = R"({"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134.5, 0.5]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0.5]}},
+    {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135.5, 0.5]}}]})";
+
+std::string rebuildStyle() {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    style.replace(style.find("\"center\": [0, 0]"), std::string("\"center\": [0, 0]").size(), "\"center\": [135, 0]");
+    return style;
+}
+
+// Old object: 4 drawn, then (if hold) a one-point body held above its limit.
+// waitHeld false leaves the held body in flight.
+void oldObjectState(LaneMap& test, bool hold, bool waitHeld) {
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const uint64_t landed = test.labels().setGeoJSON(body(kFour));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", landed); }, "old body"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "frame old"));
+    ASSERT_EQ(4u, drawnCircles(test));
+    if (!hold) return;
+    test.labels().setLandingLimit(landed);
+    const uint64_t held = test.labels().setGeoJSON(body(kOne));
+    if (!waitHeld) {
+        test.map->triggerRepaint();
+        ASSERT_TRUE(runOneFrame(test, "frame with the held body in flight"));
+        return;
+    }
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", held); }, "held body"));
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "frame old hold"));
+    ASSERT_EQ(4u, drawnCircles(test));
+}
+
+// A rebuild: returns the new object's newest generation; sets reportsBefore.
+uint64_t rebuildUnderTheSameID(LaneMap& test, std::optional<uint64_t> limit, const char* last, std::size_t& reportsBefore) {
+    auto& mapStyle = test.map->getStyle();
+    mapStyle.removeLayer("circles");
+    mapStyle.removeSource("labels");
+    auto fresh = std::make_unique<GeoJSONSource>("labels", laneOptions());
+    if (limit) fresh->setLandingLimit(*limit);
+    fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0.25]}}]})"));
+    const uint64_t newest = fresh->setGeoJSON(body(last));
+    mapStyle.addSource(std::move(fresh));
+    mapStyle.addLayer(std::make_unique<CircleLayer>("circles", "labels"));
+    reportsBefore = test.observer.laidOut.size();
+    return newest;
+}
+
+bool reportedSince(LaneMap& test, uint64_t newest, std::size_t reportsBefore, const std::string& what) {
+    return runUntil(
+        test.loop,
+        [&] {
+            return std::find(test.observer.laidOut.begin() + static_cast<std::ptrdiff_t>(reportsBefore),
+                             test.observer.laidOut.end(),
+                             std::make_pair(std::string("labels"), newest)) != test.observer.laidOut.end();
+        },
+        what);
+}
+
+std::size_t heldFrameCircles(LaneMap& test) {
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    EXPECT_TRUE(runOneFrame(test, "held frame"));
+    return drawnCircles(test);
+}
+} // namespace
+
+// Two rebuilds in a row, each held, the old object held too.
+TEST(LabelLane, TwoRebuildsInARowDrawOnlyTheDrawnBodyUntilTheRelease) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, true, true);
+    std::size_t before = 0;
+    const uint64_t a = rebuildUnderTheSameID(test, 0, kTwo, before);
+    ASSERT_TRUE(reportedSince(test, a, before, "rebuild A reported"));
+    EXPECT_EQ(4u, heldFrameCircles(test)) << "rebuild A hold";
+    const uint64_t b = rebuildUnderTheSameID(test, 0, kThree, before);
+    ASSERT_TRUE(reportedSince(test, b, before, "rebuild B reported"));
+    EXPECT_EQ(4u, heldFrameCircles(test)) << "rebuild B hold (2 = A's held body)";
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "release"));
+    EXPECT_EQ(3u, drawnCircles(test));
+}
+
+// Two rebuilds with no frame between them.
+TEST(LabelLane, TwoRebuildsInOneTurnDrawOnlyTheDrawnBodyUntilTheRelease) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, true, true);
+    std::size_t before = 0;
+    rebuildUnderTheSameID(test, 0, kTwo, before);
+    const uint64_t b = rebuildUnderTheSameID(test, 0, kThree, before);
+    ASSERT_TRUE(reportedSince(test, b, before, "rebuild B reported"));
+    EXPECT_EQ(4u, heldFrameCircles(test));
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "release"));
+    EXPECT_EQ(3u, drawnCircles(test));
+}
+
+// The old held body still in flight at the rebuild.
+TEST(LabelLane, ARebuildWithTheOldHeldBodyInFlightDoesNotDrawIt) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, true, false);
+    std::size_t before = 0;
+    const uint64_t n = rebuildUnderTheSameID(test, 0, kTwo, before);
+    ASSERT_TRUE(reportedSince(test, n, before, "reported"));
+    EXPECT_EQ(4u, heldFrameCircles(test)) << "1 = the old held body";
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "release"));
+    EXPECT_EQ(2u, drawnCircles(test));
+}
+
+// A rebuild with no hold on the new object: reported, drawn at once.
+TEST(LabelLane, ARebuildWithNoNewHoldDrawsTheNewBody) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, true, true);
+    std::size_t before = 0;
+    const uint64_t n = rebuildUnderTheSameID(test, std::nullopt, kTwo, before);
+    ASSERT_TRUE(reportedSince(test, n, before, "reported"));
+    EXPECT_EQ(2u, heldFrameCircles(test));
+}
+
+// A rebuild, then a pan in the same turn (some tiles kept, some new).
+TEST(LabelLane, ARebuildDuringAPanDoesNotDrawAHeldBody) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, true, true);
+    std::size_t before = 0;
+    const uint64_t n = rebuildUnderTheSameID(test, 0, kTwo, before);
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{2, 136}));
+    ASSERT_TRUE(reportedSince(test, n, before, "reported after the pan"));
+    const std::size_t held = heldFrameCircles(test);
+    EXPECT_NE(1u, held) << "the old held body drew";
+    {
+        RenderedQueryOptions options;
+        options.layerIDs = std::vector<std::string>{"circles"};
+        for (const auto& f : test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options)) {
+            const auto& p = f.geometry.get<mapbox::geometry::point<double>>();
+            EXPECT_NE(0.0, std::round(p.y * 4) / 4) << "a lat-0 point (new held body or old held body) drew in the hold";
+        }
+    }
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "release"));
+    EXPECT_EQ(2u, drawnCircles(test));
+}
+
+// The old object at no hold, a body in flight, rebuild: no wait for ever.
+TEST(LabelLane, ARebuildLandsABodyTheOldObjectReleasedInEveryTile) {
+    LaneMap test(rebuildStyle());
+    oldObjectState(test, false, false);
+    test.labels().setGeoJSON(body(kOne));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "frame with the body in flight"));
+    std::size_t before = 0;
+    const uint64_t n = rebuildUnderTheSameID(test, 0, kTwo, before);
+    ASSERT_TRUE(reportedSince(test, n, before, "reported"));
+    // The old object released kOne (it had no limit), so every tile lands it,
+    // also one whose layout was still on its way at the rebuild. The count
+    // alone passes when a tile keeps the 4-point body, so check the point.
+    EXPECT_EQ(1u, heldFrameCircles(test)) << "a tile lost the released body";
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"circles"};
+    const auto drawn = test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options);
+    for (const auto& feature : drawn) {
+        const auto& point = feature.geometry.get<mapbox::geometry::point<double>>();
+        EXPECT_NEAR(135.0, point.x, 0.01) << "not the released body";
+        EXPECT_NEAR(0.0, point.y, 0.01) << "not the released body";
+    }
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "release"));
+    EXPECT_EQ(2u, drawnCircles(test));
+}
+
 // Placement transitions OFF is what makes it one frame: `PlacementController::
 // placementIsRecent` is then false every frame, so the landed symbols are
 // placed in the frame that lands them. With them on (MapLibre's default),
