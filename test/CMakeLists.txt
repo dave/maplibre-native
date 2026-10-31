@@ -11,6 +11,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/algorithm/update_tile_masks.test.cpp
     ${PROJECT_SOURCE_DIR}/test/api/annotations.test.cpp
     ${PROJECT_SOURCE_DIR}/test/api/api_misuse.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/api/app_behaviour_pins.test.cpp
     ${PROJECT_SOURCE_DIR}/test/api/custom_geometry_source.test.cpp
     ${PROJECT_SOURCE_DIR}/test/api/hillshade_overzoom_seam.test.cpp
     ${PROJECT_SOURCE_DIR}/test/api/label_lane_real_data.test.cpp
