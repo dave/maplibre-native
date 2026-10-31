@@ -33,10 +33,11 @@ public:
     void setLandingLimit(std::optional<uint64_t>);
 
     /// A new source object under the same id counts its generations from low
-    /// again: the drawn body counts as generation 0, every other old body
-    /// never lands (its layouts are freed when they arrive), and the layouts
-    /// kept above the old object's limit are freed. The tile keeps drawing its
-    /// layout.
+    /// again: the drawn body and the old object's released bodies count as
+    /// generation 0, a body it held above its limit never lands (its layouts
+    /// are freed when they arrive), and the layouts kept above the old
+    /// object's limit are freed. The tile keeps drawing its layout. Call it
+    /// before the new object's limit reaches the tile.
     void startGenerationsOver();
     /// The data generation of the body the next `setData` gives the worker.
     void setBodyGeneration(uint64_t generation) { bodyGeneration = generation; }
