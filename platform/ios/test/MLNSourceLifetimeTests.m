@@ -66,6 +66,29 @@
     XCTAssertEqual([self.mapView.style sourceWithIdentifier:@"looked-up"], weakSource);
 }
 
+/// The source object is kept across writes (Viatrail #170 F1 pin): each new
+/// shape goes to the same object, which a lookup still returns, with the
+/// newest shape and a newer generation.
+- (void)testASourceKeepsItsObjectAcrossWrites {
+    MLNShapeSource *source = [[MLNShapeSource alloc] initWithIdentifier:@"written" shape:nil options:nil];
+    [self.mapView.style addSource:source];
+    [self.mapView.style addLayer:[[MLNCircleStyleLayer alloc] initWithIdentifier:@"written-layer" source:source]];
+    uint64_t generation = source.dataGeneration;
+    for (int i = 1; i <= 3; ++i) {
+        MLNPointFeature *point = [[MLNPointFeature alloc] init];
+        point.coordinate = CLLocationCoordinate2DMake(i, 8);
+        source.shape = point;
+        MLNShapeSource *found = (MLNShapeSource *)[self.mapView.style sourceWithIdentifier:@"written"];
+        XCTAssertEqual(found, source, @"write %d: a lookup returns the same object", i);
+        XCTAssertEqualWithAccuracy(found.shape.coordinate.latitude, i, 1e-9, @"write %d: the newest shape", i);
+        XCTAssertGreaterThan(source.dataGeneration, generation, @"write %d: a newer generation", i);
+        generation = source.dataGeneration;
+    }
+    MLNCircleStyleLayer *layer = (MLNCircleStyleLayer *)[self.mapView.style layerWithIdentifier:@"written-layer"];
+    XCTAssertEqualObjects(layer.sourceIdentifier, @"written");
+    XCTAssertEqual([self.mapView.style sourceWithIdentifier:@"written"], source);
+}
+
 - (void)testARemovedSourceIsFreed {
     __weak MLNShapeSource *weakSource = nil;
     @autoreleasepool {
