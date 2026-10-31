@@ -1498,6 +1498,70 @@ TEST(LabelLane, ANewSourceUnderTheSameIDLandsItsBodyInTheTilesTheOldOneLeft) {
     EXPECT_EQ(2u, drawnCircles(test)) << "the release did not draw the new object's newest body";
 }
 
+
+// The old object holds a body above its limit, then a rebuild makes a new
+// object under the same id, held from its first body (audit of
+// 0be25ff3a7b2). The old object's held body was never released: it must not
+// be drawn during the new object's hold, and the release draws the new body.
+TEST(LabelLane, ARebuildDoesNotDrawTheOldObjectsHeldBody) {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    style.replace(style.find("\"center\": [0, 0]"), std::string("\"center\": [0, 0]").size(), "\"center\": [135, 0]");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const std::string east = R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, 1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134, -1]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [136, -1]}}]})";
+    const uint64_t landed = test.labels().setGeoJSON(body(east));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", landed); }, "the old body laid out"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame with the old body"));
+    ASSERT_EQ(4u, drawnCircles(test));
+
+    // The old object holds a one-point body above its limit.
+    test.labels().setLandingLimit(landed);
+    const uint64_t held = test.labels().setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0]}}]})"));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", held); }, "the held body laid out"));
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame in the old hold"));
+    ASSERT_EQ(4u, drawnCircles(test)) << "the old hold did not hold";
+
+    // The rebuild.
+    auto& mapStyle = test.map->getStyle();
+    mapStyle.removeLayer("circles");
+    mapStyle.removeSource("labels");
+    auto fresh = std::make_unique<GeoJSONSource>("labels", laneOptions());
+    fresh->setLandingLimit(0);
+    fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135, 0.5]}}]})"));
+    const uint64_t newest = fresh->setGeoJSON(body(R"({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [134.5, 0]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [135.5, 0]}}]})"));
+    mapStyle.addSource(std::move(fresh));
+    mapStyle.addLayer(std::make_unique<CircleLayer>("circles", "labels"));
+    const std::size_t reportsBefore = test.observer.laidOut.size();
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            return std::find(test.observer.laidOut.begin() + static_cast<std::ptrdiff_t>(reportsBefore),
+                             test.observer.laidOut.end(),
+                             std::make_pair(std::string("labels"), newest)) != test.observer.laidOut.end();
+        },
+        "the new object's newest body reported"));
+    Scheduler::GetLabelLane()->waitForEmpty(test.frontend->getThreadPool().tag);
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame in the new hold"));
+    EXPECT_EQ(4u, drawnCircles(test)) << "the new hold drew something other than the drawn layout (1 = the old held body)";
+
+    test.labels().setLandingLimit(std::nullopt);
+    ASSERT_TRUE(runOneFrame(test, "the release"));
+    EXPECT_EQ(2u, drawnCircles(test));
+}
+
 // Placement transitions OFF is what makes it one frame: `PlacementController::
 // placementIsRecent` is then false every frame, so the landed symbols are
 // placed in the frame that lands them. With them on (MapLibre's default),

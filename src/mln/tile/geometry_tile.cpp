@@ -468,6 +468,12 @@ void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64
     const auto found = generationOfCorrelation.find(resultCorrelationID);
     const uint64_t generation = found != generationOfCorrelation.end() ? found->second : bodyGeneration;
     generationOfCorrelation.erase(generationOfCorrelation.begin(), generationOfCorrelation.upper_bound(resultCorrelationID));
+    if (generation == neverLands) {
+        // An old source object's body that never landed (`startGenerationsOver`).
+        freeLayout(std::move(result));
+        onLayoutTaken();
+        return;
+    }
     if (landingLimit && generation > *landingLimit) {
         // Laid out, not landed: the tile keeps drawing its landed layout
         // until the limit reaches this body. The change is still reported, so
@@ -558,13 +564,16 @@ void GeometryTile::setLandingLimit(std::optional<uint64_t> limit) {
 }
 
 void GeometryTile::startGenerationsOver() {
-    // The old object's bodies, laid out or in flight, are generation 0 now:
-    // at or below any limit of the new object, and older than its bodies.
-    landedGeneration = 0;
-    bodyGeneration = 0;
+    // Only the drawn body carries over: it is generation 0 now, at or below
+    // any limit of the new object and older than its bodies. Every other old
+    // body (on its way to the worker, in the worker, or kept aside) never
+    // lands: its layouts are freed when they arrive.
+    const auto carry = [this](uint64_t generation) { return generation == landedGeneration ? 0 : neverLands; };
+    bodyGeneration = carry(bodyGeneration);
     for (auto& entry : generationOfCorrelation) {
-        entry.second = 0;
+        entry.second = carry(entry.second);
     }
+    landedGeneration = 0;
     for (auto& kept : keptResults) {
         freeLayout(std::move(kept.second));
     }
