@@ -12,6 +12,7 @@
 #include <mln/util/containers.hpp>
 
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -32,7 +33,8 @@ public:
     void setLandingLimit(std::optional<uint64_t>);
 
     /// A new source object under the same id counts its generations from low
-    /// again: the old object's bodies count as generation 0, and the layouts
+    /// again: the drawn body counts as generation 0, every other old body
+    /// never lands (its layouts are freed when they arrive), and the layouts
     /// kept above the old object's limit are freed. The tile keeps drawing its
     /// layout.
     void startGenerationsOver();
@@ -42,6 +44,8 @@ public:
     std::size_t keptLayoutCount() const { return keptResults.size(); }
     /// The most layouts kept above the limit; an older one beyond it is freed.
     static constexpr std::size_t maxKeptLayouts = 4;
+    /// The generation of an old source object's body that never landed.
+    static constexpr uint64_t neverLands = std::numeric_limits<uint64_t>::max();
 
 protected:
     /// A layout was taken: landed (drawn from the next frame), or kept aside
