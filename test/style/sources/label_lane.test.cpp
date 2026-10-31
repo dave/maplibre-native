@@ -201,6 +201,7 @@ public:
                 .glyphManager = glyphManager,
                 .prefetchZoomDelta = 0,
                 .threadPool = {Scheduler::GetBackground(), uniqueID},
+                .dynamicTextureAtlas = nullptr,
                 .labelLane = lane ? Scheduler::GetLabelLane() : nullptr};
     }
 

@@ -250,7 +250,7 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
     }
     EXPECT_FALSE(late) << armName(arm) << ": the basemap's tiles did not arrive";
 
-    ArmResult result{.arm = arm};
+    ArmResult result{.arm = arm, .steps = {}, .sets = {}, .laidOut = {}};
     const auto set = [&](const std::string& sourceID, const std::string& body) {
         auto& source = *map.getStyle().getSource(sourceID)->as<GeoJSONSource>();
         const uint64_t generation = source.nextDataGeneration();
