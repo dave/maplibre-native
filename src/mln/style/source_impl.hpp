@@ -32,6 +32,8 @@ public:
     const std::string id;
 
     virtual bool isUpdateSynchronous() const { return false; }
+    /// Whether the source's tile workers run on the label lane (`GeoJSONOptions::labelLane`).
+    virtual bool usesLabelLane() const { return false; }
 
 protected:
     std::optional<uint8_t> prefetchZoomDelta;

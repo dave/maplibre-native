@@ -19,6 +19,7 @@
 #include <mln/tile/tile_observer.hpp>
 #include <mln/util/error_sink.hpp>
 #include <mln/util/instrumentation.hpp>
+#include <mln/util/label_steps.hpp>
 #include <mln/util/logging.hpp>
 #include <mln/util/thread_pool.hpp>
 #include <mln/gfx/upload_pass.hpp>
@@ -195,7 +196,13 @@ GeometryTile::GeometryTile(const OverscaledTileID& id_,
       threadPool(parameters.threadPool),
       mailbox(std::make_shared<Mailbox>(*Scheduler::GetCurrent())),
       worker(parameters.isUpdateSynchronous,
-             parameters.threadPool, // Scheduler reference for the Actor retainer
+             // Scheduler reference for the Actor retainer: the worker's own
+             // runs. A label lane source's worker runs on the lane, with the
+             // renderer's tag; its render-thread jobs (the next argument) stay
+             // on the renderer's scheduler, the only one the graphics context
+             // drains.
+             parameters.labelLane ? TaggedScheduler(parameters.labelLane, parameters.threadPool.tag)
+                                  : parameters.threadPool,
              OptionalActorRef<GeometryTile>(parameters.isUpdateSynchronous, *this, mailbox),
              parameters.threadPool,
              id_,
@@ -251,6 +258,7 @@ void GeometryTile::setError(std::exception_ptr err) {
 
 void GeometryTile::setData(std::unique_ptr<const GeometryTileData> data_) {
     MLN_TRACE_FUNC();
+    const util::LabelSteps::Scope step(sourceID, "hop-data", true);
 
     if (obsolete) {
         return;
@@ -343,6 +351,7 @@ void GeometryTile::setShowCollisionBoxes(const bool showCollisionBoxes_) {
 
 void GeometryTile::onLayout(std::shared_ptr<LayoutResult>&& result, const uint64_t resultCorrelationID) {
     MLN_TRACE_FUNC();
+    const util::LabelSteps::Scope step(sourceID, "hop-layout", true);
 
     loaded = true;
     renderable = true;
@@ -438,6 +447,7 @@ void GeometryTile::onGlyphsAvailable(GlyphMap glyphMap, [[maybe_unused]] HBShape
 
 void GeometryTile::getGlyphs(GlyphDependencies glyphDependencies) {
     MLN_TRACE_FUNC();
+    const util::LabelSteps::Scope step(sourceID, "hop-glyphs", true);
 
     if (fileSource) {
         glyphManager->getGlyphs(*this, std::move(glyphDependencies), *fileSource);
@@ -459,6 +469,7 @@ void GeometryTile::onImagesAvailable(ImageMap images,
 
 void GeometryTile::getImages(ImageRequestPair pair) {
     MLN_TRACE_FUNC();
+    const util::LabelSteps::Scope step(sourceID, "hop-images", true);
 
     imageManager->getImages(*this, std::move(pair));
 }
