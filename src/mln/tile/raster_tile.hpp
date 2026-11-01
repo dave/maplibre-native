@@ -24,6 +24,7 @@ public:
     std::unique_ptr<TileRenderData> createRenderData() override;
     void setNecessity(TileNecessity) override;
     void setUpdateParameters(const TileUpdateParameters&) override;
+    void reloadIfEmpty() override;
 
     void setError(std::exception_ptr);
     void setMetadata(std::optional<Timestamp> modified, std::optional<Timestamp> expires);

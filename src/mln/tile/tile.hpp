@@ -68,6 +68,10 @@ public:
 
     virtual void setUpdateParameters(const TileUpdateParameters&) {}
 
+    // Asks the network again if the last answer was empty or an error and the
+    // tile is needed now. See `TileSource::reloadEmptyTiles`.
+    virtual void reloadIfEmpty() {}
+
     // Mark this tile as no longer needed and cancel any pending work.
     virtual void cancel() = 0;
 

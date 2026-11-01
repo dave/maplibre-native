@@ -576,7 +576,8 @@ void RenderTileSource::dumpDebugLogs() const {
 // RenderTileSetSource implementation
 
 RenderTileSetSource::RenderTileSetSource(Immutable<style::Source::Impl> impl_, const TaggedScheduler& threadPool_)
-    : RenderTileSource(std::move(impl_), threadPool_) {}
+    : RenderTileSource(std::move(impl_), threadPool_),
+      seenEmptyTileReloads(static_cast<const style::TileSource::Impl&>(*baseImpl).emptyTileReloads) {}
 
 RenderTileSetSource::~RenderTileSetSource() = default;
 
@@ -605,6 +606,12 @@ void RenderTileSetSource::update(Immutable<style::Source::Impl> baseImpl_,
         // TODO: this removes existing buckets, and will cause flickering.
         // Should instead refresh tile data in place.
         tilePyramid.clearAll();
+    }
+
+    const uint64_t emptyTileReloads = static_cast<const style::TileSource::Impl&>(*baseImpl).emptyTileReloads;
+    if (emptyTileReloads != seenEmptyTileReloads) {
+        seenEmptyTileReloads = emptyTileReloads;
+        tilePyramid.reloadEmptyTiles();
     }
 
     if (!cachedTileset) return;
