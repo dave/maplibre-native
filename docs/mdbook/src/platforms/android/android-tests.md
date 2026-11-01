@@ -92,7 +92,14 @@ There is a separate Gradle project that contains a test app which runs the C++ U
 
 You can find the project in `test/android.` You can open this project in Android Studio and run the C++ Tests on an Android device or Simulator.
 
-To run a particular set of tests you can modify the `--gtest_filter` flag in `platform/android/src/test/test_runner.cpp`. See the [GoogleTest documentation](https://google.github.io/googletest/advanced.html#running-a-subset-of-the-tests) for details how to use this flag.
+To run a particular set of tests, pass a `gtest_filter` argument to the instrumentation, for example:
+
+```bash
+adb shell am instrument -w -e class android.app.NativeActivityTest -e gtest_filter 'Map.*:Source.*' \
+  org.maplibre.cpp_test_runner.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Without it, the runner uses the default filter in `platform/android/src/test/test_runner.cpp`. See the [GoogleTest documentation](https://google.github.io/googletest/advanced.html#running-a-subset-of-the-tests) for the filter syntax.
 
 ### AWS Device Farm
 
