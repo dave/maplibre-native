@@ -72,6 +72,9 @@ public:
     /// whether loaded yet or not; none when the last update rendered nothing.
     const std::vector<OverscaledTileID>& getIdealTiles() const { return lastIdealTiles; }
     void clearAll();
+    /// Asks the network again for each tile in the pyramid whose last answer
+    /// was empty or an error. Cached tiles ask again when they are needed.
+    void reloadEmptyTiles();
 
     void updateFadingTiles();
     bool hasFadingTiles() const { return fadingTiles; }

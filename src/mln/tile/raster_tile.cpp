@@ -106,6 +106,10 @@ void RasterTile::setUpdateParameters(const TileUpdateParameters& params) {
     loader.setUpdateParameters(params);
 }
 
+void RasterTile::reloadIfEmpty() {
+    loader.reloadIfEmpty();
+}
+
 void RasterTile::cancel() {
     markObsolete();
 }
