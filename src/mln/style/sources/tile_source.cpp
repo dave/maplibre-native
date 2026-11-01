@@ -92,6 +92,13 @@ void TileSource::loadDescription(FileSource& fileSource) {
     });
 }
 
+void TileSource::reloadEmptyTiles() {
+    auto newImpl = makeMutable<Impl>(impl());
+    newImpl->emptyTileReloads++;
+    baseImpl = std::move(newImpl);
+    observer->onSourceChanged(*this);
+}
+
 void TileSource::setTilesetOverrides(Tileset&) {
     // Default empty implementation, subclasses can override
 }

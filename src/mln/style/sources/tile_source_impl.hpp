@@ -17,6 +17,10 @@ public:
 
     const std::optional<Tileset> tileset;
 
+    /// Counts the calls to `TileSource::reloadEmptyTiles`. The render source
+    /// asks its empty tiles again when the count changes.
+    uint64_t emptyTileReloads = 0;
+
 private:
     uint16_t tileSize;
 };

@@ -25,6 +25,9 @@ public:
 
     void setNecessity(TileNecessity newNecessity);
     void setUpdateParameters(const TileUpdateParameters&);
+    // Asks the network again when the last answer was empty or an error, no
+    // request is in flight, and the tile is required.
+    void reloadIfEmpty();
 
 private:
     // called when the tile is one of the ideal tiles that we want to show
@@ -48,6 +51,8 @@ private:
 
     T& tile;
     TileNecessity necessity;
+    // The last answer had no data: no content, or an error.
+    bool lastAnswerEmpty = false;
     Resource resource;
     std::shared_ptr<FileSource> fileSource;
     std::unique_ptr<AsyncRequest> request;
