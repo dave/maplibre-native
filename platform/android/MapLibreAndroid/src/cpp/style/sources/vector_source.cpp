@@ -48,6 +48,10 @@ jni::Local<jni::Array<jni::Object<geojson::Feature>>> VectorSource::querySourceF
     return Feature::convert(env, features);
 }
 
+void VectorSource::reloadEmptyTiles(jni::JNIEnv&) {
+    source.as<mln::style::VectorSource>()->reloadEmptyTiles();
+}
+
 jni::Local<jni::Object<Source>> VectorSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<VectorSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -68,7 +72,8 @@ void VectorSource::registerNative(jni::JNIEnv& env) {
                                           "initialize",
                                           "finalize",
                                           METHOD(&VectorSource::querySourceFeatures, "querySourceFeatures"),
-                                          METHOD(&VectorSource::getURL, "nativeGetUrl"));
+                                          METHOD(&VectorSource::getURL, "nativeGetUrl"),
+        METHOD(&VectorSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
 }
 
 } // namespace android

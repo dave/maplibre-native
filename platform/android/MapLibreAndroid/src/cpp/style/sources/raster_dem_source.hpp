@@ -20,6 +20,8 @@ public:
 
     jni::Local<jni::String> getURL(jni::JNIEnv&);
 
+    void reloadEmptyTiles(jni::JNIEnv&);
+
 private:
     jni::Local<jni::Object<Source>> createJavaPeer(jni::JNIEnv&);
 

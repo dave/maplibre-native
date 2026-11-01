@@ -204,6 +204,20 @@ class VectorSource : Source {
             return nativeGetUrl()
         }
 
+    /**
+     * Asks the network again for each tile of this source whose last answer was
+     * empty (HTTP 204, or 404 for a tile) or an error, and that the map needs now.
+     *
+     * Each tile keeps what it draws until its new answer lands. Tiles that have data
+     * are not asked again, and none is cleared, so the tiles on screen do not flash.
+     * A tile that the map does not need now asks again when the map needs it.
+     * Core: `mln::style::TileSource::reloadEmptyTiles`.
+     */
+    fun reloadEmptyTiles() {
+        checkThread()
+        nativeReloadEmptyTiles()
+    }
+
     @Keep
     protected external fun initialize(layerId: String?, payload: Any?)
 
@@ -213,6 +227,9 @@ class VectorSource : Source {
 
     @Keep
     protected external fun nativeGetUrl(): String?
+
+    @Keep
+    private external fun nativeReloadEmptyTiles()
 
     @Keep
     private external fun querySourceFeatures(sourceLayerId: Array<String>, filter: Array<Any>?): Array<Feature>
