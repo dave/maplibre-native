@@ -16,6 +16,7 @@
 #import "MLNSource_Private.h"
 
 #include <mln/style/source.hpp>
+#include <mln/style/sources/tile_source.hpp>
 #include <mln/util/tileset.hpp>
 
 const MLNTileSourceOption MLNTileSourceOptionMinimumZoomLevel =
@@ -67,6 +68,11 @@ const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem =
     delta = static_cast<uint8_t>(MIN(MAX(prefetchZoomDelta.integerValue, 0), 255));
   }
   self.rawSource->setPrefetchZoomDelta(delta);
+}
+
+- (void)reloadEmptyTiles {
+  MLNAssertStyleSourceIsValid();
+  static_cast<mln::style::TileSource *>(self.rawSource)->reloadEmptyTiles();
 }
 
 @end
