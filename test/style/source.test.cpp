@@ -259,6 +259,91 @@ TEST(Source, VectorTileEmpty) {
     test.run();
 }
 
+namespace {
+
+// Counts tile requests when they are made, so that a test can check at once
+// whether a call made a request.
+class CountingFileSource : public StubFileSource {
+public:
+    std::unique_ptr<AsyncRequest> request(const Resource& resource, Callback callback) override {
+        if (resource.kind == Resource::Kind::Tile) {
+            tileRequests++;
+        }
+        return StubFileSource::request(resource, std::move(callback));
+    }
+
+    int tileRequests = 0;
+};
+
+// Loads tile 0/0/0 of a vector source with `answer`, then calls
+// `reloadEmptyTiles` and gives the render source the new impl. Returns the
+// tile requests made in all.
+int tileRequestsAfterReloadEmptyTiles(std::function<Response()> answer) {
+    SourceTest test;
+    auto fileSource = std::make_shared<CountingFileSource>();
+    test.fileSource = fileSource;
+    fileSource->tileResponse = [&](const Resource&) {
+        return answer();
+    };
+
+    LineLayer layer("id", "source");
+    layer.setSourceLayer("water");
+    Immutable<LayerProperties> layerProperties = makeMutable<LineLayerProperties>(
+        staticImmutableCast<LineLayer::Impl>(layer.baseImpl));
+    std::vector<Immutable<LayerProperties>> layers{layerProperties};
+
+    Tileset tileset;
+    tileset.tiles = {"tiles"};
+    VectorSource source("source", tileset);
+    source.setObserver(&test.styleObserver);
+    source.loadDescription(*test.fileSource);
+
+    test.renderSourceObserver.tileChanged = [&](RenderSource&, const OverscaledTileID&) {
+        test.end();
+    };
+    test.renderSourceObserver.tileError = [&](RenderSource&, const OverscaledTileID&, std::exception_ptr) {
+        test.end();
+    };
+
+    auto renderSource = RenderSource::create(source.baseImpl, test.threadPool);
+    renderSource->setObserver(&test.renderSourceObserver);
+    renderSource->update(source.baseImpl, layers, true, true, test.tileParameters());
+    test.run();
+    EXPECT_EQ(1, fileSource->tileRequests);
+
+    source.reloadEmptyTiles();
+    renderSource->update(source.baseImpl, layers, true, false, test.tileParameters());
+    return fileSource->tileRequests;
+}
+
+} // namespace
+
+TEST(Source, ReloadEmptyTilesAsksAgainForAnEmptyTile) {
+    EXPECT_EQ(2, tileRequestsAfterReloadEmptyTiles([] {
+                  Response response;
+                  response.noContent = true;
+                  return response;
+              }));
+}
+
+TEST(Source, ReloadEmptyTilesAsksAgainForAFailedTile) {
+    EXPECT_EQ(2, tileRequestsAfterReloadEmptyTiles([] {
+                  Response response;
+                  response.error = std::make_unique<Response::Error>(Response::Error::Reason::Server,
+                                                                     "HTTP status code 503");
+                  return response;
+              }));
+}
+
+TEST(Source, ReloadEmptyTilesLeavesATileWithData) {
+    EXPECT_EQ(
+        1, tileRequestsAfterReloadEmptyTiles([] {
+            Response response;
+            response.data = std::make_shared<std::string>(util::read_file("test/fixtures/map/online/0-0-0.vector.pbf"));
+            return response;
+        }));
+}
+
 TEST(Source, RasterTileFail) {
     SourceTest test;
 

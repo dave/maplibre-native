@@ -25,6 +25,13 @@ public:
 
     void loadDescription(FileSource&) final;
 
+    /// Asks the network again for each tile of this source whose last answer
+    /// was empty (no content) or an error, and that the view needs now. The
+    /// tile keeps what it draws until the new answer lands. Tiles with data
+    /// are not asked again, and none is cleared. A tile that is not needed
+    /// now asks again when the view needs it, as before.
+    void reloadEmptyTiles();
+
 protected:
     Mutable<Source::Impl> createMutable() const noexcept final;
     virtual void setTilesetOverrides(Tileset& tileset);

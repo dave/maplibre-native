@@ -19,6 +19,7 @@ public:
 
     void setNecessity(TileNecessity) final;
     void setUpdateParameters(const TileUpdateParameters&) final;
+    void reloadIfEmpty() final;
     void setMetadata(std::optional<Timestamp> modified, std::optional<Timestamp> expires);
 
     virtual void setData(const std::shared_ptr<const std::string>&) = 0;

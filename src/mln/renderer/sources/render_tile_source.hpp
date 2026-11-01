@@ -88,6 +88,8 @@ private:
                 const TileParameters&) final;
 
     std::optional<Tileset> cachedTileset;
+    // The `TileSource::Impl::emptyTileReloads` count this source last acted on.
+    uint64_t seenEmptyTileReloads;
 };
 
 class PolylineLayerTweaker;
