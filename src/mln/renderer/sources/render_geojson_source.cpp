@@ -114,6 +114,27 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
                        [&, data_](const OverscaledTileID& tileID, TileObserver* observer_) {
                            return std::make_unique<GeoJSONTile>(tileID, impl().id, parameters, data_, observer_);
                        });
+
+    const uint64_t generation = impl().getDataGeneration();
+    if (generation > reportedGeneration && idealTilesLaidOut(data_)) {
+        reportedGeneration = generation;
+        laidOutGeneration = generation;
+    }
+}
+
+bool RenderGeoJSONSource::idealTilesLaidOut(const std::shared_ptr<style::GeoJSONData>& current) const {
+    for (const auto& id : tilePyramid.getIdealTiles()) {
+        const auto& tiles = tilePyramid.getTiles();
+        const auto it = tiles.find(id);
+        if (it == tiles.end() || !static_cast<const GeoJSONTile&>(*it->second).isLaidOutWith(current)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<uint64_t> RenderGeoJSONSource::takeLaidOutGeneration() {
+    return std::exchange(laidOutGeneration, std::nullopt);
 }
 
 mapbox::util::variant<Value, FeatureCollection> RenderGeoJSONSource::queryFeatureExtensions(

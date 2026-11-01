@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -29,7 +30,9 @@ public:
     const util::SimpleIdentity uniqueID;
 
 protected:
-    ThreadedSchedulerBase() = default;
+    /// @param threadName_ Each thread is named `threadName_ N`, N counting from 1.
+    explicit ThreadedSchedulerBase(std::string threadName_ = "Worker")
+        : threadName(std::move(threadName_)) {}
     ~ThreadedSchedulerBase() override;
 
     void terminate();
@@ -51,6 +54,7 @@ protected:
     util::ThreadLocal<ThreadedSchedulerBase> owningThreadPool;
     std::atomic<size_t> taskCount{0};
     bool terminated{false};
+    const std::string threadName;
 
     // Task queues bucketed by tag address
     struct Queue {
@@ -72,8 +76,9 @@ protected:
  */
 class ThreadedScheduler : public ThreadedSchedulerBase {
 public:
-    ThreadedScheduler(std::size_t n)
-        : threads(n) {
+    ThreadedScheduler(std::size_t n, std::string threadName_ = "Worker")
+        : ThreadedSchedulerBase(std::move(threadName_)),
+          threads(n) {
         for (std::size_t i = 0u; i < threads.size(); ++i) {
             threads[i] = makeSchedulerThread(i);
         }
@@ -164,8 +169,8 @@ private:
 
 class SequencedScheduler final : public ThreadedScheduler {
 public:
-    SequencedScheduler()
-        : ThreadedScheduler(1) {}
+    explicit SequencedScheduler(std::string threadName_ = "Worker")
+        : ThreadedScheduler(1, std::move(threadName_)) {}
     ~SequencedScheduler() override { invalidateWeakPtrsEarly(); }
 };
 

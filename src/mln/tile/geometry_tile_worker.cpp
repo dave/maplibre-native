@@ -22,6 +22,9 @@
 #include <mln/util/stopwatch.hpp>
 #include <mln/util/string.hpp>
 #include <mln/util/thread_pool.hpp>
+#include <mln/util/label_steps.hpp>
+
+#include <optional>
 
 #include <utility>
 
@@ -423,6 +426,10 @@ void GeometryTileWorker::parse() {
         return;
     }
 
+    // Ends before the layout below, which is a step of its own.
+    std::optional<util::LabelSteps::Scope> step;
+    step.emplace(sourceID, "tile-parse");
+
     // The layouts created below check the symbols they build; report through the tile's observer,
     // called on this worker thread.
     const ErrorScope errorScope{observer};
@@ -544,6 +551,7 @@ void GeometryTileWorker::parse() {
                                    << " SourceID: " << sourceID.c_str()
                                    << " Canonical: " << static_cast<int>(id.canonical.z) << "/" << id.canonical.x << "/"
                                    << id.canonical.y << " Time");
+    step.reset();
     finalizeLayout();
 }
 
@@ -566,6 +574,8 @@ void GeometryTileWorker::finalizeLayout() {
     if (!data || !layers || !hasPendingParseResult() || hasPendingDependencies()) {
         return;
     }
+
+    const util::LabelSteps::Scope step(sourceID, "tile-layout");
 
     // The layouts check the symbols they build below; report through the tile's observer,
     // called on this worker thread.

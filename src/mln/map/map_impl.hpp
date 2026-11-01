@@ -74,6 +74,7 @@ public:
     void onGlyphsError(const FontStack&, const GlyphRange&, std::exception_ptr) final;
     void onGlyphsRequested(const FontStack&, const GlyphRange&) final;
     void onTileAction(TileOperation op, const OverscaledTileID&, const std::string&) final;
+    void onSourceLaidOut(const std::string& sourceID, uint64_t generation) final;
     void onRenderError(std::exception_ptr) final;
     void onSymbolError(const std::string&) final;
 

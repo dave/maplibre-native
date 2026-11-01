@@ -29,7 +29,7 @@ std::thread ThreadedSchedulerBase::makeSchedulerThread(size_t index) {
             platform::setCurrentThreadPriority(*priority);
         }
 
-        platform::setCurrentThreadName("Worker " + util::toString(index + 1));
+        platform::setCurrentThreadName(threadName + " " + util::toString(index + 1));
         platform::attachThread();
 
         owningThreadPool.set(this);
