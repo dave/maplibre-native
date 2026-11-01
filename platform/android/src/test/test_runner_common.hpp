@@ -11,6 +11,9 @@ namespace android {
 
 int severityToPriority(EventSeverity severity);
 void changeState(JNIEnv* env, struct android_app* app, bool result);
+// The string extra `name` of the intent that started the activity, or an empty
+// string if the intent has none.
+std::string intentStringExtra(JNIEnv* env, struct android_app* app, const std::string& name);
 bool copyFile(JNIEnv* env,
               AAssetManager* assetManager,
               const std::string& filePath,

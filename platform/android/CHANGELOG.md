@@ -2,6 +2,7 @@
 
 ## main
 
+- The C++ unit test app (`test/android`) takes a `gtest_filter` instrumentation argument, so a run can name the tests it runs: `am instrument -e class android.app.NativeActivityTest -e gtest_filter '<filter>' …`. Without it the default filter is used, as before.
 - Make symbol guard checks opt-in, so symbol-dense tiles load faster. To keep them, set the environment variable `MLN_SYMBOL_GUARDS=1` before the first map loads.
 
 ## 13.7.1
