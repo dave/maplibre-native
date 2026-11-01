@@ -26,6 +26,8 @@ private:
 
     jni::Local<jni::String> getURL(jni::JNIEnv&);
 
+    void reloadEmptyTiles(jni::JNIEnv&);
+
     jni::Local<jni::Object<Source>> createJavaPeer(jni::JNIEnv&);
 
 }; // class VectorSource
