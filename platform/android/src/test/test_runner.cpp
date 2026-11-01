@@ -57,12 +57,15 @@ std::atomic<bool> success{false};
 std::once_flag done;
 ALooper* looper = NULL;
 
-void runner(const std::string& gtestOutput) {
+// The tests the runner runs when the instrumentation names none.
+const std::string defaultGtestFilter = "-StringIndexer.GetOOBIdentity";
+
+void runner(const std::string& gtestOutput, const std::string& gtestFilter) {
     ::testing::TestEventListeners& listeners = ::testing::UnitTest::GetInstance()->listeners();
     listeners.Append(new GTestAndroidLogger); // takes ownership
 
     std::vector<std::string> arguments = {
-        "mbgl-test-runner", "--gtest_output=xml:" + gtestOutput, "--gtest_filter=-StringIndexer.GetOOBIdentity"};
+        "mbgl-test-runner", "--gtest_output=xml:" + gtestOutput, "--gtest_filter=" + gtestFilter};
     std::vector<char*> argv;
     for (const auto& arg : arguments) {
         argv.push_back((char*)arg.data());
@@ -94,7 +97,12 @@ void android_main(struct android_app* app) {
             changeState(env, app, success);
         } else {
             unZipFile(env, zipFile, storagePath);
-            runnerThread = std::thread(runner, gtestOutput);
+            // `am instrument -e gtest_filter <filter>` (NativeActivityTest) passes the filter on.
+            std::string gtestFilter = intentStringExtra(env, app, "gtest_filter");
+            if (gtestFilter.empty()) {
+                gtestFilter = defaultGtestFilter;
+            }
+            runnerThread = std::thread(runner, gtestOutput, gtestFilter);
         }
     } else {
         mln::Log::Error(mln::Event::General, "Failed to copy zip file '" + zipFile + "' to external storage");
