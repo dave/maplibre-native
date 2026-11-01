@@ -98,6 +98,14 @@ void TileLoader<T>::setUpdateParameters(const TileUpdateParameters& params) {
 }
 
 template <typename T>
+void TileLoader<T>::reloadIfEmpty() {
+    if (!lastAnswerEmpty || request || necessity != TileNecessity::Required) {
+        return;
+    }
+    loadFromNetwork();
+}
+
+template <typename T>
 void TileLoader<T>::loadFromCache() {
     assert(!request);
     if (!fileSource) {
@@ -160,6 +168,7 @@ void TileLoader<T>::makeOptional() {
 template <typename T>
 void TileLoader<T>::loadedData(const Response& res, Resource::LoadingMethod method) {
     if (res.error && res.error->reason != Response::Error::Reason::NotFound) {
+        lastAnswerEmpty = true;
         tile.setError(std::make_exception_ptr(std::runtime_error(res.error->message)));
         tile.onTileAction(TileOperation::Error);
         return;
@@ -180,6 +189,7 @@ void TileLoader<T>::loadedData(const Response& res, Resource::LoadingMethod meth
         resource.priorExpires = res.expires;
         resource.priorEtag = res.etag;
         tile.setMetadata(res.modified, res.expires);
+        lastAnswerEmpty = res.noContent;
         tile.setData(res.noContent ? nullptr : res.data);
     }
 }

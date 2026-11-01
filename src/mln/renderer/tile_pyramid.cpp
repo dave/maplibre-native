@@ -454,6 +454,12 @@ void TilePyramid::clearAll() {
     cache.clear();
 }
 
+void TilePyramid::reloadEmptyTiles() {
+    for (auto& entry : tiles) {
+        entry.second->reloadIfEmpty();
+    }
+}
+
 void TilePyramid::addRenderTile(const UnwrappedTileID& tileID, Tile& tile) {
     assert(tile.isRenderable());
     renderedTiles.emplace(tileID, tile);

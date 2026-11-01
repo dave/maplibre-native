@@ -178,6 +178,10 @@ void RasterDEMTile::setUpdateParameters(const TileUpdateParameters& params) {
     loader.setUpdateParameters(params);
 }
 
+void RasterDEMTile::reloadIfEmpty() {
+    loader.reloadIfEmpty();
+}
+
 void RasterDEMTile::cancel() {
     markObsolete();
 }
