@@ -29,6 +29,10 @@ jni::Local<jni::String> RasterSource::getURL(jni::JNIEnv& env) {
     return url ? jni::Make<jni::String>(env, *url) : jni::Local<jni::String>();
 }
 
+void RasterSource::reloadEmptyTiles(jni::JNIEnv&) {
+    source.as<mln::style::RasterSource>()->reloadEmptyTiles();
+}
+
 jni::Local<jni::Object<Source>> RasterSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<RasterSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -49,7 +53,8 @@ void RasterSource::registerNative(jni::JNIEnv& env) {
         jni::MakePeer<RasterSource, const jni::String&, const jni::Object<>&, jni::jint>,
         "initialize",
         "finalize",
-        METHOD(&RasterSource::getURL, "nativeGetUrl"));
+        METHOD(&RasterSource::getURL, "nativeGetUrl"),
+        METHOD(&RasterSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
 }
 
 } // namespace android
