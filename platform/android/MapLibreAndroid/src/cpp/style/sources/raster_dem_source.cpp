@@ -30,6 +30,10 @@ jni::Local<jni::String> RasterDEMSource::getURL(jni::JNIEnv& env) {
     return url ? jni::Make<jni::String>(env, *url) : jni::Local<jni::String>();
 }
 
+void RasterDEMSource::reloadEmptyTiles(jni::JNIEnv&) {
+    source.as<mln::style::RasterDEMSource>()->reloadEmptyTiles();
+}
+
 jni::Local<jni::Object<Source>> RasterDEMSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<RasterDEMSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -50,7 +54,8 @@ void RasterDEMSource::registerNative(jni::JNIEnv& env) {
         jni::MakePeer<RasterDEMSource, const jni::String&, const jni::Object<>&, jni::jint>,
         "initialize",
         "finalize",
-        METHOD(&RasterDEMSource::getURL, "nativeGetUrl"));
+        METHOD(&RasterDEMSource::getURL, "nativeGetUrl"),
+        METHOD(&RasterDEMSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
 }
 
 } // namespace android
