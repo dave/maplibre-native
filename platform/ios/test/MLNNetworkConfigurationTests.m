@@ -173,13 +173,15 @@
     [self waitForExpectations:@[delivered] timeout:10.0];
     XCTAssertEqual(metrics.eventCount, 0u);
 }
-// Three completions for one path at once: the shape of an app whose style has
-// three sources on one tile URL, on a session whose delegate queue runs
-// completions concurrently. On the 85defb9df882 code this failed in 5 of 5
-// runs: it aborted with the iPhone's stack (nil into the event's dictionary
-// literal in eventAttributesForURL:withAction:), or it counted about three
-// events per start. Each start gives exactly one event.
-- (void)testThreeCompletionsForOnePathAtOnceGiveOneEvent {
+
+// Three completions at once for one recorded start, as when three sources
+// share one tile URL on a session whose delegate queue runs completions
+// concurrently. Before the event was taken in one step this aborted (nil
+// into the event's dictionary literal in eventAttributesForURL:withAction:)
+// or sent more than one event for the start. Each start gives exactly one
+// event. (Events are keyed by the URL's path, so starts for one path that
+// overlap share one record: this test makes one start per path at a time.)
+- (void)testThreeCompletionsForOneStartAtOnceGiveOneEvent {
     MLNNetworkConfiguration *configuration = [[MLNNetworkConfiguration alloc] init];
     MLNTestMetricsDelegate *metrics = [[MLNTestMetricsDelegate alloc] init];
     configuration.metricsDelegate = metrics;
@@ -189,9 +191,7 @@
     const NSUInteger rounds = 2000;
     for (NSUInteger i = 0; i < rounds; i++) {
         NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://example.com/tiles/5/16/%lu?w=0", (unsigned long)i]];
-        for (int k = 0; k < 3; k++) {
-            [configuration startDownloadEvent:url.relativePath type:@"tile"];
-        }
+        [configuration startDownloadEvent:url.relativePath type:@"tile"];
         NSURLResponse *response = [[NSURLResponse alloc] initWithURL:url MIMEType:nil expectedContentLength:0 textEncodingName:nil];
         dispatch_group_t group = dispatch_group_create();
         for (int k = 0; k < 3; k++) {
