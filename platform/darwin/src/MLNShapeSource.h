@@ -381,8 +381,8 @@ MLN_EXPORT
  (`-mapView:sourceDidLayOut:generation:`): wait for the value read, or a later
  one. A URL body takes its generation when it is set, and it is reported once
  it has loaded; if it will not land, the delegate is told that instead
- (`-mapView:sourceBodyDidFail:generation:message:`). Read from the core source, so every object for the same source
- answers the same.
+ (`-mapView:sourceBodyDidFail:generation:message:`). Read from the core source, so every object for
+ the same source answers the same.
  */
 @property (nonatomic, readonly) uint64_t dataGeneration;
 
