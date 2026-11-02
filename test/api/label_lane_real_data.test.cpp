@@ -1,4 +1,4 @@
-// The label lane with Viatrail's real bodies (label-lane plan, Task 3): a
+// The label lane with Viatrail's real bodies: a
 // headless continuous map with a basemap-like vector source that keeps the
 // worker pool busy, and Viatrail's two label sources (the placement slots and
 // the names), filled from the GPT sample's bodies (test/fixtures/label_lane).
@@ -6,12 +6,16 @@
 // (labelLane). The bodies are set as the Android binding sets them: parsed
 // on the source's parse scheduler, or on the calling thread for sync.
 //
-// It asserts only WHERE each step ran (the step recorder, util::LabelSteps):
-// every work step on the render thread for sync, none for async and lane, and
-// every one on the lane for lane. It prints, and does not assert, the queue
-// and work times of each step and hop, the time from a body's set to its
-// laid-out signal, and whether that came before the basemap's work ended:
+// The default test asserts what each arm promises: every body is reported laid
+// out, every work step runs on the render thread for sync, and none does for
+// async and lane, and every one runs on the lane for lane. It asserts no time:
 // times on a laptop say little about a phone, and a timing assertion flakes.
+//
+// DISABLED_TheTimesOfEachStepAndHop prints the queue and work times of each step
+// and hop, the time from a body's set to its laid-out signal, and whether that
+// came before the basemap's work ended. It is a measurement, not a check, so it
+// stays out of the default suite. Run it with
+//   --gtest_also_run_disabled_tests --gtest_filter=LabelLaneRealData.DISABLED_*
 
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
@@ -350,7 +354,50 @@ struct Spread {
 
 } // namespace
 
-TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) {
+TEST(LabelLaneRealData, TheBodiesLandAndEachStepRunsWhereItsArmPutsIt) {
+    const std::string placementBody = util::read_file("test/fixtures/label_lane/gpt-placement-z10.json");
+    const std::string namesBody = util::read_file("test/fixtures/label_lane/gpt-names-z10.json");
+    const std::thread::id renderThread = std::this_thread::get_id();
+
+    (void)util::LabelSteps::take();
+    util::LabelSteps::setRecording(true);
+    for (const Arm arm : {Arm::Sync, Arm::Async, Arm::Lane}) {
+        const ArmResult r = runArm(arm, placementBody, namesBody);
+        ASSERT_EQ(2u, r.sets.size());
+        for (const auto& set : r.sets) {
+            EXPECT_TRUE(r.laidOut.contains({set.sourceID, set.generation}))
+                << armName(arm) << ": " << set.sourceID << "'s body was not reported laid out";
+        }
+        int work = 0, workOnRender = 0, workOnLane = 0;
+        const Secs bodiesSet = r.sets.front().at;
+        for (const auto& s : r.steps) {
+            // Our bodies' steps only: the style's empty bodies are set with
+            // setGeoJSON while the style loads, on the render thread in every arm.
+            if (!ours(s) || s.start < bodiesSet || s.hop) continue;
+            ++work;
+            workOnRender += s.threadID == renderThread;
+            workOnLane += r.lane.contains(s.threadID);
+        }
+        ASSERT_GT(work, 0) << armName(arm) << ": no step of ours was recorded";
+        switch (arm) {
+            case Arm::Sync:
+                EXPECT_EQ(work, workOnRender) << "sync: a step of ours ran off the render thread";
+                break;
+            case Arm::Async:
+                EXPECT_EQ(0, workOnRender) << "async: a step of ours ran on the render thread";
+                EXPECT_EQ(0, workOnLane) << "async: a step of ours ran on the lane";
+                break;
+            case Arm::Lane:
+                EXPECT_EQ(0, workOnRender) << "lane: a step of ours ran on the render thread";
+                EXPECT_EQ(work, workOnLane) << "lane: a step of ours ran off the lane";
+                break;
+        }
+    }
+    util::LabelSteps::setRecording(false);
+    (void)util::LabelSteps::take();
+}
+
+TEST(LabelLaneRealData, DISABLED_TheTimesOfEachStepAndHop) {
     const std::string placementBody = util::read_file("test/fixtures/label_lane/gpt-placement-z10.json");
     const std::string namesBody = util::read_file("test/fixtures/label_lane/gpt-names-z10.json");
     const std::thread::id renderThread = std::this_thread::get_id();
@@ -439,25 +486,10 @@ TEST(LabelLaneRealData, OurStepsRunWhereEachArmPutsThemAndTheirTimesArePrinted) 
         for (const auto& [key, spread] : t.hop) {
             std::printf("   hop  %-24s work ms %s\n", key.c_str(), spread.str().c_str());
         }
-
-        ASSERT_GT(t.work, 0) << armName(arm) << ": no step of ours was recorded";
-        switch (arm) {
-            case Arm::Sync:
-                EXPECT_EQ(t.work, t.workOnRender) << "sync: a step of ours ran off the render thread";
-                break;
-            case Arm::Async:
-                EXPECT_EQ(0, t.workOnRender) << "async: a step of ours ran on the render thread";
-                EXPECT_EQ(0, t.workOnLane) << "async: a step of ours ran on the lane";
-                break;
-            case Arm::Lane:
-                EXPECT_EQ(0, t.workOnRender) << "lane: a step of ours ran on the render thread";
-                EXPECT_EQ(t.work, t.workOnLane) << "lane: a step of ours ran off the lane";
-                break;
-        }
     }
 }
 
-// ios-names' case, with the real placement and names bodies and the app's
+// With the real placement and names bodies and the app's
 // layers (several symbol layers, more than one tile): a filter change on
 // every label layer in one turn is laid out, and reported, while the very
 // next frame is made, for both sources; and the lane lays nothing out again
