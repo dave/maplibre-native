@@ -12,7 +12,7 @@ MapLibre welcomes participation and contributions from everyone. Please read [`M
 - Add `-[MLNMapViewDelegate mapView:willGlideToCenter:zoomLevel:direction:pitch:duration:]`, called with the camera a glide ends at, and `-[MLNMapView visibleCoordinateBoundsAtCenter:zoomLevel:direction:pitch:]`, the visible bounds at a camera the map is not at.
 - Add `MLNShapeSourceOptionLabelLane`, a GeoJSON source whose bodies are cut and laid out on a worker thread, off the map's thread; `MLNShapeSource.dataGeneration`, the number of the latest body or layer change; and `-[MLNMapViewDelegate mapView:sourceDidLayOut:generation:]`, called when every tile in view of a source is laid out with a generation.
 - Add `MLNShapeSource.landingLimit`: hold a GeoJSON source at a data generation, so that newer bodies are laid out but not drawn until the limit is raised.
-- Add `MLNTileSource.prefetchZoomDelta`: a tile source's own prefetch zoom delta, in place of the map's.
+- Add `MLNTileSource.prefetchZoomDelta`: a tile source's own prefetch zoom delta, in place of the map's. A value that is not a whole number from 0 to 255 raises `NSInvalidArgumentException`.
 - Add `-[MLNTileSource reloadEmptyTiles]`: ask again for the tiles in view whose last answer was empty or an error, without clearing the tiles on screen.
 - Add `MLNMapView.keepsRenderingOffWindow`: a map view that keeps rendering while its view tree is out of the window, for example under a pushed navigation page.
 - A source in a style keeps its `MLNSource` object until it leaves the style, so a lookup returns the same object with its state. The object, and for `MLNShapeSource` its shape, stays in memory while the source is in the style.

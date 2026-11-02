@@ -19,6 +19,8 @@
 #include <mln/style/sources/tile_source.hpp>
 #include <mln/util/tileset.hpp>
 
+#include <cmath>
+
 const MLNTileSourceOption MLNTileSourceOptionMinimumZoomLevel =
     @"MLNTileSourceOptionMinimumZoomLevel";
 const MLNTileSourceOption MLNTileSourceOptionMaximumZoomLevel =
@@ -65,7 +67,13 @@ const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem =
   MLNAssertStyleSourceIsValid();
   std::optional<uint8_t> delta;
   if (prefetchZoomDelta) {
-    delta = static_cast<uint8_t>(MIN(MAX(prefetchZoomDelta.integerValue, 0), 255));
+    const double value = prefetchZoomDelta.doubleValue;
+    if (value < 0 || value > 255 || value != std::floor(value)) {
+      [NSException
+           raise:NSInvalidArgumentException
+          format:@"prefetchZoomDelta %@ is not a whole number from 0 to 255.", prefetchZoomDelta];
+    }
+    delta = static_cast<uint8_t>(value);
   }
   self.rawSource->setPrefetchZoomDelta(delta);
 }
