@@ -2,6 +2,8 @@
 #import <XCTest/XCTest.h>
 #import <objc/runtime.h>
 
+#if MLN_RENDER_BACKEND_METAL
+
 /// Fulfills its expectation when it is freed: attached to an object, it is
 /// freed with that object.
 @interface MLNDeallocSignal : NSObject
@@ -206,6 +208,20 @@ static char MLNDeallocSignalKey;
     [self waitForExpectations:@[ freed ] timeout:10];
 }
 
+/// Set on a map in a superview that was never in a window, the flag cannot
+/// start the map: there is no screen to render on. It raises, and stays off.
+- (void)testSettingTheFlagOnAMapNeverInAWindowRaises {
+    NSURL *styleURL = [[NSBundle bundleForClass:[self class]] URLForResource:@"one-liner" withExtension:@"json"];
+    UIView *host = [[UIView alloc] initWithFrame:self.window.bounds];
+    MLNMapView *mapView = [[MLNMapView alloc] initWithFrame:host.bounds styleURL:styleURL];
+    [host addSubview:mapView];
+    XCTAssertNil(mapView.window);
+
+    XCTAssertThrowsSpecificNamed(mapView.keepsRenderingOffWindow = YES, NSException,
+                                 NSInternalInconsistencyException);
+    XCTAssertFalse(mapView.keepsRenderingOffWindow, @"the flag stays off");
+}
+
 /// Clearing the flag off the window stops the map at once.
 - (void)testClearingTheFlagOffTheWindowStopsTheMap {
     [self.flaggedHost removeFromSuperview];
@@ -229,3 +245,23 @@ static char MLNDeallocSignalKey;
 }
 
 @end
+
+#else
+
+/// Only the Metal renderer draws off a window. On any other renderer the flag
+/// raises, and stays off.
+@interface MLNMapViewOffWindowRenderingTests : XCTestCase
+@end
+
+@implementation MLNMapViewOffWindowRenderingTests
+
+- (void)testSettingTheFlagOnARendererThatCannotRaises {
+    MLNMapView *mapView = [[MLNMapView alloc] initWithFrame:CGRectMake(0, 0, 400, 400)];
+    XCTAssertThrowsSpecificNamed(mapView.keepsRenderingOffWindow = YES, NSException,
+                                 NSInvalidArgumentException);
+    XCTAssertFalse(mapView.keepsRenderingOffWindow, @"the flag stays off");
+}
+
+@end
+
+#endif

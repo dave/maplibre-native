@@ -38,6 +38,7 @@ public:
   void deleteView() override;
   UIImage* snapshot() override;
   void layoutChanged() override;
+  bool canRenderOffWindow() const override { return true; }
   MLNBackendResource* getObject() override;
   // End implementation of MLNMapViewImpl
 };

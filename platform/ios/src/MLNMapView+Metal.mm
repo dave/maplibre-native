@@ -230,8 +230,13 @@ void MLNMapViewMetalImpl::layoutChanged() {
       !(mapView.window || mapView.rendersOffWindow)) {
     return;
   }
-  MLNCAssert(mapView.window || resource.lastAppliedScaleFactor > 0,
-             @"a map renders off its window only after a layout in it");
+  if (!mapView.window && resource.lastAppliedScaleFactor <= 0) {
+    // keepsRenderingOffWindow refuses a map that was never in a window, so
+    // this is a bug: a 0×0 drawable would draw nothing.
+    MLNLogError(@"a map renders off its window only after a layout in it");
+    MLNCAssert(NO, @"a map renders off its window only after a layout in it");
+    return;
+  }
 
   const auto scaleFactor =
       mapView.window ? MLNEffectiveScaleFactorForView(mapView) : resource.lastAppliedScaleFactor;

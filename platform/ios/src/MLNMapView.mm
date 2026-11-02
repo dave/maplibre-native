@@ -1649,6 +1649,15 @@ public:
 
 - (void)setKeepsRenderingOffWindow:(BOOL)keepsRenderingOffWindow {
   MLNAssertIsMainThread();
+  if (keepsRenderingOffWindow && !_mbglView->canRenderOffWindow()) {
+    [NSException raise:NSInvalidArgumentException
+                format:@"keepsRenderingOffWindow needs the Metal renderer."];
+  }
+  if (keepsRenderingOffWindow && !self.window && self.superview && !self.lastWindowScreen) {
+    [NSException raise:NSInternalInconsistencyException
+                format:@"keepsRenderingOffWindow set on a map view off its window with no "
+                       @"screen to render on: it was never in a window."];
+  }
   _keepsRenderingOffWindow = keepsRenderingOffWindow;
 
   // Cleared off a window: stop, as a map that left its window without the flag.
@@ -1659,11 +1668,6 @@ public:
 
   // Set off a window: start at once, on the screen of the window the map left.
   if (keepsRenderingOffWindow && !self.window && self.superview && !self.offWindowScreen) {
-    if (!self.lastWindowScreen) {
-      MLNLogError(@"keepsRenderingOffWindow set on a map that was never in a window");
-      MLNAssert(NO, @"keepsRenderingOffWindow set on a map that was never in a window");
-      return;
-    }
     self.offWindowScreen = self.lastWindowScreen;
     [self resumeRenderingIfNecessary];
   }
