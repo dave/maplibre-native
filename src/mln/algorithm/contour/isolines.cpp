@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 namespace mln {
@@ -174,14 +174,15 @@ std::vector<ContourLineString> generateContours(std::span<const float> heights,
     // Per-threshold polyline accumulators. We key by level rounded to the
     // nearest interval-step, expressed as a signed integer multiple, to avoid
     // floating-point map-key headaches. The output is emitted in this map's
-    // order, so it stays a std::unordered_map filled in scan order; `byKey`
-    // finds a level's state without hashing (the map's elements stay in
-    // place, so the pointers stay valid).
-    std::unordered_map<long long, LevelState> levels;
+    // order: by elevation, and within a level in scan order, so it does not
+    // depend on a standard library's hash map. `byKey` finds a level's state
+    // without a tree search (the map's elements stay in place, so the pointers
+    // stay valid).
+    std::map<long long, LevelState> levels;
     const auto [minHeight, maxHeight] = std::minmax_element(
         heights.begin(), heights.begin() + static_cast<std::ptrdiff_t>(width) * height);
     // A tiny interval over a tall grid would make `byKey` huge; then every
-    // lookup hashes instead (the same result, only slower).
+    // lookup searches the map instead (the same result, only slower).
     const long long minKey = static_cast<long long>(std::floor(*minHeight / interval)) - 1;
     const long long maxKey = static_cast<long long>(std::ceil(*maxHeight / interval)) + 1;
     constexpr long long maxCachedLevels = 1 << 16;
