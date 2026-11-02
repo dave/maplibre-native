@@ -1,6 +1,6 @@
 # Native `contour` source for maplibre-native
 
-**Status:** Draft
+**Status:** Implemented in this fork. The style-spec side is not settled ([maplibre-style-spec#623](https://github.com/maplibre/maplibre-style-spec/pull/623) is a draft), and this implementation differs from that draft: see "Style spec".
 **Author:** Dave Brophy ([@dave](https://github.com/dave))
 **Tracks:** [maplibre-style-spec#583](https://github.com/maplibre/maplibre-style-spec/issues/583)
 
@@ -59,8 +59,7 @@ A new source type `contour` with this shape:
       "source": "dem",
       "intervals": [200, 9, 100, 10, 50, 11, 20, 12, 10],
       "unit": "meters",
-      "majorMultiplier": [5, 14, 4, 15, 5],
-      "overzoom": 0
+      "majorMultiplier": [5, 14, 4, 15, 5]
     }
   }
 }
@@ -71,21 +70,30 @@ A new source type `contour` with this shape:
 | `type` | string | yes | Always `"contour"`. |
 | `source` | string | yes | ID of the upstream `raster-dem` source whose tile pyramid drives generation. |
 | `intervals` | step-by-zoom number array | yes | Per-zoom contour interval in display units. Odd-length: `[output0, stop1, output1, stop2, …, outputN]`. |
-| `unit` | string \| number | no, default `"meters"` | `"meters"`, `"feet"`, or a positive number used as a metres→display multiplier. |
+| `unit` | string \| number | no, default `"meters"` | `"meters"`, `"feet"`, or a positive number that metres are multiplied by. |
 | `majorMultiplier` | step-by-zoom positive-integer array | no, default `[5]` | Same odd-length step-by-zoom shape as `intervals`. Tags every Nth contour level as `major: true` at each zoom band. |
-| `overzoom` | non-negative integer | no, default 0 | Levels of bilinear upsample to apply over the upstream DEM before running marching-squares (closes tile-edge seams when the contour source is rendered above the DEM's `maxzoom`). |
+
+This differs from the style-spec draft #623. There, `intervals` and
+`majorMultiplier` are a constant or a zoom expression, and `intervals` is
+optional. A numeric `unit` is the length of a custom unit, which metres are
+divided by. There is also an `overzoom` property, with a bilinear upsample of the
+DEM. We keep this shape until the spec settles; this source has no `overzoom`.
+
+Schedules are read at the map zoom a tile is drawn at: the whole zoom the tile
+pyramid covers, which is the map zoom rounded.
 
 The source emits standard vector-tile features that the existing
 `LineLayer` and `SymbolLayer` consume:
 
 | Property | Type | Description |
 |---|---|---|
-| `ele` | number | Elevation of the contour line in display units. |
+| `ele` | number | Elevation of the contour line in display units. A whole number if the interval is whole. |
 | `interval` | number | The contour interval used at this tile's zoom (display units). |
 | `major` | bool | True if this line is a multiple of `majorMultiplier × interval`. |
 
-(Implementations may emit additional engine-specific properties; the
-above are the canonical spec.)
+[`maplibre-contour`](https://github.com/onthegomap/maplibre-contour) emits other
+properties (`ele` and `level`), so a style written for one needs a change for the
+other.
 
 ### Architecture
 
@@ -110,19 +118,22 @@ Two new bits of plumbing make this work:
    events to cross-source consumers. Implemented as a `ListenerSet<>`
    (handle-based fan-out container — separate utility, also useful for
    future inter-source dependencies). The listener fires after the
-   existing border-stitching logic for a renderable tile and synchronously
-   replays already-loaded tiles when a new listener registers, to close
-   the race between consumer-pyramid update and DEM tile arrivals.
+   existing border-stitching logic when a tile settles (it has data, it has no
+   content, or it failed) and synchronously replays settled tiles when a new
+   listener registers, to close the race between consumer-pyramid update and DEM
+   tile arrivals. The contour source makes the tiles the DEM source makes, so each
+   contour tile hears from its DEM tile, and one with no data completes empty.
 2. **`TileParameters::getRenderSource`** is a `std::function<RenderSource*(const std::string&)>`
    populated by `RenderOrchestrator` and threaded into the per-frame
    `update()` calls. This is the first inter-source lookup mechanism in
    the renderer; it's deliberately minimal (just a pointer-by-id callback)
    and reusable for future source-on-source patterns.
 
-`RenderContourSource::update()` queries the orchestrator for its
-configured upstream raster-dem on the first call where the upstream has
-been constructed, registers a listener, and unregisters in its
-destructor.
+`RenderContourSource::update()` resolves its upstream raster-dem by ID on every
+call and holds it by weak pointer, because sibling sources are destroyed in no set
+order. When the upstream changes it moves its listener and drops its tiles. While
+there is no upstream, or its tileset has not loaded, it has no tiles. A `source` that
+does not resolve is one logged error.
 
 ### Algorithm
 
@@ -140,26 +151,30 @@ self-contained module with no MapLibre dependencies. Highlights:
   points are sparse and visually subtle. Center-average disambiguation
   is a future improvement; the algorithm's interface accommodates it
   without breaking existing callers.
-- **Tile-local int32 coordinates with configurable extent** (default 4096
-  via `ContourThresholds::extent`).
+- **Float heights**: lines come from each height with its fraction, not from
+  whole metres.
+- **Tile-local int32 coordinates with an extent the caller sets**
+  (`ContourThresholds::extent`). The contour tile uses `util::EXTENT`, 8192.
+- **Output in order of elevation**, then in scan order within a level.
 - **Smoothing and simplification are a separate stage** applied by the
-  contour-tile builder: Douglas-Peucker (half-tile-pixel tolerance) then
-  Chaikin (2 iterations). Keeping these out of the algorithm core makes
+  contour-tile builder: Douglas-Peucker then Chaikin (2 iterations, which keeps the
+  ends of an open line and treats a closed line as a ring). Keeping these out of the algorithm core makes
   it easy to test against `maplibre-contour`'s raw output and to skip a
   stage entirely when a consumer wants un-smoothed output.
 
 ### Threading
 
-Each contour tile snapshots its DEM heights synchronously on the render
+Each contour tile snapshots its DEM image synchronously on the render
 thread (avoids racing with DEMData::backfillBorder, which mutates the
-shared image as neighbour tiles arrive), then dispatches marching-squares
-to the background scheduler. The algorithm reply lands back on the
-render thread and calls `setData()` on the tile. A `WeakPtrFactory`
-guards against the contour tile being destroyed (panned away) before
-the reply arrives.
+shared image as neighbour tiles arrive), then dispatches the build
+to the background scheduler. The reply lands back on the render thread and
+calls `setData()` on the tile. A `WeakPtrFactory` guards against the contour tile
+being destroyed (panned away) before the reply arrives.
 
-Empirically: <30 ms per 256×256 grid on Apple Silicon at 10 thresholds
-with smoothing, well within the budget for live panning at 60 fps.
+A DEM arrival also notifies the up to eight neighbours whose borders it filled. The
+source queues tile IDs, so a batch of arrivals takes one snapshot per tile. A tile runs
+one build at a time, and calls made during a build cost one more build, of the newest
+image. Only the newest result is applied.
 
 ## API Modifications
 
@@ -178,7 +193,7 @@ with smoothing, well within the budget for live panning at 60 fps.
 - New `ContourTile` at `src/mln/tile/`.
 - `RenderRasterDEMSource` gains the listener API.
 - `TileParameters` gains the `getRenderSource` callback.
-- `ListenerSet<>` utility added at `include/mln/util/listener_set.hpp`.
+- `ListenerSet<>` utility added at `src/mln/util/listener_set.hpp`.
 
 No existing public API breaks. The `getRenderSource` callback in
 `TileParameters` is internal (not part of any SDK public surface).
@@ -193,9 +208,8 @@ This is a strictly additive change at the style-spec level:
   contributes vector features that style filters on `["get", "ele"]` /
   `["get", "major"]` consume.
 - The TS prototype (`maplibre-contour`) remains the gl-js path until
-  gl-js gains shared-pyramid support; both implementations agree on the
-  style-spec emit shape so the same style authoring works against
-  either.
+  gl-js gains shared-pyramid support. The two emit different feature properties,
+  so a style needs a change to move between them.
 
 ## Rejected Alternatives
 
@@ -236,33 +250,33 @@ type that has cross-source consumers, with no churn in `Tile`,
 
 ### Unit
 
-- `algorithm/contour/isolines.test.cpp` — marching-squares cases,
-  saddle disambiguation, multi-threshold single-pass emission, perf
-  smoke check.
+- `algorithm/contour/isolines.test.cpp` — marching-squares cases, the saddle
+  pairing, multi-threshold single-pass emission, output order.
 - `algorithm/contour/intervals.test.cpp` — per-zoom interval lookup,
   step-expression boundary semantics.
 - `algorithm/contour/units.test.cpp` — meters / feet / custom
   multiplier round-trips.
 - `algorithm/contour/smoothing.test.cpp` — Douglas-Peucker invariants
   (endpoint preservation, collinear drop, threshold strictness),
-  Chaikin endpoint pinning + monotonicity preservation.
+  Chaikin endpoint pinning on an open line, a closed line as a ring.
 - `style/sources/contour_source.test.cpp` — class construction +
   getters, JSON parser happy + rejection paths, idempotent round-trip
   (parse → reconstruct via getters → re-parse → equal).
 - `util/listener_set.test.cpp` — handle-based fan-out container.
+- `tile/contour_tile.test.cpp` — heights keep their fraction, one build at a
+  time, fractional intervals.
+- `tile/contour_fixtures.test.cpp` — real DEM tiles: lines meet across a tile
+  boundary.
+- `renderer/sources/render_contour_source.test.cpp` — a tile settles with data,
+  no content, an error or out of bounds; the DEM source changes or goes; the
+  interval at the map zoom; a bad `source`.
 
 ### Integration
 
-- Manual: deploy to iOS device with a representative DEM source +
-  contour source + line/symbol layers, pan over real terrain, confirm:
-  hard-coded line in the spike layer, then real contours, then
-  smoothed contours, all rendering as expected.
-
-### Cross-backend
-
-(Not yet covered in this proposal — the implementation has been
-verified on Metal only. Render-test fixtures across GL / Vulkan /
-WebGPU are required before merge.)
+- `api/contour_source.test.cpp` — a still render or a continuous map finishes
+  loading when a DEM tile has no content, fails, or is out of bounds.
+- Render tests in `metrics/integration/render-tests/contour-source/`, which
+  run on Metal, WebGPU, Vulkan and OpenGL in CI.
 
 ## Disclosure
 
