@@ -25,15 +25,24 @@ RasterDEMTile::RasterDEMTile(const OverscaledTileID& id_,
       mailbox(std::make_shared<Mailbox>(*Scheduler::GetCurrent())),
       worker(parameters.threadPool, ActorRef<RasterDEMTile>(*this, mailbox)) {
     encoding = tileset.rasterEncoding.value_or(Tileset::RasterEncoding::Mapbox);
-    if (id.canonical.y == 0) {
-        // this tile doesn't have upper neighboring tiles so marked those as backfilled
-        neighboringTiles = neighboringTiles | DEMTileNeighbors::NoUpper;
-    }
+    neighboringTiles = initialNeighbors(id_.canonical);
+}
 
-    if (id.canonical.y + 1 == std::pow(2, id.canonical.z)) {
-        // this tile doesn't have lower neighboring tiles so marked those as backfilled
-        neighboringTiles = neighboringTiles | DEMTileNeighbors::NoLower;
+DEMTileNeighbors RasterDEMTile::initialNeighbors(const CanonicalTileID& canonical) {
+    // A tile in the top or bottom row of the world has no neighbours above
+    // or below it, so those bits start as backfilled. The single tile at
+    // z0 is in both rows: NoUpperAndLower names that combination, so the
+    // result is always a named enum value.
+    const bool atTop = canonical.y == 0;
+    const bool atBottom = canonical.y + 1 == std::pow(2, canonical.z);
+    if (atTop && atBottom) {
+        return DEMTileNeighbors::NoUpperAndLower;
+    } else if (atTop) {
+        return DEMTileNeighbors::NoUpper;
+    } else if (atBottom) {
+        return DEMTileNeighbors::NoLower;
     }
+    return DEMTileNeighbors::Empty;
 }
 
 RasterDEMTile::~RasterDEMTile() {
@@ -79,33 +88,11 @@ void RasterDEMTile::setData(const std::shared_ptr<const std::string>& data) {
 
 void RasterDEMTile::onParsed(std::unique_ptr<HillshadeBucket> result, const uint64_t resultCorrelationID) {
     if (!obsolete) {
-        // The new bucket carries a freshly-parsed DEMData whose 1px border is
-        // seeded with edge-clamped pixels — no neighbour data has been backfilled
-        // into it yet. Reset neighboringTiles so that
-        // RenderRasterDEMSource::onTileChanged re-runs the backfill loop for
-        // every side. Otherwise sides whose bit is still set from the previous
-        // bucket are skipped (the iteration short-circuits on already-set
-        // masks), and the prepare pass renders with edge-clamped pixels at
-        // those edges, producing visible seams between tiles.
-        //
-        // NoUpper / NoLower bits (set in the ctor for tiles at the world's top
-        // and bottom rows, where there are no neighbours) must be preserved.
-        // The combined NoUpperAndLower case (zoom 0, single-tile world) is a
-        // named enum value rather than a chained OR so the static analyzer
-        // doesn't flag the bitwise combination as an out-of-range cast.
-        const bool atTop = (id.canonical.y == 0);
-        const bool atBottom = (id.canonical.y + 1 == std::pow(2, id.canonical.z));
-        DEMTileNeighbors initialMask;
-        if (atTop && atBottom) {
-            initialMask = DEMTileNeighbors::NoUpperAndLower;
-        } else if (atTop) {
-            initialMask = DEMTileNeighbors::NoUpper;
-        } else if (atBottom) {
-            initialMask = DEMTileNeighbors::NoLower;
-        } else {
-            initialMask = DEMTileNeighbors::Empty;
-        }
-        neighboringTiles = initialMask;
+        // The new bucket's DEMData has a border of edge-clamped pixels: no
+        // neighbour has been backfilled into it yet. Clear the bits, so that
+        // RenderRasterDEMSource::onTileChanged backfills every side again,
+        // in both directions (the neighbours hold this tile's old edge).
+        neighboringTiles = initialNeighbors(id.canonical);
         bucket = std::move(result);
         loaded = true;
         if (resultCorrelationID == correlationID) {

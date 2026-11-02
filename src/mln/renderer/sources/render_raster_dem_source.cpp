@@ -94,20 +94,20 @@ void RenderRasterDEMSource::onTileChanged(Tile& tile) {
                     auto& borderTile = static_cast<RasterDEMTile&>(*renderableNeighbor);
                     demtile.backfillBorder(borderTile, mask);
 
-                    // if the border tile has not been backfilled by a previous
-                    // instance of the main tile, backfill its corresponding
-                    // neighbor as well.
+                    // Backfill the neighbour from this tile as well, even when
+                    // its bit for this tile is already set. This tile's bit is
+                    // clear because it is new or has parsed a new body
+                    // (`RasterDEMTile::onParsed` clears its bits), so the
+                    // neighbour's border holds this tile's old edge or none.
                     const DEMTileNeighbors& borderMask = opposites[mask];
-                    if ((borderTile.neighboringTiles & borderMask) != borderMask) {
-                        borderTile.backfillBorder(demtile, borderMask);
-                        // Notify cross-source consumers: borderTile's DEMData
-                        // border just changed, anything derived from it (e.g.
-                        // contour-line tiles, which read the (dim+2) buffered
-                        // view) needs to regenerate so the new edge values
-                        // make it into emitted geometry.
-                        if (borderTile.isRenderable()) {
-                            tileLoadListeners.notify(borderTile);
-                        }
+                    borderTile.backfillBorder(demtile, borderMask);
+                    // Notify cross-source consumers: borderTile's DEMData
+                    // border just changed, so anything derived from it (e.g.
+                    // contour-line tiles, which read the buffered view with
+                    // its border) needs to regenerate so the new edge values
+                    // make it into emitted geometry.
+                    if (borderTile.isRenderable()) {
+                        tileLoadListeners.notify(borderTile);
                     }
                 }
             }
