@@ -130,7 +130,15 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
         }
     }
 
-    if (!data_) return;
+    if (!data_) {
+        // No body, so no tile to lay out: as for a source with no tile in view,
+        // the generation is laid out at once.
+        if (dataGeneration > reportedGeneration) {
+            reportedGeneration = dataGeneration;
+            laidOutGeneration = dataGeneration;
+        }
+        return;
+    }
 
     tilePyramid.update(layers,
                        needsRendering,

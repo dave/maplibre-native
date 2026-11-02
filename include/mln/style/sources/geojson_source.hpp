@@ -96,7 +96,10 @@ public:
     // landed), a layer change takes a generation but the source reports
     // nothing as new until the body lands, and the body then takes the
     // latest generation. An older body that lands while a newer one is
-    // pending keeps its own, lower, generation.
+    // pending keeps its own, lower, generation. A body that cannot be made
+    // (`setGeoJSONError`), or a URL that answers an error or nothing, is a
+    // source error: its own generation is never reported, and layer changes
+    // given out while it was pending are.
 
     /// The generation for a URL body: it is that body's once it has loaded.
     /// A second, different answer for the URL takes a new generation; the
@@ -166,6 +169,7 @@ protected:
 
 private:
     uint64_t landingGeneration(uint64_t generation);
+    void bodyWillNotLand(uint64_t generation);
 
     std::optional<std::string> url;
     uint64_t urlGeneration = 0;
