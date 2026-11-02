@@ -3,6 +3,7 @@
 ## main
 
 - Mark `LabelSteps`, the step recorder for debug probes and tests, `@RestrictTo(LIBRARY_GROUP)`: it is not public API. While the recorder is off it allocates nothing.
+- `Projection.getVisibleRegionAt(CameraPosition)` keeps the map's own zoom, bearing and tilt for a field the camera does not set, as `moveCamera` does. Before, an unset field was read as -1: zoom 0, bearing 359° and tilt 0.
 - The C++ unit test app (`test/android`) takes a `gtest_filter` instrumentation argument, so a run can name the tests it runs: `am instrument -e class android.app.NativeActivityTest -e gtest_filter '<filter>' …`. Without it the default filter is used, as before.
 - Make symbol guard checks opt-in, so symbol-dense tiles load faster. To keep them, set the environment variable `MLN_SYMBOL_GUARDS=1` before the first map loads.
 
