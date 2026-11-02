@@ -468,15 +468,25 @@ public final class MapLibreMap {
   /**
    * Symbols of these sources appear at full opacity when first placed, with
    * no fade-in. Fade-out and every other source are unchanged.
+   * <p>
+   * The ids replace the ones set before. They are a set: a repeated id counts once, and their order
+   * is not kept. An id with no source yet is kept, and applies when that source is added.
+   * </p>
    *
    * @param sourceIds the source ids
+   * @throws IllegalArgumentException if an element is null; the ids set before are kept
    */
   public void setNoFadeInSources(@NonNull String[] sourceIds) {
+    for (int i = 0; i < sourceIds.length; i++) {
+      if (sourceIds[i] == null) {
+        throw new IllegalArgumentException("setNoFadeInSources: the source id at index " + i + " is null");
+      }
+    }
     nativeMapView.setNoFadeInSources(sourceIds);
   }
 
   /**
-   * @return the sources whose symbols appear with no fade-in
+   * @return the sources whose symbols appear with no fade-in, in no set order
    * @see MapLibreMap#setNoFadeInSources(String[])
    */
   @NonNull

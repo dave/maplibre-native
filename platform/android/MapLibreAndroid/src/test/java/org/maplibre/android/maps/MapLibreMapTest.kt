@@ -12,6 +12,7 @@ import org.maplibre.android.style.layers.TransitionOptions
 import org.maplibre.android.utils.ConfigUtils
 import io.mockk.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -262,4 +263,14 @@ class MapLibreMapTest : BaseTest() {
         verify { nativeMapView.setZoom(2.0, target, 0) }
     }
 
+    @Test
+    fun aNullNoFadeInSourceIdIsRefusedBeforeItReachesNativeCode() {
+        val ids = arrayOf<String?>("labels", null)
+        val thrown = assertThrows(IllegalArgumentException::class.java) {
+            @Suppress("UNCHECKED_CAST")
+            maplibreMap.setNoFadeInSources(ids as Array<String>)
+        }
+        assertEquals("setNoFadeInSources: the source id at index 1 is null", thrown.message)
+        verify(exactly = 0) { nativeMapView.setNoFadeInSources(any()) }
+    }
 }
