@@ -185,7 +185,8 @@ MLN_EXPORT
 
 /**
  Initializes and returns a newly allocated map view with the specified frame
- and the default style.
+ and no style. The map view loads no style and stays blank until you set one
+ (`styleURL` or `styleJSON`).
 
  @param frame The frame for the view, measured in points.
  @return An initialized map view.
@@ -199,7 +200,8 @@ MLN_EXPORT
  @param frame The frame for the view, measured in points.
  @param styleURL URL of the map style to display. The URL may be a full HTTP
     or HTTPS URL, a canonical URL or a path to a local file relative
-    to the application’s resource path. Specify `nil` for the default style.
+    to the application’s resource path. Specify `nil` for no style: the map
+    view loads none, and stays blank until you set one.
  @return An initialized map view.
 
  #### Related examples
@@ -223,7 +225,8 @@ MLN_EXPORT
 
 /**
  Initializes and returns a newly allocated map view with the specified frame
- and the default style.
+ and options. With no style URL or style JSON in the options (or no options),
+ the map view loads no style and stays blank until you set one.
 
  @param frame The frame for the view, measured in points.
  @param options The map instance options
@@ -266,8 +269,10 @@ MLN_EXPORT
  The URL may be a full HTTP or HTTPS URL, canonical URL, or
  a path to a local file relative to the application’s resource path.
 
- If you set this property to `nil`, the receiver will use the default style
- and this property will automatically be set to that style’s URL.
+ This property is `nil` until a style URL is set: a map view made with no
+ style URL or style JSON loads no style. If you set this property to `nil`, the
+ receiver will use the default style (`MLNStyle.defaultStyleURL`) and this
+ property will automatically be set to that style’s URL.
 
  If you want to modify the current style without replacing it outright, or if
  you want to introspect individual style attributes, use the `style` property.
@@ -275,7 +280,7 @@ MLN_EXPORT
  #### Related examples
  - TODO: change the style of a map at runtime.
  */
-@property (nonatomic, null_resettable) NSURL *styleURL;
+@property (nonatomic, nullable) NSURL *styleURL;
 
 /**
  * The style JSON representation of the map.
