@@ -18,6 +18,8 @@
 #include <mln/util/convert.hpp>
 #include <mln/util/std.hpp>
 
+#include <algorithm>
+
 #if MLN_RENDER_BACKEND_METAL
 #include <mln/shaders/mtl/symbol.hpp>
 #endif // MLN_RENDER_BACKEND_METAL
@@ -70,16 +72,19 @@ void SymbolLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParamete
     const auto zoom = static_cast<float>(state.getZoom());
 
     if (!evaluatedPropsUniformBuffer || propertiesUpdated) {
+        // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
+        const float textOpacity = std::clamp(constOrDefault<TextOpacity>(evaluated), 0.0f, 1.0f);
+        const float iconOpacity = std::clamp(constOrDefault<IconOpacity>(evaluated), 0.0f, 1.0f);
         const SymbolEvaluatedPropsUBO propsUBO = {.text_fill_color = constOrDefault<TextColor>(evaluated),
                                                   .text_halo_color = constOrDefault<TextHaloColor>(evaluated),
-                                                  .text_opacity = constOrDefault<TextOpacity>(evaluated),
+                                                  .text_opacity = textOpacity,
                                                   .text_halo_width = constOrDefault<TextHaloWidth>(evaluated),
                                                   .text_halo_blur = constOrDefault<TextHaloBlur>(evaluated),
                                                   .pad1 = 0,
 
                                                   .icon_fill_color = constOrDefault<IconColor>(evaluated),
                                                   .icon_halo_color = constOrDefault<IconHaloColor>(evaluated),
-                                                  .icon_opacity = constOrDefault<IconOpacity>(evaluated),
+                                                  .icon_opacity = iconOpacity,
                                                   .icon_halo_width = constOrDefault<IconHaloWidth>(evaluated),
                                                   .icon_halo_blur = constOrDefault<IconHaloBlur>(evaluated),
                                                   .pad2 = 0};

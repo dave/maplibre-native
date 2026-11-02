@@ -1,0 +1,114 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 32,
+      "description": "A constant or zoom-function circle-stroke-opacity outside 0..1 is clamped, as a data-driven one is: the literal 50 draws as 1, the zoom function at -50 does not draw."
+    }
+  },
+  "center": [
+    0,
+    0
+  ],
+  "zoom": 0,
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "o": 50
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -11.25,
+                0
+              ]
+            }
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "o": -50
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                11.25,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "rgb(128, 128, 128)"
+      }
+    },
+    {
+      "id": "literal",
+      "type": "circle",
+      "source": "geojson",
+      "layout": {},
+      "filter": [
+        ">",
+        [
+          "get",
+          "o"
+        ],
+        0
+      ],
+      "paint": {
+        "circle-opacity": 0,
+        "circle-radius": 8,
+        "circle-stroke-width": 4,
+        "circle-stroke-color": "rgb(0, 128, 0)",
+        "circle-stroke-opacity": 50
+      }
+    },
+    {
+      "id": "zoom-function",
+      "type": "circle",
+      "source": "geojson",
+      "layout": {},
+      "filter": [
+        "<",
+        [
+          "get",
+          "o"
+        ],
+        0
+      ],
+      "paint": {
+        "circle-opacity": 0,
+        "circle-radius": 8,
+        "circle-stroke-width": 4,
+        "circle-stroke-color": "rgb(0, 128, 0)",
+        "circle-stroke-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          0,
+          -50,
+          1,
+          -50
+        ]
+      }
+    }
+  ]
+}

@@ -14,6 +14,8 @@
 #include <mln/util/logging.hpp>
 #include <mln/util/math.hpp>
 
+#include <algorithm>
+
 #if MLN_RENDER_BACKEND_METAL
 #include <mln/shaders/mtl/line.hpp>
 #endif // MLN_RENDER_BACKEND_METAL
@@ -122,8 +124,10 @@ void LineLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParameters
             .blur = (expressionMask & LineExpressionMask::Blur) ? LineBlur::defaultValue()
                                                                 : evaluate<LineBlur>(parameters),
 
-            .opacity = (expressionMask & LineExpressionMask::Opacity) ? LineOpacity::defaultValue()
-                                                                      : evaluate<LineOpacity>(parameters),
+            // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
+            .opacity = (expressionMask & LineExpressionMask::Opacity)
+                           ? LineOpacity::defaultValue()
+                           : std::clamp(evaluate<LineOpacity>(parameters), 0.0f, 1.0f),
 
             .gapwidth = (expressionMask & LineExpressionMask::GapWidth) ? LineGapWidth::defaultValue()
                                                                         : evaluate<LineGapWidth>(parameters),
@@ -165,7 +169,8 @@ void LineLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParameters
         const LineEvaluatedPropsUBO propsUBO{
             .color = evaluated.get<LineColor>().constantOr(LineColor::defaultValue()),
             .blur = evaluated.get<LineBlur>().constantOr(LineBlur::defaultValue()),
-            .opacity = evaluated.get<LineOpacity>().constantOr(LineOpacity::defaultValue()),
+            // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
+            .opacity = std::clamp(evaluated.get<LineOpacity>().constantOr(LineOpacity::defaultValue()), 0.0f, 1.0f),
             .gapwidth = evaluated.get<LineGapWidth>().constantOr(LineGapWidth::defaultValue()),
             .offset = evaluated.get<LineOffset>().constantOr(LineOffset::defaultValue()),
             .width = evaluated.get<LineWidth>().constantOr(LineWidth::defaultValue()),
@@ -173,9 +178,10 @@ void LineLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParameters
             .expressionMask = expressionMask,
             .pad1 = 0};
 #else
+        // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
         const LineEvaluatedPropsUBO propsUBO{.color = evaluate<LineColor>(parameters),
                                              .blur = evaluate<LineBlur>(parameters),
-                                             .opacity = evaluate<LineOpacity>(parameters),
+                                             .opacity = std::clamp(evaluate<LineOpacity>(parameters), 0.0f, 1.0f),
                                              .gapwidth = evaluate<LineGapWidth>(parameters),
                                              .offset = evaluate<LineOffset>(parameters),
                                              .width = evaluate<LineWidth>(parameters),

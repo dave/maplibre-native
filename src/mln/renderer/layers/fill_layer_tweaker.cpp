@@ -17,6 +17,8 @@
 #include <mln/util/convert.hpp>
 #include <mln/util/std.hpp>
 
+#include <algorithm>
+
 namespace mln {
 
 using namespace style;
@@ -41,7 +43,8 @@ void FillLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParameters
         const FillEvaluatedPropsUBO propsUBO = {
             .color = evaluated.get<FillColor>().constantOr(FillColor::defaultValue()),
             .outline_color = evaluated.get<FillOutlineColor>().constantOr(FillOutlineColor::defaultValue()),
-            .opacity = evaluated.get<FillOpacity>().constantOr(FillOpacity::defaultValue()),
+            // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
+            .opacity = std::clamp(evaluated.get<FillOpacity>().constantOr(FillOpacity::defaultValue()), 0.0f, 1.0f),
             .fade = crossfade.t,
             .from_scale = crossfade.fromScale,
             .to_scale = crossfade.toScale,
