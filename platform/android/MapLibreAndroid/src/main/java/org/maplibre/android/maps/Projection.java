@@ -168,6 +168,10 @@ public class Projection {
    * The region {@link #getVisibleRegion()} would give with the camera at [camera]'s target, zoom,
    * bearing and tilt, the map's padding ignored as there: the same screen corners, read by the map
    * as if it were there, into the same bounds. The map does not move.
+   * <p>
+   * A zoom, bearing or tilt that [camera] does not set (left at the builder's default) is the map's
+   * own, as in {@link MapLibreMap#moveCamera} with the same camera.
+   * </p>
    *
    * @param camera the camera to read the region at; it must have a target
    * @return the visible region at that camera
