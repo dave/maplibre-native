@@ -31,6 +31,14 @@ std::shared_ptr<ResourceProvider> providerOf(const std::string& url) {
     return it == providers().end() ? nullptr : it->second;
 }
 
+// The fork's etag, on an answer that has data or says "empty". A URL names its
+// data, so a later fetch step that carries the etag has nothing new to ask for.
+const char* const ownEtag = "mln-resource-provider";
+
+bool isLocalOnly(const Resource& resource) {
+    return !resource.hasLoadingMethod(Resource::LoadingMethod::Network);
+}
+
 uint64_t nextRequestID() {
     static std::atomic<uint64_t> last{0};
     return ++last;
@@ -39,23 +47,38 @@ uint64_t nextRequestID() {
 // One request. One atomic state decides how it ends: an answer or a cancel, never both.
 class Responder final : public ProviderResponder {
 public:
-    Responder(FileSource::Callback callback_, std::string url_)
+    Responder(FileSource::Callback callback_, const Resource& resource)
         : callback(std::move(callback_)),
-          url(std::move(url_)) {}
+          url(resource.url),
+          kind(resource.kind),
+          localOnly(isLocalOnly(resource)) {}
 
     void data(std::shared_ptr<const std::string> bytes) override {
+        if (!bytes) {
+            answerError(Response::Error::Reason::Other, "Resource provider answered no bytes for " + url);
+            return;
+        }
         Response response;
         response.data = std::move(bytes);
+        response.etag = ownEtag;
         answer(response);
     }
     void empty() override {
         Response response;
         response.noContent = true;
+        response.etag = ownEtag;
         answer(response);
     }
-    void unavailable(std::string why) override { answerError(Response::Error::Reason::Connection, why); }
-    void notFound(std::string why) override { answerError(Response::Error::Reason::NotFound, why); }
-    void error(std::string why) override { answerError(Response::Error::Reason::Other, why); }
+    void unavailable(std::string why) override { answerFailure(Response::Error::Reason::Connection, why); }
+    void notFound(std::string why) override {
+        if (kind == Resource::Tile && !localOnly) {
+            // A tile that is not there is an empty tile, as for an HTTP 404.
+            empty();
+        } else {
+            answerFailure(Response::Error::Reason::NotFound, why);
+        }
+    }
+    void error(std::string why) override { answerFailure(Response::Error::Reason::Other, why); }
 
     /// True if the request had no answer yet: it is cancelled now.
     bool cancel() {
@@ -69,6 +92,12 @@ private:
         Answered,
         Cancelled
     };
+
+    void answerFailure(Response::Error::Reason reason, const std::string& why) {
+        // In a local step every failure is "not stored": the fetch step comes
+        // next, and reports any error, once.
+        answerError(localOnly ? Response::Error::Reason::NotFound : reason, why);
+    }
 
     void answerError(Response::Error::Reason reason, const std::string& why) {
         Response response;
@@ -88,6 +117,8 @@ private:
 
     const FileSource::Callback callback;
     const std::string url;
+    const Resource::Kind kind;
+    const bool localOnly;
     std::atomic<State> state{State::Waiting};
 };
 
@@ -135,8 +166,17 @@ ResourceProviderFileSource::ResourceProviderFileSource(const ResourceOptions& re
       clientOptions(clientOptions_.clone()) {}
 
 std::unique_ptr<AsyncRequest> ResourceProviderFileSource::request(const Resource& resource, Callback callback) {
+    if (!isLocalOnly(resource) && resource.priorEtag == ownEtag) {
+        // The first step's answer, or a tile taken back from the tile pyramid's
+        // cache: the requester holds this data. Not asked again, so not parsed again.
+        Response response;
+        response.notModified = true;
+        response.etag = ownEtag;
+        callback(response);
+        return std::make_unique<AsyncRequest>();
+    }
     auto provider = providerOf(resource.url);
-    auto responder = std::make_shared<Responder>(std::move(callback), resource.url);
+    auto responder = std::make_shared<Responder>(std::move(callback), resource);
     if (!provider) {
         // Removed since `canRequest` said yes.
         responder->error("No resource provider for " + resource.url);
@@ -147,7 +187,7 @@ std::unique_ptr<AsyncRequest> ResourceProviderFileSource::request(const Resource
                                   .url = resource.url,
                                   .sourceID = resource.sourceID,
                                   .tile = resource.tileData,
-                                  .localOnly = !resource.hasLoadingMethod(Resource::LoadingMethod::Network),
+                                  .localOnly = isLocalOnly(resource),
                                   .priority = resource.priority};
     provider->start(request, responder);
     return std::make_unique<ProviderAsyncRequest>(provider, responder, request.id);
