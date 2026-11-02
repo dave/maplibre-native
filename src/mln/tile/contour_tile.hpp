@@ -52,6 +52,10 @@ public:
         std::int64_t majorMultiplier = 0;
         // Controls the metres↔display conversion.
         algorithm::contour::UnitConfig unit;
+        // The tile's size in pixels at its own zoom. It sets the simplify
+        // tolerance, which is half of such a pixel: a tile of 8192 units across
+        // 512 pixels has 16 units to a pixel. It does not grow with overscaling.
+        double tileSize = 512.0;
     };
 
     // Populate the tile from an upstream DEM tile that just finished parsing.

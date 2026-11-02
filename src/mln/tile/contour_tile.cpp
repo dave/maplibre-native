@@ -28,13 +28,6 @@ namespace mln {
 
 namespace {
 
-// Half-pixel-in-tile-local-units, used as the Douglas-Peucker simplification
-// tolerance. With `util::EXTENT = 8192` across a 512-px MapLibre vector
-// tile, one device pixel is 16 tile-local units; half a pixel is 8.
-// Sub-pixel wiggle gets dropped before Chaikin's corner-cutting so the
-// smoothing pass doesn't waste iterations on noise.
-constexpr double kSimplifyEpsilon = 8.0;
-
 // Two iterations of Chaikin gives a noticeable smoothing of the
 // marching-squares staircase without ballooning the vertex count
 // (each iteration roughly doubles vertices). Empirically a good
@@ -180,7 +173,7 @@ std::vector<std::vector<algorithm::contour::Point2D>> clipPolylineToTile(
 // Pipeline per line:
 //   1. Clip to the [0, EXTENT] tile bbox so endpoints land on the
 //      boundary at the shared crossing point.
-//   2. Douglas-Peucker simplification (drops sub-pixel wiggle so
+//   2. Douglas-Peucker simplification (drops wiggle below half a pixel so
 //      Chaikin doesn't waste iterations on noise).
 //   3. Chaikin corner-cutting (endpoints preserved by the algorithm,
 //      and now also clamped to the tile boundary so adjacent tiles'
@@ -190,7 +183,8 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
     const std::vector<algorithm::contour::ContourLineString>& lines,
     const algorithm::contour::UnitConfig& unit,
     double intervalDisplayUnits,
-    std::int64_t majorMultiplier) {
+    std::int64_t majorMultiplier,
+    double simplifyTolerance) {
     mapbox::feature::feature_collection<std::int16_t> features;
     features.reserve(lines.size());
 
@@ -210,7 +204,7 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
 
         for (auto& clipped : clipPolylineToTile(work)) {
             if (clipped.size() < 2) continue;
-            const auto simplified = algorithm::contour::douglasPeucker(clipped, kSimplifyEpsilon);
+            const auto simplified = algorithm::contour::douglasPeucker(clipped, simplifyTolerance);
             if (simplified.size() < 2) continue;
             const auto smoothed = algorithm::contour::chaikin(simplified, kChaikinIterations);
             if (smoothed.size() < 2) continue;
@@ -355,7 +349,11 @@ mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(con
         }
         shifted.push_back(std::move(s));
     }
-    return toFeatures(shifted, options.unit, options.intervalDisplayUnits, options.majorMultiplier);
+    // Half a pixel of the tile at its own zoom. Overscaling does not shrink it: the
+    // DEM has no more detail above its maxzoom, and a smaller tolerance only keeps
+    // more of the staircase of its cells, at up to four times the vertices.
+    const double simplifyTolerance = 0.5 * static_cast<double>(util::EXTENT) / options.tileSize;
+    return toFeatures(shifted, options.unit, options.intervalDisplayUnits, options.majorMultiplier, simplifyTolerance);
 }
 
 void ContourTile::populate(const DEMSnapshot& snapshot_, const LineOptions& options) {

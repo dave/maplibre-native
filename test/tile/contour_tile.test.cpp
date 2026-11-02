@@ -272,3 +272,27 @@ TEST(ContourTile, NoDataDropsABuildStillRunning) {
     test.loop.runOnce();
     EXPECT_EQ(generation, tile.populatedGeneration());
 }
+
+// The simplify tolerance is half a pixel of the tile at its own zoom.
+TEST(ContourTile, SimplifyToleranceFollowsTheTileSize) {
+    // The number of points of a straight 100 m line with a bend of this many tile
+    // units in one row.
+    const auto points = [&](double bend, double tileSize) {
+        constexpr int bendRow = 10;
+        const double shift = bend / 512.0; // A cell is 512 units, and 1 m across it.
+        const auto snapshot = terrariumSnapshot([&](int x, int y) {
+            const double height = x < 10 ? 99.5 : 100.5;
+            return y == bendRow ? height - shift : height;
+        });
+        const auto features = ContourTile::buildFeatures(
+            snapshot, {.intervalDisplayUnits = 100.0, .majorMultiplier = 5, .unit = {}, .tileSize = tileSize});
+        EXPECT_EQ(1u, features.size());
+        return features.empty() ? std::size_t{0} : features[0].geometry.get<ContourLine>().size();
+    };
+
+    // 256 px: half a pixel is 16 units, so a bend of 12 goes.
+    EXPECT_EQ(2u, points(12.0, 256.0));
+    // 512 px: half a pixel is 8 units, so a bend of 12 stays and one of 4 goes.
+    EXPECT_GT(points(12.0, 512.0), 2u);
+    EXPECT_EQ(2u, points(4.0, 512.0));
+}
