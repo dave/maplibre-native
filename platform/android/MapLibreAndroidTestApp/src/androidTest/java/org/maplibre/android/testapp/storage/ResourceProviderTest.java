@@ -15,8 +15,13 @@ import org.maplibre.android.storage.ResourceProviderCounts;
 import org.maplibre.android.storage.ResourceProviders;
 import org.maplibre.android.storage.ResourceRequest;
 import org.maplibre.android.style.layers.CircleLayer;
+import org.maplibre.android.style.layers.HillshadeLayer;
 import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.layers.RasterLayer;
 import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.android.style.sources.RasterDemSource;
+import org.maplibre.android.style.sources.RasterSource;
+import org.maplibre.android.style.sources.ReloadFilter;
 import org.maplibre.android.style.sources.TileSet;
 import org.maplibre.android.style.sources.VectorSource;
 import org.maplibre.android.testapp.action.MapLibreMapAction;
@@ -26,8 +31,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BooleanSupplier;
@@ -328,6 +335,119 @@ public class ResourceProviderTest extends EspressoTest {
       held.get(0).answerData(bytes("late"));
       assertEquals(0, inFlight());
       assertEquals(before, ResourceProviders.getCounts(SCHEME).getPeakInFlight());
+    });
+  }
+
+  /** Tiles of a source whose id starts with "fails" answer an error; the others answer empty. */
+  private static Provider tileProvider() {
+    return new Provider(request -> {
+      if (request.isLocalOnly()) {
+        request.answerNotFound("not stored");
+      } else if (request.getSourceId().startsWith("fails")) {
+        request.answerUnavailable("no network now");
+      } else {
+        request.answerEmpty();
+      }
+    });
+  }
+
+  private static int asks(Provider provider, String sourceId) {
+    int asks = 0;
+    for (ResourceRequest request : new ArrayList<>(provider.started)) {
+      if (!request.isLocalOnly() && request.getSourceId().equals(sourceId)) {
+        asks++;
+      }
+    }
+    return asks;
+  }
+
+  /**
+   * The fetch asks for a URL already asked for. The map can go on asking for new tiles, such as
+   * the parents of a failed tile, so only a repeat shows that a tile was asked again.
+   */
+  private static int repeats(Provider provider, String sourceId) {
+    Set<String> urls = new HashSet<>();
+    for (ResourceRequest request : new ArrayList<>(provider.started)) {
+      if (!request.isLocalOnly() && request.getSourceId().equals(sourceId)) {
+        urls.add(request.getUrl());
+      }
+    }
+    return asks(provider, sourceId) - urls.size();
+  }
+
+  private VectorSource addVectorSource(String id) {
+    VectorSource source = new VectorSource(id, new TileSet("2.2.0", SCHEME + "://" + id + "/{z}/{x}/{y}.pbf"));
+    maplibreMap.getStyle().addSource(source);
+    LineLayer layer = new LineLayer(id + "-lines", id);
+    layer.setSourceLayer("lines");
+    maplibreMap.getStyle().addLayer(layer);
+    return source;
+  }
+
+  @Test
+  public void reloadTilesAsksAgainOnlyForTheTilesItsFilterNames() {
+    validateTestSetup();
+    Provider provider = tileProvider();
+    ResourceProviders.register(SCHEME, provider);
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(0, 0), 2));
+      VectorSource empty = addVectorSource("empty-tiles");
+      VectorSource fails = addVectorSource("fails-tiles");
+      VectorSource marker = addVectorSource("marker-tiles");
+      waitFor(uiController, () -> asks(provider, "empty-tiles") > 0 && asks(provider, "fails-tiles") > 0
+        && asks(provider, "marker-tiles") > 0 && inFlight() == 0, "every tile answered");
+
+      int emptyRepeats = repeats(provider, "empty-tiles");
+      int failsRepeats = repeats(provider, "fails-tiles");
+      empty.reloadTiles(ReloadFilter.FAILED);
+      fails.reloadTiles(ReloadFilter.EMPTY);
+      // Two rounds of the marker: a second update's ask comes after every ask of the first.
+      for (int round = 0; round < 2; round++) {
+        int markerRepeats = repeats(provider, "marker-tiles");
+        marker.reloadTiles(ReloadFilter.EMPTY);
+        waitFor(uiController, () -> repeats(provider, "marker-tiles") > markerRepeats && inFlight() == 0,
+          "the marker asked again and answered");
+      }
+      assertEquals("FAILED on an empty tile", emptyRepeats, repeats(provider, "empty-tiles"));
+      assertEquals("EMPTY on a failed tile", failsRepeats, repeats(provider, "fails-tiles"));
+
+      empty.reloadTiles(ReloadFilter.EMPTY);
+      waitFor(uiController, () -> repeats(provider, "empty-tiles") > emptyRepeats, "EMPTY on an empty tile");
+      fails.reloadTiles(ReloadFilter.FAILED);
+      waitFor(uiController, () -> repeats(provider, "fails-tiles") > failsRepeats, "FAILED on a failed tile");
+
+      int emptyRepeatsThen = repeats(provider, "empty-tiles");
+      int failsRepeatsThen = repeats(provider, "fails-tiles");
+      empty.reloadTiles(ReloadFilter.EMPTY_AND_FAILED);
+      fails.reloadTiles(ReloadFilter.EMPTY_AND_FAILED);
+      waitFor(uiController, () -> repeats(provider, "empty-tiles") > emptyRepeatsThen, "both on an empty tile");
+      waitFor(uiController, () -> repeats(provider, "fails-tiles") > failsRepeatsThen, "both on a failed tile");
+    });
+  }
+
+  @Test
+  public void reloadTilesReachesRasterAndRasterDemSources() {
+    validateTestSetup();
+    Provider provider = tileProvider();
+    ResourceProviders.register(SCHEME, provider);
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(0, 0), 2));
+      RasterSource raster = new RasterSource("raster", new TileSet("2.2.0", SCHEME + "://raster/{z}/{x}/{y}.png"));
+      RasterDemSource dem = new RasterDemSource("dem", new TileSet("2.2.0", SCHEME + "://dem/{z}/{x}/{y}.png"));
+      maplibreMap.getStyle().addSource(raster);
+      maplibreMap.getStyle().addSource(dem);
+      maplibreMap.getStyle().addLayer(new RasterLayer("raster-layer", "raster"));
+      maplibreMap.getStyle().addLayer(new HillshadeLayer("dem-layer", "dem"));
+      waitFor(uiController, () -> asks(provider, "raster") > 0, "a raster tile asked for");
+      waitFor(uiController, () -> asks(provider, "dem") > 0, "a raster-dem tile asked for");
+      waitFor(uiController, () -> inFlight() == 0, "every tile answered");
+
+      int rasterRepeats = repeats(provider, "raster");
+      raster.reloadTiles(ReloadFilter.EMPTY);
+      waitFor(uiController, () -> repeats(provider, "raster") > rasterRepeats, "a raster tile asked again");
+      int demRepeats = repeats(provider, "dem");
+      dem.reloadTiles(ReloadFilter.EMPTY);
+      waitFor(uiController, () -> repeats(provider, "dem") > demRepeats, "a raster-dem tile asked again");
     });
   }
 

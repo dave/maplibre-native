@@ -33,6 +33,11 @@ void RasterSource::reloadEmptyTiles(jni::JNIEnv&) {
     source.as<mln::style::RasterSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
+void RasterSource::reloadTiles(jni::JNIEnv&, jni::jint filter) {
+    // The value of ReloadFilter.nativeValue, which is the core enum's.
+    source.as<mln::style::RasterSource>()->reloadTiles(static_cast<mln::style::ReloadFilter>(filter));
+}
+
 jni::Local<jni::Object<Source>> RasterSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<RasterSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -54,7 +59,8 @@ void RasterSource::registerNative(jni::JNIEnv& env) {
         "initialize",
         "finalize",
         METHOD(&RasterSource::getURL, "nativeGetUrl"),
-        METHOD(&RasterSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
+        METHOD(&RasterSource::reloadEmptyTiles, "nativeReloadEmptyTiles"),
+        METHOD(&RasterSource::reloadTiles, "nativeReloadTiles"));
 }
 
 } // namespace android

@@ -28,6 +28,8 @@ private:
 
     void reloadEmptyTiles(jni::JNIEnv&);
 
+    void reloadTiles(jni::JNIEnv&, jni::jint filter);
+
     jni::Local<jni::Object<Source>> createJavaPeer(jni::JNIEnv&);
 
 }; // class VectorSource
