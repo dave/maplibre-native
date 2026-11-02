@@ -484,6 +484,12 @@ MLN_EXPORT
  The display link does not keep the map view alive: a map view that renders
  off its window is freed with its view tree.
 
+ Setting this property to `YES` raises an `NSInternalInconsistencyException`
+ on a map view that is in a superview but was never in a window (there is no
+ screen to render on), and an `NSInvalidArgumentException` with a renderer
+ other than Metal (only Metal draws off a window). The property is unchanged
+ then.
+
  The default value of this property is `NO`, which stops rendering when the map
  view leaves its window.
  */
