@@ -5,6 +5,9 @@
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_observer.hpp>
 #include <mln/map/map_options.hpp>
+#if defined(__APPLE__)
+#include <mln/map/map_snapshotter.hpp>
+#endif
 #include <mln/storage/database_file_source.hpp>
 #include <mln/storage/main_resource_loader.hpp>
 #include <mln/storage/online_file_source.hpp>
@@ -846,3 +849,41 @@ TEST(ResourceProvider, AnEmptyTileInTheCacheAsksAgainWhenShownAfterAReload) {
     test.map.jumpTo(CameraOptions().withCenter(LatLng{0.5, 0.5}));
     EXPECT_TRUE(runUntil(test.loop, [&] { return drawnFills(test) > 0; }, "the tiles after the pan back"));
 }
+
+// A snapshotter takes its file source from the same process-wide manager as a map, so
+// it reaches a provider. Only some platforms build the snapshotter into the core.
+#if defined(__APPLE__)
+TEST(ResourceProvider, ASnapshotterReachesTheProvider) {
+    util::RunLoop loop;
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest& request, ProviderResponder& responder) {
+        if (request.localOnly) {
+            responder.notFound("not stored");
+        } else {
+            responder.data(mvt());
+        }
+    };
+    MapSnapshotter snapshotter(Size{256, 256}, 1.0f, ResourceOptions{}, ClientOptions{});
+    snapshotter.setStyleJSON(R"({"version": 8,
+        "sources": {"tiles": {"type": "vector", "tiles": ["provider-test://tiles/{z}/{x}/{y}"]}},
+        "layers": [{"id": "water", "type": "fill", "source": "tiles", "source-layer": "water",
+                    "paint": {"fill-color": "#ff0000"}}]})");
+    snapshotter.setCameraOptions(CameraOptions().withCenter(LatLng{0.5, 0.5}).withZoom(3));
+    bool done = false;
+    std::exception_ptr error;
+    PremultipliedImage image;
+    snapshotter.snapshot([&](std::exception_ptr failure, PremultipliedImage result, auto&&...) {
+        error = failure;
+        image = std::move(result);
+        done = true;
+    });
+    ASSERT_TRUE(runUntil(loop, [&] { return done; }, "the snapshot"));
+    EXPECT_EQ(nullptr, error) << util::toString(error);
+    EXPECT_GT(registered.provider->started(), 0u);
+    bool drewRed = false;
+    for (std::size_t i = 0; i + 3 < image.bytes(); i += 4) {
+        drewRed = drewRed || (image.data[i] > 200 && image.data[i + 1] < 50 && image.data[i + 3] > 200);
+    }
+    EXPECT_TRUE(drewRed) << "the snapshot did not draw the provider's tile";
+}
+#endif
