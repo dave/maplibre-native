@@ -2390,7 +2390,8 @@ public final class MapLibreMap {
   }
 
   /**
-   * The kind of a gesture glide.
+   * The kind of a gesture glide. Android only: the iOS report,
+   * {@code mapView:willGlideToCenter:zoomLevel:direction:pitch:duration:}, has no such argument.
    */
   public enum GlideKind {
     /** A pan fling: the centre moves, zoom, bearing and tilt stay. */
@@ -2402,9 +2403,17 @@ public final class MapLibreMap {
   /**
    * Interface definition for a callback to be invoked when a gesture starts a glide whose end is known.
    * <p>
-   * Called on the main thread, just before the glide's first frame. Nothing is reported for a rotate
-   * glide, or when a pan and a zoom or rotate glide start at the same lift (they interrupt each other).
-   * The glide can still be cut short (a touch, or any camera change); the next camera idle tells.
+   * Reported for the map's own input: a pan fling, a scale fling, a double tap, a two-finger tap and
+   * the zoom keys. Nothing is reported for a rotate glide, for a camera change the app makes, or
+   * when a pan and a zoom or rotate glide start at the same lift (they interrupt each other).
+   * </p>
+   * <p>
+   * Called on the main thread once the glide has started, before its first frame. The target is the
+   * camera of the glide's last frame, worked out from the camera before the glide. The glide can still
+   * be cut short (a touch, or a camera change); the next camera idle tells. A listener should not move
+   * the camera: that cuts a pan glide short, and a zoom glide then goes on from the new camera, so it
+   * does not end at the target. With {@link #setLatLngBoundsForCameraTarget(LatLngBounds) bounds} that
+   * hold the camera back during a zoom glide, the end can differ from the target.
    * </p>
    *
    * @see MapLibreMap#addOnCameraGlideListener(OnCameraGlideListener)
