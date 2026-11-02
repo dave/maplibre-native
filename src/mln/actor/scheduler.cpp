@@ -74,8 +74,8 @@ namespace {
 
 // Two threads: in the headless real-data check (LabelLaneRealData) the two
 // label sources' work in series filled about 90% of a body's time to its
-// layout on one thread, and two cut the median by about 10 ms (lead,
-// 2026-10-15). Each mailbox still runs one message at a time.
+// layout on one thread, and two cut the median by about 10 ms. Each mailbox
+// still runs one message at a time.
 class LabelLaneScheduler final : public ThreadedScheduler {
 public:
     LabelLaneScheduler()
