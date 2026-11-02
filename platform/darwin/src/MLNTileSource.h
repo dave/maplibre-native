@@ -200,7 +200,8 @@ MLN_EXPORT
  How many zoom levels below the ideal one this source also loads, to show
  something sooner while its tiles load. `nil` (the default) uses the map's
  setting (`MLNMapView.prefetchesTiles`); `@0` turns prefetching off for this
- source only. Core: `mbgl::style::Source::setPrefetchZoomDelta`.
+ source only. A value that is not a whole number from 0 to 255 raises an
+ `NSInvalidArgumentException`.
  */
 @property (nonatomic, copy, nullable) NSNumber *prefetchZoomDelta;
 
