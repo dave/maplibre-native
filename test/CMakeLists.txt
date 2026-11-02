@@ -35,6 +35,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/renderer/renderable.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/shader_registry.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/sources/render_contour_source.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/renderer/sources/render_raster_dem_source.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/sources/render_source_tile_error.test.cpp
     $<$<BOOL:${MLN_WITH_WEBGPU}>:${PROJECT_SOURCE_DIR}/test/renderer/wgsl_preprocessor.test.cpp>
     ${PROJECT_SOURCE_DIR}/test/sprite/sprite_loader.test.cpp
