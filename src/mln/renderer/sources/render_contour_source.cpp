@@ -34,16 +34,13 @@ RenderContourSource::RenderContourSource(Immutable<style::ContourSource::Impl> i
                                          const TaggedScheduler& threadPool_)
     : RenderTileSource(std::move(impl_), threadPool_) {}
 
-// Intentionally do NOT call upstream->removeTileLoadListener here.
-// Sibling-source destruction order in RenderOrchestrator's
-// std::unordered_map<std::string, std::unique_ptr<RenderSource>> is
-// unspecified, so by the time we run, the upstream raster-dem source
-// may already have been destroyed — dereferencing `upstream` would be
-// a use-after-free. The listener_set is owned by upstream, so any
-// still-registered listener is destroyed when upstream itself is.
-// The listener closure captures only a WeakPtr to this source, so it
-// safely no-ops if it fires (e.g. mid-notify) after we're gone.
-RenderContourSource::~RenderContourSource() = default;
+// RenderOrchestrator destroys sibling sources in no set order, so the upstream
+// may already be gone. Then its listeners went with it.
+RenderContourSource::~RenderContourSource() {
+    if (RenderRasterDEMSource* dem = upstream.get(); dem != nullptr && listenerHandle) {
+        dem->removeTileLoadListener(*listenerHandle);
+    }
+}
 
 const style::ContourSource::Impl& RenderContourSource::impl() const {
     return static_cast<const style::ContourSource::Impl&>(*baseImpl);
@@ -62,7 +59,8 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
     // While the DEM source or its tileset is not there, the contour source has
     // no tiles: nothing could arrive for them, and the tile coords are not
     // known. The style's own load state covers a tileset that is still loading.
-    const auto demZoomRange = upstream != nullptr ? upstream->getZoomRange() : std::nullopt;
+    RenderRasterDEMSource* const dem = upstream.get();
+    const auto demZoomRange = dem != nullptr ? dem->getZoomRange() : std::nullopt;
     if (!demZoomRange) {
         tilePyramid.update(
             layers, /*needsRendering=*/false, needsRelayout, parameters, *baseImpl, util::tileSize_I, {0, 0}, {}, {});
@@ -79,22 +77,22 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
                        needsRendering,
                        needsRelayout,
                        parameters,
-                       *upstream->baseImpl,
-                       upstream->getTileSize(),
+                       *dem->baseImpl,
+                       dem->getTileSize(),
                        *demZoomRange,
-                       upstream->getBounds(),
+                       dem->getBounds(),
                        [&](const OverscaledTileID& tileID, TileObserver* observer_) {
                            auto tile = std::make_unique<ContourTile>(tileID, impl().id, parameters, observer_);
                            // If the DEM tile has already settled, settle this one
                            // now: its notification came before this tile existed.
-                           if (const RasterDEMTile* dem = upstream->getTile(tileID)) {
-                               if (dem->isRenderable()) {
+                           if (const RasterDEMTile* demTile = dem->getTile(tileID)) {
+                               if (demTile->isRenderable()) {
                                    const auto& opts = impl().getOptions();
                                    const double zoom = static_cast<double>(tileID.canonical.z);
                                    const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
                                    const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
-                                   tile->populateFromDEM(*dem, interval, major, opts.unit);
-                               } else if (dem->isComplete()) {
+                                   tile->populateFromDEM(*demTile, interval, major, opts.unit);
+                               } else if (demTile->isComplete()) {
                                    tile->setNoData();
                                }
                            }
@@ -119,23 +117,27 @@ void RenderContourSource::rebindUpstream(const TileParameters& parameters) {
         }
     }
 
-    if (resolved == upstream) {
+    RenderRasterDEMSource* const previous = upstream.get();
+    if (resolved == previous) {
         return; // No change — keep existing subscription as-is.
     }
 
-    // Identity changed (added, removed, or swapped). Drop the old handle
-    // without dereferencing the (possibly destroyed) previous upstream —
-    // its listener_set was destroyed with it, so any registered listener
-    // is already gone. Only the handle integer remains, and we can safely
-    // forget it.
+    // The upstream changed (added, removed, or swapped). If the previous one is
+    // gone its listeners went with it. Tiles and snapshots from it do not
+    // describe the new upstream, and a tile still waiting on it would wait for
+    // ever.
+    if (previous != nullptr && listenerHandle) {
+        previous->removeTileLoadListener(*listenerHandle);
+    }
     listenerHandle.reset();
-    upstream = resolved;
-    if (upstream != nullptr) {
+    pendingPopulate.clear();
+    tilePyramid.clearAll();
+    upstream = resolved != nullptr ? resolved->makeWeakPtr() : mapbox::base::WeakPtr<RenderRasterDEMSource>{};
+    if (resolved != nullptr) {
         // Capture both `this` (for member access) and a WeakPtr (for
         // liveness). The lock-and-check pattern keeps `this` pinned during
-        // the call and bails out if the source has been destroyed — the
-        // listener_set may outlive us briefly during multi-source teardown.
-        listenerHandle = upstream->addTileLoadListener(
+        // the call and bails out if the source has been destroyed.
+        listenerHandle = resolved->addTileLoadListener(
             [this, weak = weakFactory.makeWeakPtr()](const RasterDEMTile& demTile) {
                 if (auto guard = weak.lock(); weak) {
                     onUpstreamTileLoaded(demTile);
