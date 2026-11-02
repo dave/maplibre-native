@@ -41,22 +41,25 @@ class ContourTile final : public GeometryTile {
 public:
     ContourTile(const OverscaledTileID&, std::string sourceID, const TileParameters&, TileObserver* = nullptr);
 
+    // How to build a tile's lines.
+    struct LineOptions {
+        // The contour spacing in the source's display unit (e.g. 100 feet, 50
+        // metres): the source's `intervals` schedule resolved for the tile.
+        double intervalDisplayUnits = 0.0;
+        // The source's `majorMultiplier` schedule resolved for the tile. Lines
+        // at elevations divisible by `intervalDisplayUnits × majorMultiplier`
+        // get `major: true`.
+        std::int64_t majorMultiplier = 0;
+        // Controls the metres↔display conversion.
+        algorithm::contour::UnitConfig unit;
+    };
+
     // Populate the tile from an upstream DEM tile that just finished parsing.
-    // `intervalDisplayUnits` is the contour spacing in the source's display
-    // unit (e.g. 100 feet, 50 metres) — the source's `intervals` schedule is
-    // resolved to a single value per the tile's zoom by the caller.
-    // `majorMultiplier` is the source's `majorMultiplier` schedule resolved
-    // to a single positive integer per the tile's zoom by the caller; lines
-    // at elevations divisible by `intervalDisplayUnits × majorMultiplier`
-    // get `major: true`. `unit` controls the metres↔display conversion.
     //
     // Each call starts a new generation. The work runs on the tile's thread
     // pool, so calls can finish in any order; only the newest generation's
     // result is applied (see `populatedGeneration`).
-    void populateFromDEM(const RasterDEMTile& demTile,
-                         double intervalDisplayUnits,
-                         std::int64_t majorMultiplier,
-                         const algorithm::contour::UnitConfig& unit);
+    void populateFromDEM(const RasterDEMTile& demTile, const LineOptions&);
 
     // A copy of a DEM tile's buffered image as it is now, to populate from
     // later: the DEM tile can change (a backfill) or go away meanwhile.
@@ -69,16 +72,10 @@ public:
     static std::optional<DEMSnapshot> snapshot(const RasterDEMTile&);
 
     // The line features of a snapshot. Runs on any thread.
-    static mapbox::feature::feature_collection<std::int16_t> buildFeatures(const DEMSnapshot&,
-                                                                           double intervalDisplayUnits,
-                                                                           std::int64_t majorMultiplier,
-                                                                           const algorithm::contour::UnitConfig& unit);
+    static mapbox::feature::feature_collection<std::int16_t> buildFeatures(const DEMSnapshot&, const LineOptions&);
 
     // As `populateFromDEM`, from a snapshot.
-    void populate(const DEMSnapshot&,
-                  double intervalDisplayUnits,
-                  std::int64_t majorMultiplier,
-                  const algorithm::contour::UnitConfig& unit);
+    void populate(const DEMSnapshot&, const LineOptions&);
 
     // The DEM tile has no data: it had no content or it failed. The tile
     // completes with no lines, and any population still running is dropped.

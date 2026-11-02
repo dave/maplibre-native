@@ -19,15 +19,6 @@ using namespace style;
 
 namespace {
 
-// The map zoom a tile is drawn at: the zoom its schedules are read at. It is the
-// whole zoom the tile pyramid covers, which is the map zoom rounded (a contour
-// source covers the zoom its raster-dem source covers), and is not capped at
-// the DEM's maxzoom as the canonical zoom is. A tile's zoom is that map zoom + 1
-// with 256 px tiles.
-double tileMapZoom(const OverscaledTileID& id, uint16_t tileSize) {
-    return id.overscaledZ - std::log2(util::tileSize_D / tileSize);
-}
-
 // Resolve the source's `majorMultiplier` schedule at a zoom to a single positive
 // integer. Returns 0 when the schedule is empty or invalid (callers treat 0 as
 // "never major").
@@ -35,6 +26,20 @@ std::int64_t resolveMajorMultiplier(const algorithm::contour::IntervalSchedule& 
     const double v = algorithm::contour::intervalForZoom(schedule, zoom);
     if (v <= 0.0) return 0;
     return static_cast<std::int64_t>(std::llround(v));
+}
+
+// How to build the lines of a tile. Its schedules are read at the map zoom the
+// tile is drawn at. That is the whole zoom the tile pyramid covers, which is the
+// map zoom rounded (a contour source covers the zoom its raster-dem source
+// covers), and is not capped at the DEM's maxzoom as the canonical zoom is. A
+// tile's zoom is that map zoom + 1 with 256 px tiles.
+ContourTile::LineOptions lineOptions(const style::ContourSourceOptions& options,
+                                     const OverscaledTileID& id,
+                                     uint16_t tileSize) {
+    const double zoom = id.overscaledZ - std::log2(util::tileSize_D / tileSize);
+    return {.intervalDisplayUnits = algorithm::contour::intervalForZoom(options.intervals, zoom),
+            .majorMultiplier = resolveMajorMultiplier(options.majorMultiplier, zoom),
+            .unit = options.unit};
 }
 
 } // namespace
@@ -96,11 +101,8 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
                            // now: its notification came before this tile existed.
                            if (const RasterDEMTile* demTile = dem->getTile(tileID)) {
                                if (demTile->isRenderable()) {
-                                   const auto& opts = impl().getOptions();
-                                   const double zoom = tileMapZoom(tileID, dem->getTileSize());
-                                   const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
-                                   const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
-                                   tile->populateFromDEM(*demTile, interval, major, opts.unit);
+                                   tile->populateFromDEM(*demTile,
+                                                         lineOptions(impl().getOptions(), tileID, dem->getTileSize()));
                                } else if (demTile->isComplete()) {
                                    tile->setNoData();
                                }
@@ -196,11 +198,7 @@ void RenderContourSource::populatePending() {
             tile.setNoData();
             continue;
         }
-        const auto& opts = impl().getOptions();
-        const double zoom = tileMapZoom(id, dem->getTileSize());
-        const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
-        const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
-        tile.populate(*taken, interval, major, opts.unit);
+        tile.populate(*taken, lineOptions(impl().getOptions(), id, dem->getTileSize()));
     }
 }
 
