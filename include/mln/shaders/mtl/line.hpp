@@ -338,7 +338,7 @@ half4 fragment fragmentMain(FragmentStage in [[stage_in]],
 
 #if defined(HAS_UNIFORM_u_opacity)
     const auto exprOpacity = (props.expressionMask & LineExpressionMask::Opacity);
-    const float opacity = exprOpacity ? expr.opacity.eval(paintParams.map_zoom) : props.opacity;
+    const float opacity = exprOpacity ? saturate(expr.opacity.eval(paintParams.map_zoom)) : props.opacity;
 #else
     const float opacity = in.opacity;
 #endif
@@ -707,7 +707,7 @@ half4 fragment fragmentMain(FragmentStage in [[stage_in]],
 
 #if defined(HAS_UNIFORM_u_opacity)
     const auto exprOpacity = (props.expressionMask & LineExpressionMask::Opacity);
-    const float opacity = exprOpacity ? expr.opacity.eval(paintParams.map_zoom) : props.opacity;
+    const float opacity = exprOpacity ? saturate(expr.opacity.eval(paintParams.map_zoom)) : props.opacity;
 #else
     const float opacity = in.opacity;
 #endif
@@ -962,7 +962,7 @@ half4 fragment fragmentMain(FragmentStage in [[stage_in]],
 
 #if defined(HAS_UNIFORM_u_opacity)
     const auto exprOpacity = (props.expressionMask & LineExpressionMask::Opacity);
-    const float opacity = exprOpacity ? expr.opacity.eval(paintParams.map_zoom) : props.opacity;
+    const float opacity = exprOpacity ? saturate(expr.opacity.eval(paintParams.map_zoom)) : props.opacity;
 #else
     const float opacity = in.opacity;
 #endif
@@ -1172,7 +1172,7 @@ half4 fragment fragmentMain(FragmentStage in [[stage_in]],
 
 #if defined(HAS_UNIFORM_u_opacity)
     const auto exprOpacity = (props.expressionMask & LineExpressionMask::Opacity);
-    const float opacity = exprOpacity ? expr.opacity.eval(paintParams.map_zoom) : props.opacity;
+    const float opacity = exprOpacity ? saturate(expr.opacity.eval(paintParams.map_zoom)) : props.opacity;
 #else
     const float opacity = in.opacity;
 #endif

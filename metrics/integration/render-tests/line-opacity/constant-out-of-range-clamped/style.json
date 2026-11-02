@@ -1,0 +1,122 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 32,
+      "description": "A constant or zoom-function line-opacity outside 0..1 is clamped, as a data-driven one is: the literal 50 draws as 1, the zoom function at -50 does not draw."
+    }
+  },
+  "center": [
+    0,
+    0
+  ],
+  "zoom": 0,
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "o": 50
+            },
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -22.5,
+                  0
+                ],
+                [
+                  -5.625,
+                  0
+                ]
+              ]
+            }
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "o": -50
+            },
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  5.625,
+                  0
+                ],
+                [
+                  22.5,
+                  0
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "rgb(128, 128, 128)"
+      }
+    },
+    {
+      "id": "literal",
+      "type": "line",
+      "source": "geojson",
+      "layout": {},
+      "filter": [
+        ">",
+        [
+          "get",
+          "o"
+        ],
+        0
+      ],
+      "paint": {
+        "line-color": "rgb(0, 128, 0)",
+        "line-width": 8,
+        "line-opacity": 50
+      }
+    },
+    {
+      "id": "zoom-function",
+      "type": "line",
+      "source": "geojson",
+      "layout": {},
+      "filter": [
+        "<",
+        [
+          "get",
+          "o"
+        ],
+        0
+      ],
+      "paint": {
+        "line-color": "rgb(0, 128, 0)",
+        "line-width": 8,
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          0,
+          -50,
+          1,
+          -50
+        ]
+      }
+    }
+  ]
+}
