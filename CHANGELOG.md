@@ -39,6 +39,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] WebGPU: `RenderingStats::numFrameBuffers` now counts an offscreen texture when it is made, as on Metal, Vulkan and OpenGL. Before, it was only decremented when one was freed, so it went below zero.
 - [core] Fix seams between adjacent hillshade tiles after a raster-dem tile parses a new body (for example, a network answer that differs from the cached one). The tile's neighbour bits are reset, so its own border is filled again, and each loaded neighbour is filled again with the tile's new edge.
 - [core] Fix rendered-feature queries near the final endpoint of an offset line.
 - [core] Fix plugin layer filters ignoring the style's global state.
