@@ -2,6 +2,7 @@
 
 #include <mln/algorithm/contour/smoothing.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -145,4 +146,40 @@ TEST(ContourSmoothingChaikin, NegativeIterationsTreatedAsZero) {
     const std::vector<Point2D> pts{{0, 0}, {10, 10}, {20, 0}};
     const auto out = chaikin(pts, -3);
     EXPECT_EQ(out.size(), pts.size());
+}
+
+// A closed line has no ends to pin: the point where the ring is joined is cut like
+// any other corner, so a hilltop has no cusp there.
+TEST(ContourSmoothingChaikin, AClosedRingHasNoCornerAtItsJoin) {
+    const std::vector<Point2D> square{{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}, {0.0, 100.0}, {0.0, 0.0}};
+
+    const auto smoothed = chaikin(square, 2);
+
+    EXPECT_EQ(smoothed.front(), smoothed.back()) << "the ring stays closed";
+    for (const auto& point : smoothed) {
+        EXPECT_FALSE(point[0] == 0.0 && point[1] == 0.0) << "the corner at the join is cut";
+    }
+    // Every corner is cut alike, the one at the join too: the nearest point to
+    // each corner is the same distance away.
+    const auto nearest = [&](double cx, double cy) {
+        double best = 1e9;
+        for (const auto& point : smoothed) {
+            best = std::min(best, std::hypot(point[0] - cx, point[1] - cy));
+        }
+        return best;
+    };
+    EXPECT_NEAR(nearest(0.0, 0.0), nearest(100.0, 0.0), 1e-9);
+    EXPECT_NEAR(nearest(0.0, 0.0), nearest(0.0, 100.0), 1e-9);
+    EXPECT_NEAR(nearest(0.0, 0.0), nearest(100.0, 100.0), 1e-9);
+}
+
+// A line whose ends differ keeps them pinned: they lie on a tile boundary, where
+// the neighbour's line meets them.
+TEST(ContourSmoothingChaikin, AnOpenLineKeepsItsEnds) {
+    const std::vector<Point2D> line{{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}, {0.0, 100.0}};
+
+    const auto smoothed = chaikin(line, 2);
+
+    EXPECT_EQ(line.front(), smoothed.front());
+    EXPECT_EQ(line.back(), smoothed.back());
 }
