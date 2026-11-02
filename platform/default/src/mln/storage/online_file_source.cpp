@@ -24,6 +24,7 @@
 #include <mln/util/timer.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <list>
 #include <map>
@@ -332,7 +333,10 @@ public:
 
     void resume() { thread->resume(); }
 
+    bool hasResourceTransform() const { return transformSet; }
+
     void setResourceTransform(ResourceTransform transform) {
+        transformSet = bool(transform);
         thread->actor().invoke(&OnlineFileSourceThread::setResourceTransform, std::move(transform));
     }
 
@@ -419,6 +423,7 @@ public:
     }
 
 private:
+    std::atomic<bool> transformSet{false};
     mutable std::mutex resourceOptionsMutex;
     mutable std::mutex clientOptionsMutex;
     ResourceOptions cachedResourceOptions;
@@ -654,9 +659,13 @@ std::unique_ptr<AsyncRequest> OnlineFileSource::request(const Resource& resource
 }
 
 bool OnlineFileSource::canRequest(const Resource& resource) const {
-    return resource.hasLoadingMethod(Resource::LoadingMethod::Network) &&
-           resource.url.rfind(mln::util::ASSET_PROTOCOL, 0) == std::string::npos &&
-           resource.url.rfind(mln::util::FILE_PROTOCOL, 0) == std::string::npos;
+    if (!resource.hasLoadingMethod(Resource::LoadingMethod::Network) ||
+        resource.url.rfind(mln::util::ASSET_PROTOCOL, 0) == 0 || resource.url.rfind(mln::util::FILE_PROTOCOL, 0) == 0) {
+        return false;
+    }
+    // A transform can turn any other URL into one the network can read.
+    return impl->hasResourceTransform() ||
+           util::mapbox::isNetworkURL(impl->getResourceOptions().tileServerOptions(), resource.url);
 }
 
 void OnlineFileSource::pause() {

@@ -5,11 +5,14 @@
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_observer.hpp>
 #include <mln/map/map_options.hpp>
+#include <mln/storage/database_file_source.hpp>
 #include <mln/storage/main_resource_loader.hpp>
+#include <mln/storage/online_file_source.hpp>
 #include <mln/storage/resource.hpp>
 #include <mln/storage/resource_options.hpp>
 #include <mln/storage/resource_provider.hpp>
 #include <mln/storage/resource_provider_file_source.hpp>
+#include <mln/storage/resource_transform.hpp>
 #include <mln/style/style.hpp>
 #include <mln/test/fixture_log_observer.hpp>
 #include <mln/test/map_adapter.hpp>
@@ -19,6 +22,7 @@
 #include <mln/util/io.hpp>
 #include <mln/util/label_steps.hpp>
 #include <mln/util/run_loop.hpp>
+#include <mln/util/tile_server_options.hpp>
 #include <mln/util/timer.hpp>
 
 #include <atomic>
@@ -616,4 +620,61 @@ TEST(ResourceProvider, APanBackCallsNoProviderAndParsesNothing) {
 
     EXPECT_EQ(startedAway, registered.provider->started()) << "a tile taken from the cache called the provider";
     EXPECT_EQ(landingsAway, landings.count()) << "a tile taken from the cache landed again";
+}
+
+// A URL of a scheme that nothing serves fails at once and loudly. It never goes to
+// the disk cache or the network.
+TEST(ResourceProvider, AnUnregisteredSchemeIsAnError) {
+    util::RunLoop loop;
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    EXPECT_FALSE(fs.canRequest({Resource::Unknown, "provider-test://nobody"}));
+    for (const auto method : {Method::All, Method::CacheOnly, Method::NetworkOnly}) {
+        std::optional<Response> response;
+        auto request = fs.request({Resource::Unknown, "provider-test://nobody", std::nullopt, method},
+                                  [&](Response res) { response = res; });
+        ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
+        expectError(*response, Reason::Other, "Unsupported resource request.");
+    }
+}
+
+TEST(ResourceProvider, TheNetworkAndTheDiskCacheTakeOnlyTheirSchemes) {
+    OnlineFileSource onlineSource(ResourceOptions{}, ClientOptions{});
+    DatabaseFileSource databaseSource(ResourceOptions{}, ClientOptions{});
+    const FileSource& online = onlineSource;
+    const FileSource& database = databaseSource;
+    for (const std::string url : {"http://a/b", "https://a/b", "HTTP://a/b"}) {
+        EXPECT_TRUE(online.canRequest({Resource::Unknown, url})) << url;
+        EXPECT_TRUE(database.canRequest({Resource::Unknown, url})) << url;
+    }
+    for (const std::string url : {"provider-test://a/b", "httpx://a/b", "file://a/b", "asset://a/b", "http"}) {
+        EXPECT_FALSE(online.canRequest({Resource::Unknown, url})) << url;
+        EXPECT_FALSE(database.canRequest({Resource::Unknown, url})) << url;
+    }
+}
+
+TEST(ResourceProvider, TheTileServersSchemeStaysTheNetworksScheme) {
+    const ResourceOptions options =
+        ResourceOptions{}.withTileServerOptions(TileServerOptions::MapTilerConfiguration()).clone();
+    OnlineFileSource onlineSource(options, ClientOptions{});
+    DatabaseFileSource databaseSource(options, ClientOptions{});
+    const FileSource& online = onlineSource;
+    const FileSource& database = databaseSource;
+    EXPECT_TRUE(online.canRequest({Resource::Unknown, "maptiler://maps/streets"}));
+    EXPECT_TRUE(database.canRequest({Resource::Unknown, "maptiler://maps/streets"}));
+    EXPECT_FALSE(online.canRequest({Resource::Unknown, "mapbox://maps/streets"}));
+}
+
+// A resource transform can turn any URL into one the network can read.
+TEST(ResourceProvider, AResourceTransformLetsTheNetworkTakeAnyScheme) {
+    util::RunLoop loop;
+    OnlineFileSource onlineSource(ResourceOptions{}, ClientOptions{});
+    FileSource& online = onlineSource;
+    EXPECT_FALSE(online.canRequest({Resource::Unknown, "custom://a/b"}));
+    online.setResourceTransform(
+        {[](Resource::Kind, const std::string& url, ResourceTransform::FinishedCallback finish) {
+            finish(url);
+        }});
+    EXPECT_TRUE(online.canRequest({Resource::Unknown, "custom://a/b"}));
+    online.setResourceTransform({});
+    EXPECT_FALSE(online.canRequest({Resource::Unknown, "custom://a/b"}));
 }

@@ -1,4 +1,7 @@
 #include <mln/util/mapbox.hpp>
+
+#include <algorithm>
+#include <string_view>
 #include <mln/util/constants.hpp>
 #include <mln/util/logging.hpp>
 #include <mln/util/url.hpp>
@@ -39,6 +42,16 @@ inline void replace(std::string& str, const std::string& search, const std::stri
         str.replace(pos, search.length(), replacement);
         pos += replacement.length();
     }
+}
+
+bool isNetworkURL(const TileServerOptions& tileServerOptions, const std::string& url) {
+    const auto startsWith = [&](std::string_view scheme) {
+        return url.size() >= scheme.size() &&
+               std::equal(scheme.begin(), scheme.end(), url.begin(), [](char lower, char c) {
+                   return lower == (c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);
+               });
+    };
+    return startsWith("http://") || startsWith("https://") || isCanonicalURL(tileServerOptions, url);
 }
 
 bool isCanonicalURL(const TileServerOptions& tileServerOptions, const std::string& url) {

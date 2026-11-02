@@ -12,6 +12,9 @@ namespace util {
 namespace mapbox {
 
 bool isCanonicalURL(const TileServerOptions& tileServerOptions, const std::string& url);
+/// Whether the network can read this URL, and so the disk cache can hold it:
+/// http, https, or the tile server's own scheme.
+bool isNetworkURL(const TileServerOptions& tileServerOptions, const std::string& url);
 
 std::string normalizeSourceURL(const TileServerOptions& tileServerOptions,
                                const std::string& str,
