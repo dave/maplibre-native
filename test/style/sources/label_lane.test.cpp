@@ -10,6 +10,7 @@
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
 #include <mln/test/stub_style_observer.hpp>
+#include <mln/test/thread_answering_provider.hpp>
 #include <mln/test/util.hpp>
 
 #include <mln/annotation/annotation_manager.hpp>
@@ -22,6 +23,9 @@
 #include <mln/renderer/renderer.hpp>
 #include <mln/renderer/sources/render_geojson_source.hpp>
 #include <mln/renderer/tile_parameters.hpp>
+#include <mln/storage/main_resource_loader.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/resource_provider.hpp>
 #include <mln/style/conversion/geojson.hpp>
 #include <mln/style/conversion/geojson_options.hpp>
 #include <mln/style/conversion/filter.hpp>
@@ -35,6 +39,7 @@
 #include <mln/style/transition_options.hpp>
 #include <mln/text/glyph_manager.hpp>
 #include <mln/tile/geojson_tile.hpp>
+#include <mln/util/client_options.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/label_steps.hpp>
 #include <mln/util/platform.hpp>
@@ -620,13 +625,16 @@ public:
     std::shared_ptr<StubFileSource> fileSource = std::make_shared<StubFileSource>();
     LaidOutObserver observer;
     std::unique_ptr<HeadlessFrontend> frontend = std::make_unique<HeadlessFrontend>(Size{256, 256}, 1.0f);
-    std::unique_ptr<MapAdapter> map = std::make_unique<MapAdapter>(
-        *frontend,
-        observer,
-        fileSource,
-        MapOptions().withMapMode(MapMode::Continuous).withSize(frontend->getSize()).withPixelRatio(1.0));
+    std::unique_ptr<MapAdapter> map;
 
-    explicit LaneMap(const std::string& style = styleJSON(true)) {
+    /// `otherFileSource`: the map's file source, in place of `fileSource`.
+    explicit LaneMap(const std::string& style = styleJSON(true),
+                     std::shared_ptr<FileSource> otherFileSource = nullptr) {
+        map = std::make_unique<MapAdapter>(
+            *frontend,
+            observer,
+            otherFileSource ? std::move(otherFileSource) : std::shared_ptr<FileSource>(fileSource),
+            MapOptions().withMapMode(MapMode::Continuous).withSize(frontend->getSize()).withPixelRatio(1.0));
         fileSource->sourceResponse = [](const Resource&) {
             Response response;
             response.data = std::make_shared<std::string>(kPoints);
@@ -2417,4 +2425,93 @@ TEST(GeoJSONSource, ARepeatedOrLateURLErrorNamesNoNewGeneration) {
     ASSERT_TRUE(runUntil(loop, [&] { return loaded; }, "the body"));
     ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, errorResponse()));
     EXPECT_EQ((std::vector<uint64_t>{first}), observer.generations);
+}
+
+// Where the bytes come from changes no event. The same writes on a lane source, with
+// its bodies from a stub file source and from a provider that answers on another
+// thread through a real resource loader, give the same reports and the same frames.
+
+namespace {
+
+struct LaneEvents {
+    std::vector<std::pair<std::string, uint64_t>> laidOut;
+    std::vector<std::size_t> circles;
+    bool operator==(const LaneEvents&) const = default;
+};
+
+LaneEvents laneEventsFrom(const std::function<std::string(const std::string&)>& url,
+                          const std::function<void(LaneMap&, const std::string&, const std::string&)>& setBody,
+                          std::shared_ptr<FileSource> fileSource) {
+    std::string style = circleStyleJSON();
+    const std::string stubURL = "http://bodies/labels.json";
+    style.replace(style.find(stubURL), stubURL.size(), url("labels"));
+    // The style's first body, kPoints, is there before the map asks: the stub
+    // answers it by default, and the provider has it from the test.
+    LaneMap test(style, std::move(fileSource));
+    LaneEvents events;
+    const auto sawFrame = [&] {
+        test.map->triggerRepaint();
+        EXPECT_TRUE(runOneFrame(test, "a frame"));
+        events.circles.push_back(drawnCircles(test));
+    };
+    const auto reported = [&](uint64_t generation) {
+        EXPECT_TRUE(runUntil(
+            test.loop,
+            [&] { return test.observer.has("labels", generation); },
+            "the report of generation " + std::to_string(generation)));
+    };
+
+    reported(1);
+    sawFrame();
+
+    // A new body by a new URL.
+    setBody(test, url("one"), kOnePoint);
+    reported(test.labels().setURL(url("one")));
+    sawFrame();
+
+    // A layer change.
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["!=", ["get", "kind"], "none"])"));
+    reported(test.labels().getLatestGeneration());
+    sawFrame();
+
+    // A body held above the landing limit, then released.
+    test.labels().setLandingLimit(test.labels().getLatestGeneration());
+    setBody(test, url("two"), kTwoPoints);
+    reported(test.labels().setURL(url("two")));
+    sawFrame();
+    test.labels().setLandingLimit(std::nullopt);
+    EXPECT_TRUE(runOneFrame(test, "the frame of the release"));
+    events.circles.push_back(drawnCircles(test));
+
+    events.laidOut = test.observer.laidOut;
+    return events;
+}
+
+} // namespace
+
+TEST(LabelLane, ABodyFromAProviderOnAnotherThreadGivesTheSameEvents) {
+    const auto stubbed = laneEventsFrom(
+        [](const std::string& name) { return "http://bodies/" + name + ".json"; },
+        [](LaneMap& test, const std::string&, const std::string& body) {
+            test.fileSource->sourceResponse = [text = std::make_shared<std::string>(body)](const Resource&) {
+                Response response;
+                response.data = text;
+                return response;
+            };
+        },
+        nullptr);
+
+    auto provider = std::make_shared<ThreadAnsweringProvider>();
+    provider->setBody("lane-provider-test://bodies/labels.json", kPoints);
+    registerResourceProvider("lane-provider-test", provider);
+    const auto provided = laneEventsFrom(
+        [](const std::string& name) { return "lane-provider-test://bodies/" + name + ".json"; },
+        [&](LaneMap&, const std::string& url, const std::string& body) { provider->setBody(url, body); },
+        std::make_shared<MainResourceLoader>(ResourceOptions{}, ClientOptions{}));
+    unregisterResourceProvider("lane-provider-test");
+
+    EXPECT_EQ(stubbed.laidOut, provided.laidOut);
+    EXPECT_EQ(stubbed.circles, provided.circles);
+    ASSERT_EQ(5u, provided.circles.size());
+    EXPECT_EQ(std::vector<std::size_t>({4, 1, 1, 1, 2}), provided.circles);
 }

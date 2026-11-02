@@ -10,6 +10,7 @@
 
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
+#include <mln/test/thread_answering_provider.hpp>
 #include <mln/test/util.hpp>
 
 #include <mln/gfx/backend_scope.hpp>
@@ -24,12 +25,16 @@
 #include <mln/style/layer.hpp>
 #include <mln/style/rapidjson_conversion.hpp>
 #include <mln/style/sources/geojson_source.hpp>
+#include <mln/storage/main_resource_loader.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/resource_provider.hpp>
 #include <mln/style/style.hpp>
 #include <mln/style/transition_options.hpp>
 #include <mln/tile/tile_operation.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/logging.hpp>
 #include <mln/util/rapidjson.hpp>
+#include <mln/util/client_options.hpp>
 #include <mln/util/run_loop.hpp>
 #include <mln/util/timer.hpp>
 
@@ -188,13 +193,17 @@ public:
     std::shared_ptr<StubFileSource> fileSource = std::make_shared<StubFileSource>();
     PinObserver observer;
     std::unique_ptr<HeadlessFrontend> frontend = std::make_unique<HeadlessFrontend>(Size{256, 256}, 1.0f);
-    std::unique_ptr<MapAdapter> map = std::make_unique<MapAdapter>(
-        *frontend,
-        observer,
-        fileSource,
-        MapOptions().withMapMode(MapMode::Continuous).withSize(frontend->getSize()).withPixelRatio(1.0));
+    std::unique_ptr<MapAdapter> map;
 
-    explicit PinMap(const std::string& style, bool placementTransitions = false) {
+    /// `otherFileSource`: the map's file source, in place of `fileSource`.
+    explicit PinMap(const std::string& style,
+                    bool placementTransitions = false,
+                    std::shared_ptr<FileSource> otherFileSource = nullptr) {
+        map = std::make_unique<MapAdapter>(
+            *frontend,
+            observer,
+            otherFileSource ? std::move(otherFileSource) : std::shared_ptr<FileSource>(fileSource),
+            MapOptions().withMapMode(MapMode::Continuous).withSize(frontend->getSize()).withPixelRatio(1.0));
         fileSource->glyphsResponse = [](const Resource&) {
             Response response;
             response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
@@ -845,4 +854,65 @@ TEST(AppBehaviourPins, TheSourceObjectIsKeptAcrossWrites) {
     EXPECT_EQ(before, test.map->getStyle().getSource("a"));
     EXPECT_EQ(layerBefore, test.map->getStyle().getLayer("a"));
     EXPECT_GT(test.source("a").getLandedGeneration(), body);
+}
+
+// ---------------------------------------------------------------------------
+// A URL body from a resource provider that answers on another thread, through a
+// real resource loader, lands as a body from any file source: the same reports,
+// and the frame after the report draws it, on a lane source and a pool source.
+
+namespace {
+
+std::string urlBodiesStyle(const std::string& lane, const std::string& pool) {
+    return R"({"version": 8, "center": [0, 0], "zoom": 1.5,
+        "sources": {
+          "lane": {"type": "geojson", "labelLane": true, "data": ")" +
+           lane + R"("},
+          "pool": {"type": "geojson", "data": ")" +
+           pool +
+           R"("}},
+        "layers": [
+          {"id": "lane", "type": "circle", "source": "lane"},
+          {"id": "pool", "type": "circle", "source": "pool"}]})";
+}
+
+} // namespace
+
+TEST(AppBehaviourPins, AURLBodyFromAProviderOnAnotherThreadLandsAsAnyOther) {
+    auto provider = std::make_shared<ThreadAnsweringProvider>();
+    const std::string one = collection({point(-20, 10)});
+    const std::string two = collection({point(-20, 10), point(20, 10)});
+    const std::string scheme = "pin-provider-test://";
+    provider->setBody(scheme + "lane/1", one);
+    provider->setBody(scheme + "pool/1", one);
+    provider->setBody(scheme + "lane/2", two);
+    provider->setBody(scheme + "pool/2", two);
+    registerResourceProvider("pin-provider-test", provider);
+    {
+        PinMap test(urlBodiesStyle(scheme + "lane/1", scheme + "pool/1"),
+                    false,
+                    std::make_shared<MainResourceLoader>(ResourceOptions{}, ClientOptions{}));
+        ASSERT_TRUE(runUntil(
+            test.loop,
+            [&] { return test.observer.has("lane", 1) && test.observer.has("pool", 1); },
+            "the first bodies reported"));
+        ASSERT_TRUE(test.frame("a frame with the first bodies"));
+        EXPECT_EQ(1u, test.count("lane"));
+        EXPECT_EQ(1u, test.count("pool"));
+
+        Source* const before = test.map->getStyle().getSource("lane");
+        const uint64_t lane = test.source("lane").setURL(scheme + "lane/2");
+        const uint64_t pool = test.source("pool").setURL(scheme + "pool/2");
+        EXPECT_EQ(2u, lane);
+        EXPECT_EQ(2u, pool);
+        ASSERT_TRUE(runUntil(
+            test.loop,
+            [&] { return test.observer.has("lane", lane) && test.observer.has("pool", pool); },
+            "the second bodies reported"));
+        ASSERT_TRUE(test.frame("the frame after the report"));
+        EXPECT_EQ(2u, test.count("lane"));
+        EXPECT_EQ(2u, test.count("pool"));
+        EXPECT_EQ(before, test.map->getStyle().getSource("lane")) << "the source object was replaced";
+    }
+    unregisterResourceProvider("pin-provider-test");
 }
