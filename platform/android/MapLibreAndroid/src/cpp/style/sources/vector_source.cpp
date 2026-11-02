@@ -52,6 +52,11 @@ void VectorSource::reloadEmptyTiles(jni::JNIEnv&) {
     source.as<mln::style::VectorSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
+void VectorSource::reloadTiles(jni::JNIEnv&, jni::jint filter) {
+    // The value of ReloadFilter.nativeValue, which is the core enum's.
+    source.as<mln::style::VectorSource>()->reloadTiles(static_cast<mln::style::ReloadFilter>(filter));
+}
+
 jni::Local<jni::Object<Source>> VectorSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<VectorSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -73,7 +78,8 @@ void VectorSource::registerNative(jni::JNIEnv& env) {
                                           "finalize",
                                           METHOD(&VectorSource::querySourceFeatures, "querySourceFeatures"),
                                           METHOD(&VectorSource::getURL, "nativeGetUrl"),
-                                          METHOD(&VectorSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
+                                          METHOD(&VectorSource::reloadEmptyTiles, "nativeReloadEmptyTiles"),
+                                          METHOD(&VectorSource::reloadTiles, "nativeReloadTiles"));
 }
 
 } // namespace android

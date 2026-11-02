@@ -34,6 +34,11 @@ void RasterDEMSource::reloadEmptyTiles(jni::JNIEnv&) {
     source.as<mln::style::RasterDEMSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
+void RasterDEMSource::reloadTiles(jni::JNIEnv&, jni::jint filter) {
+    // The value of ReloadFilter.nativeValue, which is the core enum's.
+    source.as<mln::style::RasterDEMSource>()->reloadTiles(static_cast<mln::style::ReloadFilter>(filter));
+}
+
 jni::Local<jni::Object<Source>> RasterDEMSource::createJavaPeer(jni::JNIEnv& env) {
     static auto& javaClass = jni::Class<RasterDEMSource>::Singleton(env);
     static auto constructor = javaClass.GetConstructor<jni::jlong>(env);
@@ -55,7 +60,8 @@ void RasterDEMSource::registerNative(jni::JNIEnv& env) {
         "initialize",
         "finalize",
         METHOD(&RasterDEMSource::getURL, "nativeGetUrl"),
-        METHOD(&RasterDEMSource::reloadEmptyTiles, "nativeReloadEmptyTiles"));
+        METHOD(&RasterDEMSource::reloadEmptyTiles, "nativeReloadEmptyTiles"),
+        METHOD(&RasterDEMSource::reloadTiles, "nativeReloadTiles"));
 }
 
 } // namespace android

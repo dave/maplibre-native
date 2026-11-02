@@ -3,6 +3,7 @@
 ## main
 
 - Fix a `raster-dem` source from style JSON getting an `UnknownSource` Java object. `Style.getSource()` now gives a `RasterDemSource`, so `uri` and `reloadEmptyTiles()` can reach it.
+- Add `reloadTiles(ReloadFilter)` to `VectorSource`, `RasterSource` and `RasterDemSource`: the map asks again for each tile whose last answer was empty (`EMPTY`), an error (`FAILED`) or either (`EMPTY_AND_FAILED`). `reloadEmptyTiles()` still asks for both.
 - Add `ResourceProviders`, `ResourceProvider` and `ResourceRequest` (`org.maplibre.android.storage`): an app can serve the resources of a URL scheme from inside the process, with no disk cache, network or local HTTP server. `start` and `cancel` run on the resource loader thread. `Resource.IMAGE` is new. Core: `mln::registerResourceProvider`.
 - Add `MapView.addOnSourceBodyFailedListener()`: a body of a GeoJSON source in the map's style that will not land (it does not parse, or its URL answers an error or no content) is reported with its data generation and the reason. `OnSourceLaidOutListener` never reports that generation, so a wait for it now ends. Core: `MapObserver::onSourceBodyFailed`.
 - Mark `LabelSteps`, the step recorder for debug probes and tests, `@RestrictTo(LIBRARY_GROUP)`: it is not public API. While the recorder is off it allocates nothing.
