@@ -15,6 +15,7 @@
 #include <mln/shaders/mtl/circle.hpp>
 #endif
 
+#include <algorithm>
 #include <cstring>
 
 namespace mln {
@@ -46,9 +47,10 @@ void CircleLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParamete
             .stroke_color = constOrDefault<CircleStrokeColor>(evaluated),
             .radius = constOrDefault<CircleRadius>(evaluated),
             .blur = constOrDefault<CircleBlur>(evaluated),
-            .opacity = constOrDefault<CircleOpacity>(evaluated),
+            // A constant or zoom-function opacity is clamped to 0..1, as the shaders clamp a data-driven one.
+            .opacity = std::clamp(constOrDefault<CircleOpacity>(evaluated), 0.0f, 1.0f),
             .stroke_width = constOrDefault<CircleStrokeWidth>(evaluated),
-            .stroke_opacity = constOrDefault<CircleStrokeOpacity>(evaluated),
+            .stroke_opacity = std::clamp(constOrDefault<CircleStrokeOpacity>(evaluated), 0.0f, 1.0f),
             .scale_with_map = scaleWithMap,
             .pitch_with_map = pitchWithMap,
             .pad1 = 0};
