@@ -1499,6 +1499,13 @@ final class NativeMapView implements NativeMap {
   }
 
   @Keep
+  private void onSourceBodyFailed(String sourceId, long generation, String message) {
+    if (stateCallback != null) {
+      stateCallback.onSourceBodyFailed(sourceId, generation, message);
+    }
+  }
+
+  @Keep
   private void onSpriteLoaded(String id, String url) {
     if (stateCallback != null) {
       stateCallback.onSpriteLoaded(id, url);
@@ -2061,6 +2068,8 @@ final class NativeMapView implements NativeMap {
     void onTileAction(TileOperation op, int x, int y, int z, int wrap, int overscaledZ, String sourceID);
 
     void onSourceLaidOut(String sourceId, long generation);
+
+    void onSourceBodyFailed(String sourceId, long generation, String message);
 
     void onSpriteLoaded(String id, String url);
 

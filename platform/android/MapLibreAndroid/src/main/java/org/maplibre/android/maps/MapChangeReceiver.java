@@ -54,6 +54,8 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     = new CopyOnWriteArrayList<>();
   private final List<MapView.OnSourceLaidOutListener> onSourceLaidOutList
     = new CopyOnWriteArrayList<>();
+  private final List<MapView.OnSourceBodyFailedListener> onSourceBodyFailedList
+    = new CopyOnWriteArrayList<>();
   private final List<MapView.OnSpriteLoadedListener> onSpriteLoadedList
     = new CopyOnWriteArrayList<>();
   private final List<MapView.OnSpriteErrorListener> onSpriteErrorList
@@ -403,6 +405,18 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
   }
 
   @Override
+  public void onSourceBodyFailed(String sourceId, long generation, String message) {
+    try {
+      for (MapView.OnSourceBodyFailedListener listener : onSourceBodyFailedList) {
+        listener.onSourceBodyFailed(sourceId, generation, message);
+      }
+    } catch (Throwable err) {
+      Logger.e(TAG, "Exception in onSourceBodyFailed", err);
+      throw err;
+    }
+  }
+
+  @Override
   public void onSpriteLoaded(String id, String url) {
     try {
       if (!onSpriteLoadedList.isEmpty()) {
@@ -629,6 +643,10 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onSourceLaidOutList.add(callback);
   }
 
+  public void addOnSourceBodyFailedListener(MapView.OnSourceBodyFailedListener callback) {
+    onSourceBodyFailedList.add(callback);
+  }
+
   public void addOnSpriteLoadedListener(MapView.OnSpriteLoadedListener callback) {
     onSpriteLoadedList.add(callback);
   }
@@ -681,6 +699,10 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onSourceLaidOutList.remove(callback);
   }
 
+  public void removeOnSourceBodyFailedListener(MapView.OnSourceBodyFailedListener callback) {
+    onSourceBodyFailedList.remove(callback);
+  }
+
   public void removeOnSpriteLoadedListener(MapView.OnSpriteLoadedListener callback) {
     onSpriteLoadedList.remove(callback);
   }
@@ -725,6 +747,7 @@ class MapChangeReceiver implements NativeMapView.StateCallback {
     onGlyphsRequestedList.clear();
     onTileActionList.clear();
     onSourceLaidOutList.clear();
+    onSourceBodyFailedList.clear();
     onSpriteLoadedList.clear();
     onSpriteErrorList.clear();
     onSpriteRequestedList.clear();

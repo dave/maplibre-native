@@ -790,6 +790,25 @@ class MapChangeReceiverTest : BaseTest() {
         )
     }
 
+    @Test
+    fun aSourceBodyFailedReportReachesOnlyTheListenersAddedAndNotRemoved() {
+        val heard = mutableListOf<Triple<String, Long, String>>()
+        val listener = OnSourceBodyFailedListener { sourceId, generation, message ->
+            heard += Triple(sourceId, generation, message)
+        }
+        val receiver = MapChangeReceiver()
+
+        receiver.addOnSourceBodyFailedListener(listener)
+        receiver.onSourceBodyFailed("labels", 3, "broken")
+        receiver.removeOnSourceBodyFailedListener(listener)
+        receiver.onSourceBodyFailed("labels", 4, "broken")
+        receiver.addOnSourceBodyFailedListener(listener)
+        receiver.clear()
+        receiver.onSourceBodyFailed("labels", 5, "broken")
+
+        Assert.assertEquals(listOf(Triple("labels", 3L, "broken")), heard)
+    }
+
     companion object {
         private const val TEST_STRING = "mapChangeRandom"
         private val TEST_RENDERING_STATS = RenderingStats();

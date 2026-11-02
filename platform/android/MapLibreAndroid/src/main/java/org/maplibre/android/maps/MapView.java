@@ -1065,6 +1065,24 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
   }
 
   /**
+   * Set a callback that's invoked when a body of a GeoJSON source in this map's style will not land.
+   *
+   * @param callback The callback that's invoked
+   */
+  public void addOnSourceBodyFailedListener(@NonNull MapView.OnSourceBodyFailedListener callback) {
+    mapChangeReceiver.addOnSourceBodyFailedListener(callback);
+  }
+
+  /**
+   * Removes a callback set with {@link #addOnSourceBodyFailedListener(OnSourceBodyFailedListener)}.
+   *
+   * @param callback The callback to remove
+   */
+  public void removeOnSourceBodyFailedListener(@NonNull MapView.OnSourceBodyFailedListener callback) {
+    mapChangeReceiver.removeOnSourceBodyFailedListener(callback);
+  }
+
+  /**
    * Set a callback that's invoked after a sprite is loaded.
    *
    * @param callback The callback that's invoked after a sprite is loaded
@@ -1539,6 +1557,29 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
      * @param generation the body's data generation: what the source's setter answered
      */
     void onSourceLaidOut(@NonNull String sourceId, long generation);
+  }
+
+  /**
+   * Interface definition for a callback to be invoked when a body of a GeoJSON source in this map's
+   * style will not land: a body that does not parse, a URL that answers an error or no content, or
+   * a URL body that does not parse. {@link OnSourceLaidOutListener} never reports that generation,
+   * so a client that waits for it ends its wait here.
+   * <p>
+   * {@link MapView#addOnSourceBodyFailedListener(OnSourceBodyFailedListener)}
+   * </p>
+   */
+  public interface OnSourceBodyFailedListener {
+    /**
+     * Called on the main thread, once for a generation. For a synchronous source
+     * ({@link org.maplibre.android.style.sources.GeoJsonOptions#withSynchronousUpdate}) it is called
+     * inside the setter, before the setter returns the generation. A failed refresh of a body that
+     * has landed is not reported: that body stays.
+     *
+     * @param sourceId   the GeoJSON source
+     * @param generation the body's data generation: what the source's setter answered
+     * @param message    why the body will not land
+     */
+    void onSourceBodyFailed(@NonNull String sourceId, long generation, @NonNull String message);
   }
 
   /**

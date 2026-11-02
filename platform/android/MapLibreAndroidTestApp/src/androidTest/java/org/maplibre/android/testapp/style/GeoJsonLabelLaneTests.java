@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.maplibre.android.maps.LabelSteps;
 import org.maplibre.android.maps.MapView;
+import org.maplibre.android.module.http.HttpRequestUtil;
 import org.maplibre.android.style.expressions.Expression;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.sources.GeoJsonOptions;
@@ -15,8 +16,15 @@ import org.maplibre.android.testapp.action.MapLibreMapAction;
 import org.maplibre.android.testapp.activity.EspressoTest;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -26,7 +34,8 @@ import static org.junit.Assert.fail;
 
 /**
  * The Android binding of the label lane: {@link GeoJsonOptions#withLabelLane}, the data
- * generations the setters answer, {@link MapView.OnSourceLaidOutListener} and {@link LabelSteps}.
+ * generations the setters answer, {@link MapView.OnSourceLaidOutListener},
+ * {@link MapView.OnSourceBodyFailedListener} and {@link LabelSteps}.
  * Each wait ends on an event; its bound only turns a missing event into a failure.
  */
 @RunWith(AndroidJUnit4ClassRunner.class)
@@ -129,6 +138,91 @@ public class GeoJsonLabelLaneTests extends EspressoTest {
       assertFalse(reported.contains(broken));
       mapView.removeOnSourceLaidOutListener(listener);
     });
+  }
+
+  /** Reports for the source "lane": generation and message, as they came. */
+  private final List<Long> failed = new ArrayList<>();
+  private final List<String> failures = new ArrayList<>();
+
+  private MapView.OnSourceBodyFailedListener recordFailures() {
+    MapView.OnSourceBodyFailedListener listener = (sourceId, generation, message) -> {
+      if (sourceId.equals("lane")) {
+        failed.add(generation);
+        failures.add(message);
+      }
+    };
+    mapView.addOnSourceBodyFailedListener(listener);
+    return listener;
+  }
+
+  @Test
+  public void bodyThatDoesNotParseIsReportedFailedWithItsGeneration() {
+    validateTestSetup();
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      MapView.OnSourceBodyFailedListener listener = recordFailures();
+      GeoJsonSource source = new GeoJsonSource("lane", new GeoJsonOptions().withLabelLane(true));
+      maplibreMap.getStyle().addSource(source);
+
+      Long broken = source.setGeoJson("{not json");
+      waitFor(uiController, () -> failed.contains(broken), "generation " + broken + " reported failed");
+
+      assertEquals(Collections.singletonList(broken), failed);
+      assertTrue(failures.get(0), failures.get(0).contains("parse"));
+      mapView.removeOnSourceBodyFailedListener(listener);
+    });
+  }
+
+  @Test
+  public void synchronousBodyThatDoesNotParseIsReportedFailedInTheSetter() {
+    validateTestSetup();
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      MapView.OnSourceBodyFailedListener listener = recordFailures();
+      GeoJsonSource source = new GeoJsonSource("lane", new GeoJsonOptions().withSynchronousUpdate(true));
+      maplibreMap.getStyle().addSource(source);
+
+      Long broken = source.setGeoJson("{not json");
+
+      assertEquals(Collections.singletonList(broken), failed);
+      mapView.removeOnSourceBodyFailedListener(listener);
+    });
+  }
+
+  @Test
+  public void urlThatAnswersAnErrorIsReportedFailedWithItsGeneration() {
+    assertAUrlAnsweringIsReportedFailed(404, "Not Found");
+  }
+
+  @Test
+  public void urlThatAnswersNoContentIsReportedFailedWithItsGeneration() {
+    assertAUrlAnsweringIsReportedFailed(204, "No Content");
+  }
+
+  private void assertAUrlAnsweringIsReportedFailed(int code, String reason) {
+    validateTestSetup();
+    HttpRequestUtil.setOkHttpClient(new OkHttpClient.Builder()
+      .addInterceptor(chain -> new Response.Builder()
+        .request(chain.request())
+        .protocol(Protocol.HTTP_1_1)
+        .code(code)
+        .message(reason)
+        .body(ResponseBody.create(new byte[0], MediaType.get("application/json")))
+        .build())
+      .build());
+    try {
+      MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+        MapView.OnSourceBodyFailedListener listener = recordFailures();
+        GeoJsonSource source = new GeoJsonSource("lane", new GeoJsonOptions().withLabelLane(true));
+        maplibreMap.getStyle().addSource(source);
+        maplibreMap.getStyle().addLayer(new CircleLayer("lane-circles", source.getId()));
+
+        long generation = source.setUri("https://source-body-failed.test/body.geojson");
+        waitFor(uiController, () -> failed.contains(generation), "generation " + generation + " reported failed");
+
+        mapView.removeOnSourceBodyFailedListener(listener);
+      });
+    } finally {
+      HttpRequestUtil.setOkHttpClient(null);
+    }
   }
 
   @Test
