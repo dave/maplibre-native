@@ -20,10 +20,10 @@ layout (std140) uniform CircleDrawableUBO {
     lowp float u_color_t;
     lowp float u_radius_t;
     lowp float u_blur_t;
-    lowp float u_opacity_t;
+    highp float u_opacity_t;
     lowp float u_stroke_color_t;
     lowp float u_stroke_width_t;
-    lowp float u_stroke_opacity_t;
+    highp float u_stroke_opacity_t;
     lowp float drawable_pad1;
     lowp float drawable_pad2;
     lowp float drawable_pad3;
@@ -45,19 +45,19 @@ layout (std140) uniform CircleEvaluatedPropsUBO {
 #pragma mapbox: define highp vec4 color
 #pragma mapbox: define mediump float radius
 #pragma mapbox: define lowp float blur
-#pragma mapbox: define lowp float opacity
+#pragma mapbox: define highp float opacity
 #pragma mapbox: define highp vec4 stroke_color
 #pragma mapbox: define mediump float stroke_width
-#pragma mapbox: define lowp float stroke_opacity
+#pragma mapbox: define highp float stroke_opacity
 
 void main(void) {
     #pragma mapbox: initialize highp vec4 color
     #pragma mapbox: initialize mediump float radius
     #pragma mapbox: initialize lowp float blur
-    #pragma mapbox: initialize lowp float opacity
+    #pragma mapbox: initialize highp float opacity
     #pragma mapbox: initialize highp vec4 stroke_color
     #pragma mapbox: initialize mediump float stroke_width
-    #pragma mapbox: initialize lowp float stroke_opacity
+    #pragma mapbox: initialize highp float stroke_opacity
 
     // unencode the extrusion vector that we snuck into the a_pos vector
     vec2 extrude = vec2(mod(a_pos, 2.0) * 2.0 - 1.0);

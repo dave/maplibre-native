@@ -40,6 +40,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] OpenGL ES: a data-driven opacity is unpacked and mixed at high precision before it is clamped, in every shader that has one (circle, symbol, and the pattern, gradient and SDF line and fill shaders). A low-precision float need only hold -2..2, so a large opacity stop was undefined before the clamp on mobile GPUs.
 - [core] Fix a render-target leak in `RenderHillshadeLayer`: a tile that prepares again after a neighbour loads frees its old render target. Before, each old target stayed alive, and was drawn every frame, until the layer stopped rendering.
 - [core] WebGPU: `RenderingStats::numFrameBuffers` now counts an offscreen texture when it is made, as on Metal, Vulkan and OpenGL. Before, it was only decremented when one was freed, so it went below zero.
 - [core] Fix seams between adjacent hillshade tiles after a raster-dem tile parses a new body (for example, a network answer that differs from the cached one). The tile's neighbour bits are reset, so its own border is filled again, and each loaded neighbour is filled again with the tile's new edge.

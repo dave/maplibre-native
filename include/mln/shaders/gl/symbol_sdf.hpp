@@ -87,8 +87,8 @@ layout (location = 6) in highp vec4 a_halo_color;
 out highp vec4 halo_color;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 7) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 7) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 #ifndef HAS_UNIFORM_u_halo_width
 layout (location = 8) in lowp vec2 a_halo_width;
@@ -119,7 +119,7 @@ highp vec4 halo_color = u_halo_color;
     #ifndef HAS_UNIFORM_u_opacity
 opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
     #ifndef HAS_UNIFORM_u_halo_width
 halo_width = unpack_mix_vec2(a_halo_width, u_halo_width_t);
