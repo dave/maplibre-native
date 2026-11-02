@@ -150,6 +150,12 @@ MLN_EXPORT
     ``MLNMapViewDelegate/mapViewDidFinishLoadingMap:`` to ensure that the map
     has loaded the style and is ready to accept a new source.
 
+ > Note: The style keeps `source` until it is removed or the style is
+    replaced, so ``sourceWithIdentifier:`` returns this object and any state on
+    it. For an ``MLNShapeSource`` that includes its `shape`: the shape stays in
+    memory beside the parsed copy the map draws from, even if you keep no
+    reference to it. Remove the source to free it.
+
  @param source The source to add to the current style.
  */
 - (void)addSource:(MLNSource *)source;
