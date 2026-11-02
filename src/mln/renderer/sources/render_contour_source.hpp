@@ -36,17 +36,18 @@ private:
     // upstream (its listener_set was destroyed with it).
     void rebindUpstream(const TileParameters& parameters);
 
-    // Listener body: when an upstream DEM tile finishes parsing, locate the
-    // matching contour tile in our pyramid (same OverscaledTileID) and call
-    // populateFromDEM on it.
+    // Listener body: when an upstream DEM tile settles, queue the matching
+    // contour tile in our pyramid (same OverscaledTileID) to be populated, or
+    // completed with no lines if the DEM tile has no data.
     void onUpstreamTileLoaded(const RasterDEMTile&);
 
     // Populates the tiles in `pendingPopulate`, once the render thread's
     // current messages are handled: one DEM arrival notifies up to nine
     // tiles, and several arrivals often come together, so each tile is
-    // populated once, from the newest snapshot of its DEM.
+    // populated once, from the newest snapshot of its DEM. No snapshot: the
+    // DEM tile has no data.
     void populatePending();
-    std::map<OverscaledTileID, ContourTile::DEMSnapshot> pendingPopulate;
+    std::map<OverscaledTileID, std::optional<ContourTile::DEMSnapshot>> pendingPopulate;
     bool populateScheduled = false;
 
     // Cached upstream pointer for use within a single update() call. Cleared
