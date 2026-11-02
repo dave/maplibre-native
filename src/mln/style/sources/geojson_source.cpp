@@ -5,6 +5,7 @@
 #include <mln/style/source_observer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
+#include <mln/tile/geometry_tile.hpp>
 #include <mln/tile/tile.hpp>
 #include <mln/util/async_request.hpp>
 #include <mln/util/label_steps.hpp>
@@ -16,6 +17,8 @@
 
 namespace mln {
 namespace style {
+
+static_assert(GeoJSONSource::maxHeldBodies == GeometryTile::maxKeptLayouts);
 
 namespace {
 
@@ -107,7 +110,22 @@ void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData, uin
         ++requestGeneration;
     }
     baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData), landingGeneration(generation));
+    noteBodyLanded();
     observer->onSourceChanged(*this);
+}
+
+void GeoJSONSource::noteBodyLanded() {
+    const auto limit = impl().getLandingLimit();
+    if (!limit || impl().getLandedGeneration() <= *limit) {
+        return;
+    }
+    heldBodies.push_back(impl().getLandedGeneration());
+    if (heldBodies.size() > maxHeldBodies) {
+        if (!firstFreedBody) {
+            firstFreedBody = heldBodies.front();
+        }
+        heldBodies.pop_front();
+    }
 }
 
 uint64_t GeoJSONSource::landingGeneration(uint64_t generation) {
@@ -251,6 +269,7 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
                                 baseImpl = makeMutable<Impl>(impl(),
                                                              std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)),
                                                              landingGeneration(generation));
+                                noteBodyLanded();
                             }
                             loaded = true;
                             if (error) {
@@ -278,10 +297,26 @@ bool GeoJSONSource::isUpdateSynchronous() const noexcept {
 
 void GeoJSONSource::setLandingLimit(std::optional<uint64_t> limit) {
     if (limit == impl().getLandingLimit()) return;
+    const bool freed = limit && firstFreedBody && *limit >= firstFreedBody && *limit < heldBodies.front();
+    if (!limit) {
+        heldBodies.clear();
+    } else {
+        std::erase_if(heldBodies, [&](uint64_t body) { return body <= *limit; });
+    }
+    if (!limit || (firstFreedBody && *limit >= firstFreedBody && !freed)) {
+        firstFreedBody = 0;
+    }
     auto next = makeMutable<Impl>(impl(), impl().getData().lock(), impl().getLandedGeneration());
     next->setLandingLimit(limit);
     baseImpl = std::move(next);
     observer->onSourceChanged(*this);
+    if (freed) {
+        observer->onSourceError(*this,
+                                std::make_exception_ptr(std::runtime_error(
+                                    "GeoJSON source " + getID() + ": the landing limit " + std::to_string(*limit) +
+                                    " names a body already freed: at most " + std::to_string(maxHeldBodies) +
+                                    " bodies are kept above the limit, and nothing lands")));
+    }
 }
 
 std::optional<uint64_t> GeoJSONSource::getLandingLimit() const {
