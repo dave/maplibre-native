@@ -116,19 +116,28 @@ void RenderRasterDEMSource::onTileChanged(Tile& tile) {
     RenderTileSource::onTileChanged(tile);
 
     // Fan out to cross-source consumers (contour source, etc.) after the
-    // parent class has updated render state. Only fire for renderable tiles
-    // — listeners care about parsed DEMData, not bare load events.
-    if (tile.isRenderable()) {
-        tileLoadListeners.notify(demtile);
+    // parent class has updated render state. The tile has parsed a body: it
+    // has DEMData, or (no content) it has none, and listeners need to hear
+    // that as well.
+    tileLoadListeners.notify(demtile);
+}
+
+void RenderRasterDEMSource::onTileError(Tile& tile, std::exception_ptr error) {
+    RenderSource::onTileError(tile, std::move(error));
+
+    // A tile with data keeps it through a failed refresh: nothing changed for
+    // a listener. A tile with none will have no data.
+    if (!tile.isRenderable()) {
+        tileLoadListeners.notify(static_cast<const RasterDEMTile&>(tile));
     }
 }
 
 RenderRasterDEMSource::ListenerHandle RenderRasterDEMSource::addTileLoadListener(TileLoadListener listener) {
-    // Replay currently-renderable tiles to *this* listener only so a
-    // late-registering consumer sees DEM data that arrived before it
-    // existed, without re-notifying listeners that already saw those tiles.
+    // Replay the tiles that have settled to *this* listener only so a
+    // late-registering consumer sees what arrived before it existed, without
+    // re-notifying listeners that already saw those tiles.
     for (const auto& [_, tilePtr] : tilePyramid.getTiles()) {
-        if (tilePtr && tilePtr->isRenderable()) {
+        if (tilePtr && (tilePtr->isRenderable() || tilePtr->isComplete())) {
             listener(static_cast<const RasterDEMTile&>(*tilePtr));
         }
     }
@@ -139,10 +148,9 @@ void RenderRasterDEMSource::removeTileLoadListener(ListenerHandle handle) {
     tileLoadListeners.remove(handle);
 }
 
-const RasterDEMTile* RenderRasterDEMSource::getRenderableTile(const OverscaledTileID& id) const {
+const RasterDEMTile* RenderRasterDEMSource::getTile(const OverscaledTileID& id) const {
     auto it = tilePyramid.getTiles().find(id);
     if (it == tilePyramid.getTiles().end()) return nullptr;
-    if (!it->second || !it->second->isRenderable()) return nullptr;
     return static_cast<const RasterDEMTile*>(it->second.get());
 }
 
@@ -155,6 +163,13 @@ std::optional<Range<std::uint8_t>> RenderRasterDEMSource::getZoomRange() const {
 
 uint16_t RenderRasterDEMSource::getTileSize() const {
     return impl().getTileSize();
+}
+
+std::optional<LatLngBounds> RenderRasterDEMSource::getBounds() const {
+    if (const auto& tileset = impl().tileset) {
+        return tileset->bounds;
+    }
+    return std::nullopt;
 }
 
 std::unordered_map<std::string, std::vector<Feature>> RenderRasterDEMSource::queryRenderedFeatures(

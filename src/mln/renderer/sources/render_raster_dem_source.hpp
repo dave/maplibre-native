@@ -23,21 +23,23 @@ public:
     std::vector<Feature> querySourceFeatures(const SourceQueryOptions&, const GlobalStateMap*) const override;
 
     // Tile-load listener API. Cross-source consumers (e.g. ContourSource)
-    // register a listener and are notified every time a DEM tile finishes
-    // parsing with `DEMData` ready. `addTileLoadListener` also replays the
-    // currently-renderable tiles synchronously so a late-registering
-    // consumer doesn't miss tiles already loaded before it appeared.
+    // register a listener and are notified each time a DEM tile settles: it
+    // parsed a body with `DEMData` ready (`isRenderable()`), or it will have
+    // no data, because the response had no content or the load failed. A
+    // tile that keeps its old data through a failed refresh is not notified.
+    // `addTileLoadListener` also replays the tiles that have settled
+    // synchronously, so a late-registering consumer doesn't miss them.
     using TileLoadListener = std::function<void(const RasterDEMTile&)>;
     using ListenerHandle = ListenerSet<const RasterDEMTile&>::Handle;
     [[nodiscard]] ListenerHandle addTileLoadListener(TileLoadListener);
     void removeTileLoadListener(ListenerHandle);
 
-    // Sync lookup: returns the renderable DEM tile at the given coord, or
-    // nullptr if absent / not yet parsed. Used by cross-source consumers
-    // (contour source) to populate newly-created derived tiles from
-    // already-loaded DEM data, closing the race between consumer-pyramid
-    // updates and upstream tile arrivals.
-    const RasterDEMTile* getRenderableTile(const OverscaledTileID&) const;
+    // Sync lookup: returns the DEM tile at the given coord, or nullptr if this
+    // source has none. Used by cross-source consumers (contour source) to
+    // settle newly-created derived tiles from a DEM tile that has already
+    // settled, closing the race between consumer-pyramid updates and upstream
+    // tile arrivals.
+    const RasterDEMTile* getTile(const OverscaledTileID&) const;
 
     // Zoom range of the upstream DEM tileset, or `std::nullopt` if the
     // tileset hasn't been parsed yet. Cross-source consumers (contour
@@ -54,6 +56,10 @@ public:
     // same display zoom, which breaks the contour-to-DEM listener match.
     uint16_t getTileSize() const;
 
+    // Bounds of the upstream DEM tileset: its pyramid makes no tile outside
+    // them. Nothing while the tileset is not loaded, or when it has no bounds.
+    std::optional<LatLngBounds> getBounds() const;
+
 private:
     // RenderTileSetSource overrides
     void updateInternal(const Tileset&,
@@ -66,6 +72,7 @@ private:
     const style::TileSource::Impl& impl() const;
 
     void onTileChanged(Tile&) override;
+    void onTileError(Tile&, std::exception_ptr) override;
 
     ListenerSet<const RasterDEMTile&> tileLoadListeners;
 };

@@ -121,7 +121,8 @@ public:
     ~RenderRasterDEMSourceTest() { threadPool.waitForEmpty(); }
 
     const RasterDEMTile* tile(const CanonicalTileID& id) const {
-        return source.getRenderableTile(OverscaledTileID(id.z, 0, id));
+        const RasterDEMTile* found = source.getTile(OverscaledTileID(id.z, 0, id));
+        return found != nullptr && found->isRenderable() ? found : nullptr;
     }
 
     const DEMData& dem(const CanonicalTileID& id) const { return tile(id)->getBucket()->getDEMData(); }
