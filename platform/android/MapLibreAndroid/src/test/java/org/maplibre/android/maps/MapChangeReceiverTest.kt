@@ -756,6 +756,40 @@ class MapChangeReceiverTest : BaseTest() {
         }
     }
 
+    @Test
+    fun aSourceLaidOutReportReachesOnlyTheListenersAddedAndNotRemoved() {
+        val heard = mutableListOf<Pair<String, Long>>()
+        val listener = OnSourceLaidOutListener { sourceId, generation -> heard += sourceId to generation }
+        val receiver = MapChangeReceiver()
+
+        receiver.addOnSourceLaidOutListener(listener)
+        receiver.onSourceLaidOut("labels", 3)
+        receiver.removeOnSourceLaidOutListener(listener)
+        receiver.onSourceLaidOut("labels", 4)
+        receiver.addOnSourceLaidOutListener(listener)
+        receiver.clear()
+        receiver.onSourceLaidOut("labels", 5)
+
+        Assert.assertEquals(listOf("labels" to 3L), heard)
+    }
+
+    @Test
+    fun aSourceLaidOutListenerThatThrowsIsLoggedAndRethrown() {
+        val exc = RuntimeException()
+        val receiver = MapChangeReceiver()
+        receiver.addOnSourceLaidOutListener { _, _ -> throw exc }
+        Logger.setLoggerDefinition(loggerDefinition)
+
+        val thrown = Assert.assertThrows(RuntimeException::class.java) { receiver.onSourceLaidOut("labels", 1) }
+
+        Assert.assertSame(exc, thrown)
+        Mockito.verify(loggerDefinition)?.e(
+            ArgumentMatchers.anyString(),
+            ArgumentMatchers.anyString(),
+            ArgumentMatchers.eq(exc)
+        )
+    }
+
     companion object {
         private const val TEST_STRING = "mapChangeRandom"
         private val TEST_RENDERING_STATS = RenderingStats();
