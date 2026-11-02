@@ -61,7 +61,8 @@ std::vector<Line> tileLines(int x, int y, double interval) {
         .dim = dem.dim,
         .unpack = dem.getUnpackVector()};
     std::vector<Line> result;
-    for (const auto& feature : ContourTile::buildFeatures(snapshot, interval, 5, algorithm::contour::UnitConfig{})) {
+    for (const auto& feature :
+         ContourTile::buildFeatures(snapshot, {.intervalDisplayUnits = interval, .majorMultiplier = 5, .unit = {}})) {
         result.push_back({static_cast<double>(feature.properties.at("ele").get<std::int64_t>()),
                           feature.geometry.get<mapbox::geometry::line_string<std::int16_t>>()});
     }

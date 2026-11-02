@@ -244,12 +244,9 @@ ContourTile::ContourTile(const OverscaledTileID& id_,
     : GeometryTile(id_, std::move(sourceID_), parameters, observer_),
       threadPool(parameters.threadPool) {}
 
-void ContourTile::populateFromDEM(const RasterDEMTile& demTile,
-                                  double intervalDisplayUnits,
-                                  std::int64_t majorMultiplier,
-                                  const algorithm::contour::UnitConfig& unit) {
+void ContourTile::populateFromDEM(const RasterDEMTile& demTile, const LineOptions& options) {
     if (const auto taken = snapshot(demTile)) {
-        populate(*taken, intervalDisplayUnits, majorMultiplier, unit);
+        populate(*taken, options);
     }
 }
 
@@ -292,11 +289,8 @@ void ContourTile::setNoData() {
     setData(nullptr);
 }
 
-mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(
-    const DEMSnapshot& snapshot_,
-    double intervalDisplayUnits,
-    std::int64_t majorMultiplier,
-    const algorithm::contour::UnitConfig& unit) {
+mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(const DEMSnapshot& snapshot_,
+                                                                             const LineOptions& options) {
     const int dim = snapshot_.dim;
     const int width = dim + 2 * DEMData::border;
 
@@ -306,13 +300,13 @@ mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(
         heights[i] = DEMData::decodeHeight(rgba + i * 4, snapshot_.unpack);
     }
 
-    // The configured `intervalDisplayUnits` is in display units (feet,
+    // The configured interval is in display units (feet,
     // metres, custom). Heights are always metres. Convert the threshold to
     // metres before running the algorithm so its level outputs come back in
     // metres too, then convert per-feature `ele` back to display units in
     // `toFeatures`.
     algorithm::contour::ContourThresholds thresholds;
-    thresholds.interval = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
+    thresholds.interval = algorithm::contour::unitToMeters(options.intervalDisplayUnits, options.unit);
     // Pixel-center coordinate mapping. We want:
     //   alg index `border`     (sample 0, world west_L + 0.5cw) → tile-local +0.5cw
     //   alg index `border+dim-1` (sample dim-1, east_L − 0.5cw) → EXTENT − 0.5cw
@@ -355,24 +349,21 @@ mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(
         }
         shifted.push_back(std::move(s));
     }
-    return toFeatures(shifted, unit, intervalDisplayUnits, majorMultiplier);
+    return toFeatures(shifted, options.unit, options.intervalDisplayUnits, options.majorMultiplier);
 }
 
-void ContourTile::populate(const DEMSnapshot& snapshot_,
-                           double intervalDisplayUnits,
-                           std::int64_t majorMultiplier,
-                           const algorithm::contour::UnitConfig& unit) {
+void ContourTile::populate(const DEMSnapshot& snapshot_, const LineOptions& options) {
     const std::uint64_t generation = ++requestedGeneration;
     latestGeneration->store(generation);
     threadPool.scheduleAndReplyValue(
-        [snapshot_, intervalDisplayUnits, majorMultiplier, unit, generation, latest = latestGeneration]()
+        [snapshot_, options, generation, latest = latestGeneration]()
             -> mapbox::feature::feature_collection<std::int16_t> {
             // A newer call was made while this one waited: its result would be
             // dropped on reply, so skip the work.
             if (latest->load() != generation) {
                 return {};
             }
-            return buildFeatures(snapshot_, intervalDisplayUnits, majorMultiplier, unit);
+            return buildFeatures(snapshot_, options);
         },
         [self = weakFactory.makeWeakPtr(), this, generation](
             mapbox::feature::feature_collection<std::int16_t> features) {

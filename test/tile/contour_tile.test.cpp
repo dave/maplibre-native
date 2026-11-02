@@ -90,15 +90,15 @@ TEST(ContourTile, OlderPopulateResultDoesNotReplaceNewer) {
     ASSERT_NE(nullptr, dem.getBucket());
 
     ContourTile tile(id, "contours", params);
-    const algorithm::contour::UnitConfig unit;
+    const ContourTile::LineOptions lineOptions{.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}};
 
     auto& tasks = test.scheduler->tasks;
     const auto before = tasks.size();
-    tile.populateFromDEM(dem, 10.0, 5, unit);
+    tile.populateFromDEM(dem, lineOptions);
     ASSERT_EQ(before + 1, tasks.size());
     auto first = std::move(tasks.back());
     tasks.pop_back();
-    tile.populateFromDEM(dem, 10.0, 5, unit);
+    tile.populateFromDEM(dem, lineOptions);
     ASSERT_EQ(before + 1, tasks.size());
     auto second = std::move(tasks.back());
     tasks.pop_back();
@@ -119,14 +119,14 @@ TEST(ContourTile, PopulateResultsInOrderApplyTheNewest) {
     dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
 
     ContourTile tile(id, "contours", params);
-    const algorithm::contour::UnitConfig unit;
+    const ContourTile::LineOptions lineOptions{.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}};
     EXPECT_EQ(0u, tile.populatedGeneration());
 
     auto& tasks = test.scheduler->tasks;
-    tile.populateFromDEM(dem, 10.0, 5, unit);
+    tile.populateFromDEM(dem, lineOptions);
     auto first = std::move(tasks.back());
     tasks.pop_back();
-    tile.populateFromDEM(dem, 10.0, 5, unit);
+    tile.populateFromDEM(dem, lineOptions);
     auto second = std::move(tasks.back());
     tasks.pop_back();
 
@@ -204,7 +204,8 @@ TEST(ContourTile, HeightsKeepTheirFraction) {
     constexpr int firstHigh = 10;
     const auto snapshot = terrariumSnapshot([](int x, int) { return x < firstHigh ? 99.75 : 100.75; });
 
-    const auto features = ContourTile::buildFeatures(snapshot, 100.0, 5, {});
+    const auto features = ContourTile::buildFeatures(snapshot,
+                                                     {.intervalDisplayUnits = 100.0, .majorMultiplier = 5, .unit = {}});
 
     ASSERT_EQ(1u, features.size());
     EXPECT_EQ(100, features[0].properties.at("ele").get<std::int64_t>());
@@ -221,7 +222,8 @@ TEST(ContourTile, NegativeHeightsKeepTheirFraction) {
     constexpr int firstHigh = 10;
     const auto snapshot = terrariumSnapshot([](int x, int) { return x < firstHigh ? -100.25 : -99.25; });
 
-    const auto features = ContourTile::buildFeatures(snapshot, 100.0, 5, {});
+    const auto features = ContourTile::buildFeatures(snapshot,
+                                                     {.intervalDisplayUnits = 100.0, .majorMultiplier = 5, .unit = {}});
 
     ASSERT_EQ(1u, features.size());
     EXPECT_EQ(-100, features[0].properties.at("ele").get<std::int64_t>());
