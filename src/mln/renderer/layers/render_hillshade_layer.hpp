@@ -46,6 +46,8 @@ private:
     void addRenderTarget(const RenderTargetPtr&, UniqueChangeRequestVec&);
     void removeRenderTarget(const RenderTargetPtr&, UniqueChangeRequestVec&);
     void removeRenderTargets(UniqueChangeRequestVec&);
+    // Stops drawing the render targets of tiles that have left the render tiles.
+    void removeLeftRenderTargets(UniqueChangeRequestVec&);
 
     // Paint properties
     style::HillshadePaintProperties::Unevaluated unevaluated;
