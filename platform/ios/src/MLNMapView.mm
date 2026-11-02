@@ -538,7 +538,6 @@ public:
     MLNLogDebug(@"Initializing frame: %@", NSStringFromCGRect(frame));
     [self initDefaults];
     [self commonInitWithOptions:nil];
-    self.styleURL = nil;
     MLNLogInfo(@"Finalizing %@ initialization.", NSStringFromClass([self class]));
   }
   return self;
@@ -550,7 +549,9 @@ public:
     MLNLogDebug(@"Initializing frame: %@ styleURL: %@", NSStringFromCGRect(frame), styleURL);
     [self initDefaults];
     [self commonInitWithOptions:nil];
-    self.styleURL = styleURL;
+    if (styleURL) {
+      self.styleURL = styleURL;
+    }
     MLNLogInfo(@"Finalizing %@ initialization.", NSStringFromClass([self class]));
   }
   return self;
@@ -588,11 +589,7 @@ public:
       } else if (options.styleJSON) {
         self.styleJSON = options.styleJSON;
         _initialStyleJSON = [options.styleJSON copy];
-      } else {
-        self.styleURL = nil;
       }
-    } else {
-      self.styleURL = nil;
     }
 
     MLNLogInfo(@"Finalizing %@ initialization.", NSStringFromClass([self class]));
@@ -617,7 +614,6 @@ public:
   options.fastPFOREnabled = _fastPFOREnabled;
   options.featureInfoEnabled = _featureInfoEnabled;
   [self commonInitWithOptions:options];
-  self.styleURL = nil;
 
   // Constraint installation was skipped in `didMoveToSuperview`
   // in this case, because the subviews did not exist yet.
@@ -635,7 +631,7 @@ public:
   return [NSSet setWithObjects:@"styleURL__", nil];
 }
 
-- (nonnull NSURL *)styleURL {
+- (nullable NSURL *)styleURL {
   if (!_mbglMap) {
     NSAssert(self.terminated, @"_mbglMap should only be unavailable during app termination");
     return self.residualStyleURL;
@@ -645,8 +641,8 @@ public:
     return [NSURL URLWithString:@"local://style.json"];
   }
 
+  // Empty until a style is set: a map view made with no style loads none.
   NSString *styleURLString = @(self.mbglMap.getStyle().getURL().c_str()).mgl_stringOrNilIfEmpty;
-  MLNAssert(styleURLString, @"Invalid style URL string %@", styleURLString);
   return styleURLString ? [NSURL URLWithString:styleURLString] : nil;
 }
 
@@ -673,6 +669,10 @@ public:
 - (IBAction)reloadStyle:(__unused id)sender {
   MLNLogInfo(@"Reloading style.");
   NSURL *styleURL = self.styleURL;
+  if (!styleURL) {
+    // No style to reload: a nil URL would load the default style.
+    return;
+  }
   self.mbglMap.getStyle().loadURL("");
   self.styleURL = styleURL;
 }
