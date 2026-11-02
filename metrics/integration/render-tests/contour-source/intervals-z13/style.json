@@ -4,7 +4,7 @@
     "test": {
       "height": 256,
       "width": 256,
-      "description": "Native contour source with step-by-zoom intervals `[200, 12, 100, 13, 50]`. At zoom 13 the schedule resolves to 50m, producing the densest contour set. Rendered with overzoom: 1 since the DEM caps at maxzoom 12; without overzoom the contour source would also have to upsample but the algorithm still produces output."
+      "description": "Native contour source with step-by-zoom intervals `[200, 12, 100, 13, 50]`, above the raster-dem maxzoom 12. At map zoom 13 the schedule resolves to 50 m, the densest set of lines."
     }
   },
   "center": [
@@ -31,8 +31,7 @@
         13,
         50
       ],
-      "unit": "meters",
-      "overzoom": 1
+      "unit": "meters"
     }
   },
   "layers": [

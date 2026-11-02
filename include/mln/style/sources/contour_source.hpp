@@ -18,8 +18,7 @@ namespace style {
 //     "source": "dem",
 //     "intervals": [200, 12, 100, 14, 50, 15, 20],
 //     "unit": "feet",
-//     "majorMultiplier": [5, 14, 4, 15, 5],
-//     "overzoom": 1
+//     "majorMultiplier": [5, 14, 4, 15, 5]
 //   }
 struct ContourSourceOptions {
     // ID of the upstream `raster-dem` source to derive contours from.
@@ -40,9 +39,6 @@ struct ContourSourceOptions {
     // Default: a single-output schedule of `{5}` (every 5th line is major
     // at every zoom).
     algorithm::contour::IntervalSchedule majorMultiplier{{5.0}};
-    // Number of zoom levels to overzoom from the upstream DEM source. 0 means
-    // sample the DEM at the contour-tile zoom directly.
-    std::uint8_t overzoom = 0;
 };
 
 // Source-on-source: reads decoded DEM data from an upstream `raster-dem`
@@ -58,7 +54,6 @@ public:
     const algorithm::contour::IntervalSchedule& getIntervals() const;
     const algorithm::contour::UnitConfig& getUnit() const;
     const algorithm::contour::IntervalSchedule& getMajorMultiplier() const;
-    std::uint8_t getOverzoom() const;
 
     class Impl;
     const Impl& impl() const;
