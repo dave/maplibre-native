@@ -311,14 +311,15 @@ TEST(LabelLane, ALaneSourceRefusesASynchronousOverride) {
     EXPECT_TRUE(plain.isUpdateSynchronous());
 }
 
-TEST(LabelLane, ALaneSourceParsesOnTheLaneAndCutsOnAThreadOfItsOwn) {
+TEST(LabelLane, ALaneSourceParsesOnTheLaneAndCutsOnTheLanesSlicer) {
     GeoJSONSource lane("lane", laneOptions());
     GeoJSONSource other("other", laneOptions());
     GeoJSONSource plain("plain");
     ASSERT_NE(nullptr, Scheduler::GetLabelLane());
     EXPECT_EQ(Scheduler::GetLabelLane(), lane.getParseScheduler());
     EXPECT_NE(Scheduler::GetBackground(), lane.getParseScheduler());
-    EXPECT_NE(lane.getSliceScheduler(), other.getSliceScheduler());
+    EXPECT_EQ(lane.getSliceScheduler(), other.getSliceScheduler());
+    EXPECT_NE(plain.getSliceScheduler(), lane.getSliceScheduler());
     EXPECT_EQ(Scheduler::GetBackground(), plain.getParseScheduler());
 }
 
@@ -673,6 +674,13 @@ std::set<std::thread::id> threadsOf(Scheduler& scheduler, std::ptrdiff_t count) 
 }
 
 } // namespace
+
+// Each lane source's cuts run on one thread: N sources do not make N threads.
+TEST(LabelLane, TwoLaneSourcesCutOnOneThread) {
+    GeoJSONSource one("one", laneOptions());
+    GeoJSONSource two("two", laneOptions());
+    EXPECT_EQ(threadsOf(*one.getSliceScheduler(), 1), threadsOf(*two.getSliceScheduler(), 1));
+}
 
 // The thread test: every recorded step of a lane source runs on the lane,
 // none on the render thread; a plain source's run on the pool.
