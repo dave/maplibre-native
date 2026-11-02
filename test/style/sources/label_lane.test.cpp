@@ -2117,3 +2117,68 @@ TEST(GeoJSONSource, AnOlderBodyDoesNotCancelANewerURL) {
     ASSERT_TRUE(runUntil(loop, [&] { return loads == 1; }, "the URL's body"));
     EXPECT_EQ(urlBody, source.getLandedGeneration());
 }
+
+// A raise below the newest body, with a pan in the same turn: the tiles made
+// in that frame draw the body at the limit, as the tiles already there do, not
+// the body from before the hold.
+
+namespace {
+
+std::string markedPoint(const std::string& mark, double lon, double lat) {
+    return R"({"type": "Feature", "properties": {")" + mark +
+           R"(": true}, "geometry": {"type": "Point", "coordinates": [)" + std::to_string(lon) + ", " +
+           std::to_string(lat) + "]}}";
+}
+
+std::string markedBody(const std::string& mark) {
+    return R"({"type": "FeatureCollection", "features": [)" + markedPoint(mark, 135.5, 0.5) + "]}";
+}
+
+bool drawsMark(LaneMap& test, const std::string& mark) {
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"circles"};
+    const auto features = test.frontend->getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options);
+    return std::ranges::any_of(features, [&](const Feature& feature) { return feature.properties.contains(mark); });
+}
+
+} // namespace
+
+TEST(RenderGeoJSONSource, ATileMadeInTheFrameOfARaiseDrawsTheBodyAtTheLimit) {
+    std::string style = circleStyleJSON();
+    style.replace(style.find("\"zoom\": 1.5"), std::string("\"zoom\": 1.5").size(), "\"zoom\": 5");
+    LaneMap test(style);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const uint64_t preHold = test.labels().setGeoJSON(body(markedBody("preHold")));
+    ASSERT_TRUE(
+        runUntil(test.loop, [&] { return test.observer.has("labels", preHold); }, "the pre-hold body laid out"));
+
+    test.labels().setLandingLimit(preHold);
+    const uint64_t atLimit = test.labels().setGeoJSON(body(markedBody("atLimit")));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", atLimit); }, "the first held body"));
+    const uint64_t newest = test.labels().setGeoJSON(body(markedBody("newest")));
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", newest); }, "the second held body"));
+
+    // The limit reaches the first held body, and the pan makes new tiles, in one turn.
+    test.labels().setLandingLimit(atLimit);
+    test.map->jumpTo(CameraOptions().withCenter(LatLng{0.5, 135.5}));
+    bool drewPreHold = false;
+    bool drewNewest = false;
+    const bool drawn = runUntil(
+        test.loop,
+        [&] {
+            drewPreHold = drewPreHold || drawsMark(test, "preHold");
+            drewNewest = drewNewest || drawsMark(test, "newest");
+            return drawsMark(test, "atLimit");
+        },
+        "the new tile draws the body at the limit");
+    EXPECT_FALSE(drewPreHold) << "a tile made in the frame of the raise drew the body from before the hold";
+    EXPECT_FALSE(drewNewest) << "a tile drew a body above the limit";
+    ASSERT_TRUE(drawn);
+
+    // The newest body stays held in the new tile until the limit goes.
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame with the limit in place"));
+    EXPECT_FALSE(drawsMark(test, "newest"));
+    test.labels().setLandingLimit(std::nullopt);
+    EXPECT_TRUE(runUntil(test.loop, [&] { return drawsMark(test, "newest"); }, "the newest body after the release"));
+}
