@@ -31,10 +31,6 @@ const algorithm::contour::IntervalSchedule& ContourSource::getMajorMultiplier() 
     return impl().getOptions().majorMultiplier;
 }
 
-std::uint8_t ContourSource::getOverzoom() const {
-    return impl().getOptions().overzoom;
-}
-
 void ContourSource::loadDescription(FileSource&) {
     // No tiles to fetch — the source-on-source pipeline reads decoded DEM
     // tiles from the upstream raster-dem source's tile pyramid.

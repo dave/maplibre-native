@@ -27,8 +27,7 @@
       "intervals": [
         50
       ],
-      "unit": "meters",
-      "overzoom": 1
+      "unit": "meters"
     }
   },
   "layers": [
