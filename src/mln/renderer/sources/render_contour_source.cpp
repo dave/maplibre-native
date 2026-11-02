@@ -19,15 +19,6 @@ using namespace style;
 
 namespace {
 
-// Resolve the source's `majorMultiplier` schedule at a zoom to a single positive
-// integer. Returns 0 when the schedule is empty or invalid (callers treat 0 as
-// "never major").
-std::int64_t resolveMajorMultiplier(const algorithm::contour::IntervalSchedule& schedule, double zoom) {
-    const double v = algorithm::contour::intervalForZoom(schedule, zoom);
-    if (v <= 0.0) return 0;
-    return static_cast<std::int64_t>(std::llround(v));
-}
-
 // How to build the lines of a tile. Its schedules are read at the map zoom the
 // tile is drawn at. That is the whole zoom the tile pyramid covers, which is the
 // map zoom rounded (a contour source covers the zoom its raster-dem source
@@ -38,7 +29,7 @@ ContourTile::LineOptions lineOptions(const style::ContourSourceOptions& options,
                                      uint16_t tileSize) {
     const double zoom = id.overscaledZ - std::log2(util::tileSize_D / tileSize);
     return {.intervalDisplayUnits = algorithm::contour::intervalForZoom(options.intervals, zoom),
-            .majorMultiplier = resolveMajorMultiplier(options.majorMultiplier, zoom),
+            .majorMultiplier = std::llround(algorithm::contour::intervalForZoom(options.majorMultiplier, zoom)),
             .unit = options.unit};
 }
 

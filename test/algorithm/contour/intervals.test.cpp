@@ -10,12 +10,6 @@ using namespace mln::algorithm::contour;
 // (always odd length): zoom < stop1 → output0; stop_k ≤ zoom < stop_{k+1} →
 // output_k; zoom ≥ stop_N → output_N.
 
-TEST(ContourIntervals, EmptyScheduleReturnsZero) {
-    const IntervalSchedule s{};
-    EXPECT_DOUBLE_EQ(intervalForZoom(s, 0.0), 0.0);
-    EXPECT_DOUBLE_EQ(intervalForZoom(s, 14.0), 0.0);
-}
-
 TEST(ContourIntervals, SingleOutputIsConstantForAllZooms) {
     // {200} = "always 200, regardless of zoom". One-element schedule has no
     // stops; it's just output0.

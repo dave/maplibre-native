@@ -23,9 +23,9 @@ struct IntervalSchedule {
     std::vector<double> stops;
 };
 
-/// Look up the contour interval for a given zoom. Returns 0.0 for an empty
-/// or invalid schedule. Zoom is treated as a continuous value; step
-/// boundaries are right-continuous.
+/// Look up the contour interval for a given zoom. The schedule must be valid
+/// (see `isValid`); a `ContourSource` checks that when it is made. Zoom is
+/// treated as a continuous value; step boundaries are right-continuous.
 double intervalForZoom(const IntervalSchedule& schedule, double zoom);
 
 /// True when the schedule has odd length, strictly-increasing stops, and
