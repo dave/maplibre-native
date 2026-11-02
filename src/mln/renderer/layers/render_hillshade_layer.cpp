@@ -264,10 +264,12 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             // arrives and triggers backfillBorder, which flips
             // renderTargetPrepared to false) leaks the prior render target
             // into activatedRenderTargets and the orchestrator's
-            // renderTargets vector — neither is cleaned up until the layer
-            // becomes unrenderable.
+            // renderTargets vector; neither is cleaned up until the layer
+            // becomes unrenderable. The bucket forgets it too, so that it
+            // never refers to a render target that is no longer drawn.
             if (bucket.renderTarget) {
                 removeRenderTarget(bucket.renderTarget, changes);
+                bucket.renderTarget.reset();
             }
             // Set up tile render target. We render past the tile interior on
             // each side (output is (dim+3)²) so adjacent tiles'
