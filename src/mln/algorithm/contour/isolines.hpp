@@ -49,7 +49,7 @@ struct ContourLineString {
 /// @param thresholds configuration; `interval` must be > 0.
 /// @return One ContourLineString per stitched polyline. Lines are not
 ///   simplified or smoothed — that is the consumer's responsibility.
-std::vector<ContourLineString> generateContours(std::span<const std::int16_t> heights,
+std::vector<ContourLineString> generateContours(std::span<const float> heights,
                                                 int width,
                                                 int height,
                                                 const ContourThresholds& thresholds);
