@@ -30,7 +30,7 @@ jni::Local<jni::String> RasterSource::getURL(jni::JNIEnv& env) {
 }
 
 void RasterSource::reloadEmptyTiles(jni::JNIEnv&) {
-    source.as<mln::style::RasterSource>()->reloadEmptyTiles();
+    source.as<mln::style::RasterSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
 jni::Local<jni::Object<Source>> RasterSource::createJavaPeer(jni::JNIEnv& env) {

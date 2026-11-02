@@ -31,7 +31,7 @@ jni::Local<jni::String> RasterDEMSource::getURL(jni::JNIEnv& env) {
 }
 
 void RasterDEMSource::reloadEmptyTiles(jni::JNIEnv&) {
-    source.as<mln::style::RasterDEMSource>()->reloadEmptyTiles();
+    source.as<mln::style::RasterDEMSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
 jni::Local<jni::Object<Source>> RasterDEMSource::createJavaPeer(jni::JNIEnv& env) {

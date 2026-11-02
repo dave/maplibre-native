@@ -13,6 +13,10 @@
 #include <mln/storage/resource_provider.hpp>
 #include <mln/storage/resource_provider_file_source.hpp>
 #include <mln/storage/resource_transform.hpp>
+#include <mln/renderer/query.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/style/sources/tile_source.hpp>
+#include <mln/style/sources/vector_source.hpp>
 #include <mln/style/style.hpp>
 #include <mln/test/fixture_log_observer.hpp>
 #include <mln/test/map_adapter.hpp>
@@ -25,6 +29,8 @@
 #include <mln/util/tile_server_options.hpp>
 #include <mln/util/timer.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <functional>
 #include <latch>
@@ -736,4 +742,107 @@ TEST(ResourceProvider, AnotherProviderCountsFromZero) {
     EXPECT_EQ(0u, getResourceProviderCounts("provider-test")->inFlight);
     EXPECT_EQ(0u, getResourceProviderCounts("provider-test")->peakInFlight);
     registerResourceProvider("provider-test", registered.provider);
+}
+
+// Asking again: a tile whose answer was empty or failed goes back to the provider,
+// although its empty answer carries the fork's etag.
+
+namespace {
+
+/** The water tile's bytes once `ready` is set, and before that `early`. */
+void answerWhen(TestProvider& provider, const bool& ready, Outcome early) {
+    provider.onStart = [&ready, early](const ProviderRequest& request, ProviderResponder& responder) {
+        if (request.localOnly) {
+            responder.notFound("not stored");
+        } else if (ready) {
+            responder.data(mvt());
+        } else {
+            give(responder, early);
+        }
+    };
+}
+
+std::size_t drawnFills(ProviderMap& test) {
+    RenderedQueryOptions options;
+    options.layerIDs = std::vector<std::string>{"water"};
+    return test.frontend.getRenderer()->queryRenderedFeatures(ScreenBox{{0, 0}, {256, 256}}, options).size();
+}
+
+void expectReloadFillsTheTiles(Outcome early, style::ReloadFilter filter) {
+    Registered registered("provider-test");
+    bool ready = false;
+    answerWhen(*registered.provider, ready, early);
+    ProviderMap test;
+    // A failed tile's parents stay incomplete, so this map never renders "full". The
+    // view's four tiles have been answered once they have been fetched.
+    ASSERT_TRUE(
+        runUntil(test.loop, [&] { return callsByURL(*registered.provider, false).size() >= 4; }, "the first answers"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    ASSERT_EQ(0u, drawnFills(test));
+
+    ready = true;
+    test.map.getStyle().getSource("tiles")->as<style::VectorSource>()->reloadTiles(filter);
+    // The view's own tiles, by name: a parent tile that loads later would draw too.
+    EXPECT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            const auto fetched = callsByURL(*registered.provider, false);
+            return std::ranges::all_of(std::array{"3/3/3", "3/3/4", "3/4/3", "3/4/4"}, [&](const std::string& tile) {
+                const auto it = fetched.find("provider-test://tiles/" + tile);
+                return it != fetched.end() && it->second == 2;
+            });
+        },
+        "the view's tiles asked for again"));
+    EXPECT_TRUE(runUntil(test.loop, [&] { return drawnFills(test) > 0; }, "the tiles after the reload"));
+}
+
+} // namespace
+
+TEST(ResourceProvider, ReloadTilesAsksAgainForAnEmptyTile) {
+    expectReloadFillsTheTiles(Outcome::Empty, style::ReloadFilter::Empty);
+}
+
+TEST(ResourceProvider, ReloadTilesAsksAgainForAFailedTile) {
+    expectReloadFillsTheTiles(Outcome::Unavailable, style::ReloadFilter::Failed);
+}
+
+// A reload does not touch a tile that has data: no call, no second landing.
+TEST(ResourceProvider, ReloadTilesLeavesATileWithData) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest&, ProviderResponder& responder) {
+        responder.data(mvt());
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    const std::size_t started = registered.provider->started();
+    const std::size_t landed = landings.count();
+    test.map.getStyle().getSource("tiles")->as<style::VectorSource>()->reloadTiles(style::ReloadFilter::EmptyAndFailed);
+    ASSERT_TRUE(test.oneMoreFrame());
+    ASSERT_TRUE(test.oneMoreFrame());
+    EXPECT_EQ(started, registered.provider->started());
+    EXPECT_EQ(landed, landings.count());
+}
+
+// A reload reaches an empty tile in the pyramid's cache too: when it is shown again
+// it asks, and does not take its old etag's "not modified".
+TEST(ResourceProvider, AnEmptyTileInTheCacheAsksAgainWhenShownAfterAReload) {
+    Registered registered("provider-test");
+    bool ready = false;
+    answerWhen(*registered.provider, ready, Outcome::Empty);
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the first answers"));
+    ASSERT_TRUE(test.oneMoreFrame());
+
+    test.observer.lastFrameFull = false;
+    test.map.jumpTo(CameraOptions().withCenter(LatLng{40, 100}));
+    ASSERT_TRUE(test.settled("the tiles away"));
+    ASSERT_TRUE(test.oneMoreFrame());
+
+    ready = true;
+    test.map.getStyle().getSource("tiles")->as<style::VectorSource>()->reloadTiles(style::ReloadFilter::Empty);
+    ASSERT_TRUE(test.oneMoreFrame());
+    test.map.jumpTo(CameraOptions().withCenter(LatLng{0.5, 0.5}));
+    EXPECT_TRUE(runUntil(test.loop, [&] { return drawnFills(test) > 0; }, "the tiles after the pan back"));
 }

@@ -278,9 +278,9 @@ public:
 };
 
 // Loads tile 0/0/0 of a vector source with `answer`, then calls
-// `reloadEmptyTiles` and gives the render source the new impl. Returns the
+// `reloadTiles` and gives the render source the new impl. Returns the
 // tile requests made in all.
-int tileRequestsAfterReloadEmptyTiles(std::function<Response()> answer) {
+int tileRequestsAfterReload(std::function<Response()> answer, ReloadFilter filter = ReloadFilter::EmptyAndFailed) {
     SourceTest test;
     auto fileSource = std::make_shared<CountingFileSource>();
     test.fileSource = fileSource;
@@ -313,23 +313,23 @@ int tileRequestsAfterReloadEmptyTiles(std::function<Response()> answer) {
     test.run();
     EXPECT_EQ(1, fileSource->tileRequests);
 
-    source.reloadEmptyTiles();
+    source.reloadTiles(filter);
     renderSource->update(source.baseImpl, layers, true, false, test.tileParameters());
     return fileSource->tileRequests;
 }
 
 } // namespace
 
-TEST(Source, ReloadEmptyTilesAsksAgainForAnEmptyTile) {
-    EXPECT_EQ(2, tileRequestsAfterReloadEmptyTiles([] {
+TEST(Source, ReloadTilesAsksAgainForAnEmptyTile) {
+    EXPECT_EQ(2, tileRequestsAfterReload([] {
                   Response response;
                   response.noContent = true;
                   return response;
               }));
 }
 
-TEST(Source, ReloadEmptyTilesAsksAgainForAFailedTile) {
-    EXPECT_EQ(2, tileRequestsAfterReloadEmptyTiles([] {
+TEST(Source, ReloadTilesAsksAgainForAFailedTile) {
+    EXPECT_EQ(2, tileRequestsAfterReload([] {
                   Response response;
                   response.error = std::make_unique<Response::Error>(Response::Error::Reason::Server,
                                                                      "HTTP status code 503");
@@ -337,9 +337,9 @@ TEST(Source, ReloadEmptyTilesAsksAgainForAFailedTile) {
               }));
 }
 
-TEST(Source, ReloadEmptyTilesLeavesATileWithData) {
+TEST(Source, ReloadTilesLeavesATileWithData) {
     EXPECT_EQ(
-        1, tileRequestsAfterReloadEmptyTiles([] {
+        1, tileRequestsAfterReload([] {
             Response response;
             response.data = std::make_shared<std::string>(util::read_file("test/fixtures/map/online/0-0-0.vector.pbf"));
             return response;
@@ -1269,4 +1269,30 @@ TEST(Source, ATileJSONResourceCarriesItsSourceID) {
     source.loadDescription(*test.fileSource);
     test.run();
     EXPECT_EQ("named", sourceID);
+}
+
+namespace {
+
+Response anEmptyAnswer() {
+    Response response;
+    response.noContent = true;
+    return response;
+}
+
+Response aFailedAnswer() {
+    Response response;
+    response.error = std::make_unique<Response::Error>(Response::Error::Reason::Connection, "no connection");
+    return response;
+}
+
+} // namespace
+
+TEST(Source, ReloadTilesEmptyAsksAgainOnlyForAnEmptyTile) {
+    EXPECT_EQ(2, tileRequestsAfterReload(anEmptyAnswer, ReloadFilter::Empty));
+    EXPECT_EQ(1, tileRequestsAfterReload(aFailedAnswer, ReloadFilter::Empty));
+}
+
+TEST(Source, ReloadTilesFailedAsksAgainOnlyForAFailedTile) {
+    EXPECT_EQ(2, tileRequestsAfterReload(aFailedAnswer, ReloadFilter::Failed));
+    EXPECT_EQ(1, tileRequestsAfterReload(anEmptyAnswer, ReloadFilter::Failed));
 }

@@ -21,6 +21,10 @@
 
 namespace mln {
 
+namespace style {
+enum class ReloadFilter : uint8_t;
+} // namespace style
+
 class LayerRenderData;
 class TransformState;
 class TileObserver;
@@ -68,9 +72,8 @@ public:
 
     virtual void setUpdateParameters(const TileUpdateParameters&) {}
 
-    // Asks the network again if the last answer was empty or an error and the
-    // tile is needed now. See `TileSource::reloadEmptyTiles`.
-    virtual void reloadIfEmpty() {}
+    // Asks again if the last answer matches the filter. See `TileSource::reloadTiles`.
+    virtual void reload(style::ReloadFilter) {}
 
     // Mark this tile as no longer needed and cancel any pending work.
     virtual void cancel() = 0;

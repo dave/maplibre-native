@@ -2,6 +2,7 @@
 
 #include <mln/renderer/tile_parameters.hpp>
 #include <mln/storage/file_source.hpp>
+#include <mln/style/sources/tile_source.hpp>
 #include <mln/tile/tile_loader.hpp>
 #include <mln/util/async_request.hpp>
 #include <mln/util/tileset.hpp>
@@ -99,11 +100,21 @@ void TileLoader<T>::setUpdateParameters(const TileUpdateParameters& params) {
 }
 
 template <typename T>
-void TileLoader<T>::reloadIfEmpty() {
-    if (!lastAnswerEmpty || request || necessity != TileNecessity::Required) {
+void TileLoader<T>::reload(style::ReloadFilter filter) {
+    const auto wanted = lastAnswer == LastAnswer::Empty    ? style::ReloadFilter::Empty
+                        : lastAnswer == LastAnswer::Failed ? style::ReloadFilter::Failed
+                                                           : std::optional<style::ReloadFilter>();
+    if (!wanted || !(static_cast<uint8_t>(filter) & static_cast<uint8_t>(*wanted))) {
         return;
     }
-    loadFromNetwork();
+    // A real question: an answer of "not modified" would leave the tile as it is.
+    resource.priorEtag = std::nullopt;
+    resource.priorModified = std::nullopt;
+    resource.priorExpires = std::nullopt;
+    resource.priorData = nullptr;
+    if (!request && necessity == TileNecessity::Required) {
+        loadFromNetwork();
+    }
 }
 
 template <typename T>
@@ -169,7 +180,7 @@ void TileLoader<T>::makeOptional() {
 template <typename T>
 void TileLoader<T>::loadedData(const Response& res, Resource::LoadingMethod method) {
     if (res.error && res.error->reason != Response::Error::Reason::NotFound) {
-        lastAnswerEmpty = true;
+        lastAnswer = LastAnswer::Failed;
         tile.setError(std::make_exception_ptr(std::runtime_error(res.error->message)));
         tile.onTileAction(TileOperation::Error);
         return;
@@ -190,7 +201,7 @@ void TileLoader<T>::loadedData(const Response& res, Resource::LoadingMethod meth
         resource.priorExpires = res.expires;
         resource.priorEtag = res.etag;
         tile.setMetadata(res.modified, res.expires);
-        lastAnswerEmpty = res.noContent;
+        lastAnswer = res.noContent ? LastAnswer::Empty : LastAnswer::Data;
         tile.setData(res.noContent ? nullptr : res.data);
     }
 }

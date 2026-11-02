@@ -94,9 +94,14 @@ void TileSource::loadDescription(FileSource& fileSource) {
     });
 }
 
-void TileSource::reloadEmptyTiles() {
+void TileSource::reloadTiles(ReloadFilter filter) {
     auto newImpl = makeMutable<Impl>(impl());
-    newImpl->emptyTileReloads++;
+    if (static_cast<uint8_t>(filter) & static_cast<uint8_t>(ReloadFilter::Empty)) {
+        newImpl->emptyTileReloads++;
+    }
+    if (static_cast<uint8_t>(filter) & static_cast<uint8_t>(ReloadFilter::Failed)) {
+        newImpl->failedTileReloads++;
+    }
     baseImpl = std::move(newImpl);
     observer->onSourceChanged(*this);
 }
