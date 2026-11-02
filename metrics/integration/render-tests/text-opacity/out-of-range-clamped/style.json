@@ -1,0 +1,82 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 32,
+      "description": "A data-driven text-opacity outside 0..1 is clamped: the feature with 50 draws as at 1, the feature with -50 does not draw."
+    }
+  },
+  "center": [
+    0,
+    0
+  ],
+  "zoom": 0,
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "o": 50
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -11.25,
+                0
+              ]
+            }
+          },
+          {
+            "type": "Feature",
+            "properties": {
+              "o": -50
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                11.25,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "rgb(128, 128, 128)"
+      }
+    },
+    {
+      "id": "layer",
+      "type": "symbol",
+      "source": "geojson",
+      "layout": {
+        "text-field": "Aa",
+        "text-font": [
+          "Open Sans Semibold",
+          "Arial Unicode MS Bold"
+        ],
+        "text-size": 16,
+        "text-allow-overlap": true
+      },
+      "paint": {
+        "text-color": "rgb(0, 128, 0)",
+        "text-opacity": [
+          "get",
+          "o"
+        ]
+      }
+    }
+  ],
+  "glyphs": "local://glyphs/{fontstack}/{range}.pbf"
+}

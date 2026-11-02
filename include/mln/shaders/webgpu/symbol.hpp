@@ -131,7 +131,7 @@ fn main(in: VertexInput) -> VertexOutput {
 #ifdef HAS_UNIFORM_u_opacity
     let final_opacity = fade_opacity;
 #else
-    let paint_opacity = unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t);
+    let paint_opacity = clamp(unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t), 0.0, 1.0);
     let final_opacity = paint_opacity * fade_opacity;
 #endif
 
@@ -393,7 +393,7 @@ fn main(in: VertexInput) -> VertexOutput {
     out.halo_blur = unpack_mix_float(vec2<f32>(in.halo_blur, in.halo_blur), drawable.halo_blur_t);
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-    out.opacity = unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t);
+    out.opacity = clamp(unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t), 0.0, 1.0);
 #endif
 
     return out;
@@ -643,7 +643,7 @@ fn main(in: VertexInput) -> VertexOutput {
     out.halo_color = unpack_mix_color(in.halo_color, drawable.halo_color_t);
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-    out.opacity = unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t);
+    out.opacity = clamp(unpack_mix_float(vec2<f32>(in.opacity, in.opacity), drawable.opacity_t), 0.0, 1.0);
 #endif
 #ifndef HAS_UNIFORM_u_halo_width
     out.halo_width = unpack_mix_float(vec2<f32>(in.halo_width, in.halo_width), drawable.halo_width_t);

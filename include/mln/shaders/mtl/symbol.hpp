@@ -161,7 +161,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
     const half fo = half(fade_opacity);
 #else
     device const DataInstance& data = dataInstances[instance];
-    const half fo = half(unpack_mix_float(data.opacity, drawable.opacity_t) * fade_opacity);
+    const half fo = half(saturate(unpack_mix_float(data.opacity, drawable.opacity_t)) * fade_opacity);
 #endif
 
     // This will check to see if the opacity is zero and push the triangle offscreen if it is
@@ -460,7 +460,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .halo_blur    = half(unpack_mix_float(data.halo_blur, drawable.halo_blur_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity      = half(unpack_mix_float(data.opacity, drawable.opacity_t)),
+        .opacity      = half(saturate(unpack_mix_float(data.opacity, drawable.opacity_t))),
 #endif
         .tex          = half2(a_tex / drawable.texsize),
         .gamma_scale  = half(position.w),
@@ -735,7 +735,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .halo_color = half(unpack_mix_color(data.halo_color, drawable.halo_color_t));
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity    = half(unpack_mix_float(data.opacity, drawable.opacity_t));
+        .opacity    = half(saturate(unpack_mix_float(data.opacity, drawable.opacity_t)));
 #endif
 #if !defined(HAS_UNIFORM_u_halo_width)
         .halo_width = half(unpack_mix_float(data.halo_width, drawable.halo_width_t));
