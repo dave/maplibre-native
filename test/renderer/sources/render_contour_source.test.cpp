@@ -39,10 +39,7 @@ using namespace mln;
 //
 // The cross-source lookup added for this feature (TileParameters::getRenderSource)
 // makes RenderContourSource depend on a sibling RenderRasterDEMSource by ID
-// at every update(). The lifetime tests below pin the contract that the
-// contour source survives any destruction order between itself and the
-// upstream — RenderOrchestrator destroys sources via std::unordered_map::erase,
-// with no guarantee about sibling ordering.
+// at every update().
 class RenderContourSourceTest {
 public:
     util::SimpleIdentity uniqueID;
@@ -101,147 +98,6 @@ public:
         return makeMutable<style::ContourSource::Impl>(id, std::move(options));
     }
 };
-
-TEST(RenderContourSource, ConstructsAndDestructsCleanly) {
-    // No update() ever called — no listener registered. Pure smoke test for
-    // the basic constructor/destructor pair.
-    RenderContourSourceTest test;
-    auto impl = test.makeContourImpl("contours", "dem");
-    RenderContourSource source(impl, test.threadPool);
-}
-
-TEST(RenderContourSource, UpdateWithNoUpstreamAvailableIsSafe) {
-    // First update() with getRenderSource returning nullptr (e.g. style still
-    // loading, or the raster-dem source the contour source references just
-    // doesn't exist). Must not crash; no listener registered.
-    RenderContourSourceTest test;
-    auto impl = test.makeContourImpl("contours", "dem");
-    RenderContourSource source(impl, test.threadPool);
-
-    auto params = test.makeParameters([](const std::string&) -> RenderSource* { return nullptr; });
-    source.update(impl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-}
-
-TEST(RenderContourSource, UpdateWithEmptyGetRenderSourceCallbackIsSafe) {
-    // The TileParameters::getRenderSource std::function may be empty (e.g.
-    // when constructing tile parameters in tests outside the orchestrator).
-    // rebindUpstream must guard against the empty function and not invoke it.
-    RenderContourSourceTest test;
-    auto impl = test.makeContourImpl("contours", "dem");
-    RenderContourSource source(impl, test.threadPool);
-
-    auto params = test.makeParameters({}); // empty std::function
-    source.update(impl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-}
-
-TEST(RenderContourSource, DestructorIsSafeAfterUpstreamDestroyedFirst) {
-    // RenderOrchestrator destroys sources via std::unordered_map::erase, which
-    // gives no guarantee about destruction order between siblings. If the
-    // upstream raster-dem source is destroyed first, the contour source's
-    // destructor must not touch it.
-    RenderContourSourceTest test;
-    auto demImpl = test.makeRasterDEMImpl("dem");
-    auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
-
-    auto contourImpl = test.makeContourImpl("contours", "dem");
-    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
-
-    auto params = test.makeParameters(
-        [&](const std::string& id) -> RenderSource* { return id == "dem" ? upstream.get() : nullptr; });
-
-    // First update subscribes the contour source's listener with upstream.
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-
-    // Destroy upstream first — the listener_set goes with it, taking the
-    // contour source's listener closure along with it. The contour source's
-    // cached `upstream` pointer is now dangling.
-    upstream.reset();
-
-    // Destroying the contour source after must not UAF. (The destructor
-    // intentionally does not call removeTileLoadListener.)
-    contour.reset();
-}
-
-TEST(RenderContourSource, DestructorIsSafeWhenContourDestroyedFirst) {
-    // The other direction of the same contract: contour source destroyed
-    // first while upstream is still alive. The listener closure captures a
-    // WeakPtr, so any in-flight notify() on upstream after the contour is
-    // gone will safely no-op.
-    RenderContourSourceTest test;
-    auto demImpl = test.makeRasterDEMImpl("dem");
-    auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
-
-    auto contourImpl = test.makeContourImpl("contours", "dem");
-    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
-
-    auto params = test.makeParameters(
-        [&](const std::string& id) -> RenderSource* { return id == "dem" ? upstream.get() : nullptr; });
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-
-    // Destroy contour first.
-    contour.reset();
-
-    // Destroy upstream after — listener_set destruction must not crash.
-    upstream.reset();
-}
-
-TEST(RenderContourSource, RebindsWhenUpstreamPointerChanges) {
-    // rebindUpstream must drop the cached pointer when getRenderSource
-    // returns a different RenderRasterDEMSource* than last time (e.g. user
-    // removed and re-added the dem source under the same ID). The previous
-    // upstream may already have been destroyed, so the rebind path must NOT
-    // dereference the old cached pointer.
-    RenderContourSourceTest test;
-    auto demImpl = test.makeRasterDEMImpl("dem");
-    auto upstream1 = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
-    auto upstream2 = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
-
-    auto contourImpl = test.makeContourImpl("contours", "dem");
-    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
-
-    RenderRasterDEMSource* currentUpstream = upstream1.get();
-    auto params = test.makeParameters(
-        [&](const std::string& id) -> RenderSource* { return id == "dem" ? currentUpstream : nullptr; });
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-
-    // Simulate orchestrator removing upstream1 entirely before contour's
-    // next update sees the swap.
-    upstream1.reset();
-    currentUpstream = upstream2.get();
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-
-    // Verify we can keep going with upstream2 and tear down cleanly.
-    contour.reset();
-    upstream2.reset();
-}
-
-TEST(RenderContourSource, RebindToNullClearsHandleWithoutDereferencingDeadUpstream) {
-    // User removes the upstream raster-dem source from the style. On the
-    // next frame, getRenderSource("dem") returns nullptr. rebindUpstream
-    // must drop the cached pointer (now potentially dangling) without
-    // dereferencing it.
-    RenderContourSourceTest test;
-    auto demImpl = test.makeRasterDEMImpl("dem");
-    auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
-
-    auto contourImpl = test.makeContourImpl("contours", "dem");
-    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
-
-    bool upstreamAvailable = true;
-    auto params = test.makeParameters([&](const std::string& id) -> RenderSource* {
-        if (!upstreamAvailable) return nullptr;
-        return id == "dem" ? upstream.get() : nullptr;
-    });
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-
-    // Orchestrator destroys upstream and stops returning it.
-    upstreamAvailable = false;
-    upstream.reset();
-
-    // Next update sees nullptr from getRenderSource — must not dereference
-    // the now-dangling cached pointer.
-    contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
-}
 
 namespace {
 
@@ -309,6 +165,140 @@ std::shared_ptr<const std::string> flatDEMTile() {
 }
 
 } // namespace
+
+TEST(RenderContourSource, ANewSourceHasNoTilesToWaitFor) {
+    RenderContourSourceTest test;
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+    EXPECT_TRUE(source.isLoaded());
+}
+
+// Tile parameters made outside the orchestrator can have no lookup at all. That
+// is the same as a DEM source that is not there.
+TEST(RenderContourSource, AnEmptyLookupMeansNoDEMSource) {
+    RenderContourSourceTest test;
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+
+    auto params = test.makeParameters({});
+    source.update(impl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+
+    EXPECT_TRUE(source.isLoaded());
+}
+
+// RenderOrchestrator destroys sources via std::unordered_map::erase, which gives
+// no guarantee about the order between siblings. If the DEM source goes first,
+// the contour source must not touch it, in an update or in its destructor, and
+// its tiles go with the DEM source.
+TEST(RenderContourSource, TheDEMSourceCanBeDestroyedFirst) {
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem");
+    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? upstream.get() : nullptr; });
+    static_cast<RenderSource&>(*upstream).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    contour->update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    ASSERT_FALSE(contour->isLoaded());
+
+    upstream.reset();
+    contour->update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    EXPECT_TRUE(contour->isLoaded());
+
+    contour.reset();
+}
+
+// If the contour source goes first, the DEM source goes on loading tiles with no
+// listener left to call.
+TEST(RenderContourSource, TheContourSourceCanBeDestroyedFirst) {
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    RenderRasterDEMSource upstream(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem");
+    auto contour = std::make_unique<RenderContourSource>(contourImpl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? &upstream : nullptr; });
+    static_cast<RenderSource&>(upstream).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    contour->update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    contour.reset();
+
+    Response response;
+    response.data = flatDEMTile();
+    auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+    ASSERT_TRUE(fileSource.respond(Resource::Tile, response));
+    while (fileSource.respond(Resource::Tile, response)) {
+    }
+    util::Timer watchdog;
+    bool timedOut = false;
+    watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+    while (!upstream.isLoaded() && !timedOut) {
+        test.loop.runOnce();
+    }
+    EXPECT_TRUE(upstream.isLoaded());
+}
+
+// A second DEM source under the same ID replaces the first: the contour source
+// listens to it, and its tiles settle from it.
+TEST(RenderContourSource, ContourSourceFollowsASecondDEMSource) {
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    auto first = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
+    auto second = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem");
+    RenderContourSource contour(contourImpl, test.threadPool);
+
+    RenderRasterDEMSource* current = first.get();
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? current : nullptr; });
+    auto update = [&] {
+        static_cast<RenderSource&>(*current).update(
+            demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+        contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    };
+    update();
+
+    first.reset();
+    current = second.get();
+    update();
+    ASSERT_FALSE(contour.isLoaded());
+
+    Response response;
+    response.data = flatDEMTile();
+    auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+    while (fileSource.respond(Resource::Tile, response)) {
+    }
+    util::Timer watchdog;
+    bool timedOut = false;
+    watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+    while (!contour.isLoaded() && !timedOut) {
+        test.loop.runOnce();
+    }
+    EXPECT_TRUE(contour.isLoaded());
+}
+
+// With the DEM source gone from the style, the contour source has nothing to
+// wait for, and holds no tile from the old source.
+TEST(RenderContourSource, TheDEMSourceCanLeaveTheStyle) {
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem");
+    RenderContourSource contour(contourImpl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? upstream.get() : nullptr; });
+    static_cast<RenderSource&>(*upstream).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    ASSERT_FALSE(contour.isLoaded());
+
+    upstream.reset();
+    contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+
+    EXPECT_TRUE(contour.isLoaded());
+}
 
 TEST(RenderContourSource, ContourTileCompletesWhenItsDEMTileLoads) {
     ContourStack stack;

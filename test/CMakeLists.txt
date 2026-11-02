@@ -4,7 +4,6 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/actor/actor_ref.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/intervals.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/isolines.test.cpp
-    ${PROJECT_SOURCE_DIR}/test/algorithm/contour/isolines_reference.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/smoothing.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/contour/units.test.cpp
     ${PROJECT_SOURCE_DIR}/test/algorithm/update_renderables.test.cpp

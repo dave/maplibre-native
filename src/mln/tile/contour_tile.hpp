@@ -5,6 +5,7 @@
 #include <mln/algorithm/contour/units.hpp>
 #include <mln/tile/geometry_tile.hpp>
 
+#include <mapbox/feature.hpp>
 #include <mapbox/std/weak.hpp>
 
 #include <mln/util/image.hpp>
@@ -14,7 +15,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 namespace mln {
@@ -68,12 +68,11 @@ public:
     // Nothing when the DEM tile has no data.
     static std::optional<DEMSnapshot> snapshot(const RasterDEMTile&);
 
-    // The marching squares every contour tile runs:
-    // algorithm::contour::generateContours. Tests swap in the version from
-    // before it was made faster, to draw both on the same renderer.
-    using MarchingSquares = std::vector<algorithm::contour::ContourLineString> (*)(
-        std::span<const std::int16_t>, int, int, const algorithm::contour::ContourThresholds&);
-    static std::atomic<MarchingSquares> marchingSquares;
+    // The line features of a snapshot. Runs on any thread.
+    static mapbox::feature::feature_collection<std::int16_t> buildFeatures(const DEMSnapshot&,
+                                                                           double intervalDisplayUnits,
+                                                                           std::int64_t majorMultiplier,
+                                                                           const algorithm::contour::UnitConfig& unit);
 
     // As `populateFromDEM`, from a snapshot.
     void populate(const DEMSnapshot&,

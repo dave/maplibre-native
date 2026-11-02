@@ -237,8 +237,6 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
 
 } // namespace
 
-std::atomic<ContourTile::MarchingSquares> ContourTile::marchingSquares{&algorithm::contour::generateContours};
-
 ContourTile::ContourTile(const OverscaledTileID& id_,
                          std::string sourceID_,
                          const TileParameters& parameters,
@@ -294,91 +292,87 @@ void ContourTile::setNoData() {
     setData(nullptr);
 }
 
-void ContourTile::populate(const DEMSnapshot& snapshot_,
-                           double intervalDisplayUnits,
-                           std::int64_t majorMultiplier,
-                           const algorithm::contour::UnitConfig& unit) {
-    const auto image = snapshot_.image;
-    const auto unpack = snapshot_.unpack;
+mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(
+    const DEMSnapshot& snapshot_,
+    double intervalDisplayUnits,
+    std::int64_t majorMultiplier,
+    const algorithm::contour::UnitConfig& unit) {
     const int dim = snapshot_.dim;
     const int width = dim + 2 * DEMData::border;
+
+    std::vector<std::int16_t> heights(static_cast<std::size_t>(width) * width);
+    const uint8_t* rgba = snapshot_.image->data.get();
+    for (std::size_t i = 0; i < heights.size(); i++) {
+        heights[i] = static_cast<std::int16_t>(DEMData::decode(rgba + i * 4, snapshot_.unpack));
+    }
 
     // The configured `intervalDisplayUnits` is in display units (feet,
     // metres, custom). Heights are always metres. Convert the threshold to
     // metres before running the algorithm so its level outputs come back in
     // metres too, then convert per-feature `ele` back to display units in
     // `toFeatures`.
-    const double intervalMeters = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
+    algorithm::contour::ContourThresholds thresholds;
+    thresholds.interval = algorithm::contour::unitToMeters(intervalDisplayUnits, unit);
+    // Pixel-center coordinate mapping. We want:
+    //   alg index `border`     (sample 0, world west_L + 0.5cw) → tile-local +0.5cw
+    //   alg index `border+dim-1` (sample dim-1, east_L − 0.5cw) → EXTENT − 0.5cw
+    //   alg indices [0, border-1] and [border+dim, width-1]    → outside the tile,
+    //                                                            in the neighbour's interior
+    //
+    // The algorithm internally uses
+    //   multiplier = thresholds.extent / (width - 1)
+    // and emits output at multiplier·index. We want
+    //   multiplier = EXTENT / dim
+    // so each cell spans one tile-local cell width, no matter how
+    // wide the buffered view is. That gives
+    //   thresholds.extent = EXTENT × (width - 1) / dim
+    //
+    // The boundary cell on each tile (heights[border-1..border]
+    // on the west, heights[width-2..width-1] on the east, after
+    // backfillBorder) straddles the tile edge using identical
+    // neighbour data, so adjacent tiles' contour features meet
+    // exactly at the seam.
+    thresholds.extent = static_cast<int>(
+        std::lround(static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
+    const auto lines = algorithm::contour::generateContours(heights, width, width, thresholds);
 
+    // Shift so alg index `border` lands at +0.5cw (sample 0's
+    // pixel-center position): the shift is (2·border − 1) half
+    // cells. With DEMData::border = 2 it is 1.5 cells, and alg
+    // index 0 (the outermost west border cell) sits two cells
+    // west of sample 0.
+    const double halfCellPx = 0.5 * static_cast<double>(util::EXTENT) / static_cast<double>(dim);
+    const double shift = halfCellPx * static_cast<double>(2 * DEMData::border - 1);
+    std::vector<algorithm::contour::ContourLineString> shifted;
+    shifted.reserve(lines.size());
+    for (const auto& line : lines) {
+        algorithm::contour::ContourLineString s;
+        s.elevation = line.elevation;
+        s.points.reserve(line.points.size());
+        for (std::size_t i = 0; i + 1 < line.points.size(); i += 2) {
+            s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i] - shift)));
+            s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i + 1] - shift)));
+        }
+        shifted.push_back(std::move(s));
+    }
+    return toFeatures(shifted, unit, intervalDisplayUnits, majorMultiplier);
+}
+
+void ContourTile::populate(const DEMSnapshot& snapshot_,
+                           double intervalDisplayUnits,
+                           std::int64_t majorMultiplier,
+                           const algorithm::contour::UnitConfig& unit) {
     const std::uint64_t generation = ++requestedGeneration;
     latestGeneration->store(generation);
     threadPool.scheduleAndReplyValue(
-        [image,
-         unpack,
-         width,
-         dim,
-         intervalMeters,
-         intervalDisplayUnits,
-         majorMultiplier,
-         unit,
-         generation,
-         latest = latestGeneration]() -> mapbox::feature::feature_collection<std::int16_t> {
+        [snapshot_, intervalDisplayUnits, majorMultiplier, unit, generation, latest = latestGeneration]()
+            -> mapbox::feature::feature_collection<std::int16_t> {
             // A newer call was made while this one waited: its result would be
             // dropped on reply, so skip the work.
             if (latest->load() != generation) {
                 return {};
             }
-            std::vector<std::int16_t> heights(static_cast<std::size_t>(width) * width);
-            const uint8_t* rgba = image->data.get();
-            for (std::size_t i = 0; i < heights.size(); i++) {
-                heights[i] = static_cast<std::int16_t>(DEMData::decode(rgba + i * 4, unpack));
-            }
-
-            algorithm::contour::ContourThresholds thresholds;
-            thresholds.interval = intervalMeters;
-            // Pixel-center coordinate mapping. We want:
-            //   alg index `border`     (sample 0, world west_L + 0.5cw) → tile-local +0.5cw
-            //   alg index `border+dim-1` (sample dim-1, east_L − 0.5cw) → EXTENT − 0.5cw
-            //   alg indices [0, border-1] and [border+dim, width-1]    → outside the tile,
-            //                                                            in the neighbour's interior
-            //
-            // The algorithm internally uses
-            //   multiplier = thresholds.extent / (width - 1)
-            // and emits output at multiplier·index. We want
-            //   multiplier = EXTENT / dim
-            // so each cell spans one tile-local cell width, no matter how
-            // wide the buffered view is. That gives
-            //   thresholds.extent = EXTENT × (width - 1) / dim
-            //
-            // The boundary cell on each tile (heights[border-1..border]
-            // on the west, heights[width-2..width-1] on the east, after
-            // backfillBorder) straddles the tile edge using identical
-            // neighbour data, so adjacent tiles' contour features meet
-            // exactly at the seam.
-            thresholds.extent = static_cast<int>(std::lround(
-                static_cast<double>(util::EXTENT) * static_cast<double>(width - 1) / static_cast<double>(dim)));
-            const auto lines = marchingSquares.load()(heights, width, width, thresholds);
-
-            // Shift so alg index `border` lands at +0.5cw (sample 0's
-            // pixel-center position): the shift is (2·border − 1) half
-            // cells. With DEMData::border = 2 it is 1.5 cells, and alg
-            // index 0 (the outermost west border cell) sits two cells
-            // west of sample 0.
-            const double halfCellPx = 0.5 * static_cast<double>(util::EXTENT) / static_cast<double>(dim);
-            const double shift = halfCellPx * static_cast<double>(2 * DEMData::border - 1);
-            std::vector<algorithm::contour::ContourLineString> shifted;
-            shifted.reserve(lines.size());
-            for (const auto& line : lines) {
-                algorithm::contour::ContourLineString s;
-                s.elevation = line.elevation;
-                s.points.reserve(line.points.size());
-                for (std::size_t i = 0; i + 1 < line.points.size(); i += 2) {
-                    s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i] - shift)));
-                    s.points.push_back(static_cast<std::int32_t>(std::lround(line.points[i + 1] - shift)));
-                }
-                shifted.push_back(std::move(s));
-            }
-            return toFeatures(shifted, unit, intervalDisplayUnits, majorMultiplier);
+            return buildFeatures(snapshot_, intervalDisplayUnits, majorMultiplier, unit);
         },
         [self = weakFactory.makeWeakPtr(), this, generation](
             mapbox::feature::feature_collection<std::int16_t> features) {
