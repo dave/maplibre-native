@@ -85,17 +85,38 @@
                  @"a URL body takes its generation when it is set");
 }
 
-- (void)testTheStepRecorderIsOffByDefaultAndTakesWhatItRecorded {
+// A shape set on a source is indexed (geojson-vt) in the call that sets it,
+// on this thread: one "index" step while the recorder is on, none while off.
+- (void)testTheStepRecorderRecordsAShapesIndexOnlyWhileOn {
+  MLNShapeSource *source = [[MLNShapeSource alloc] initWithIdentifier:@"recorded"
+                                                                shape:nil
+                                                              options:nil];
+  MLNPointFeature *point = [[MLNPointFeature alloc] init];
+  point.coordinate = CLLocationCoordinate2DMake(45, 7);
+  NSPredicate *ours = [NSPredicate predicateWithFormat:@"sourceID == %@", @"recorded"];
+
   [MLNShapeSource setRecordsLabelSteps:NO];
-  XCTAssertEqual([MLNShapeSource takeLabelSteps].count, 0UL);
+  (void)[MLNShapeSource takeLabelSteps];
+  source.shape = point;
+  XCTAssertEqual([[MLNShapeSource takeLabelSteps] filteredArrayUsingPredicate:ours].count, 0UL,
+                 @"the recorder is off: nothing is recorded");
+
   [MLNShapeSource setRecordsLabelSteps:YES];
-  NSArray *steps = [MLNShapeSource takeLabelSteps];
-  XCTAssertNotNil(steps);
-  for (NSDictionary *step in steps) {
-    XCTAssertNotNil(step[@"thread"]);
-    XCTAssertNotNil(step[@"name"]);
-  }
+  point.coordinate = CLLocationCoordinate2DMake(46, 8);
+  source.shape = point;
+  NSArray<NSDictionary<NSString *, id> *> *steps =
+      [[MLNShapeSource takeLabelSteps] filteredArrayUsingPredicate:ours];
   [MLNShapeSource setRecordsLabelSteps:NO];
+  (void)[MLNShapeSource takeLabelSteps];
+
+  XCTAssertEqual(steps.count, 1UL, @"%@", steps);
+  NSDictionary<NSString *, id> *step = steps.firstObject;
+  XCTAssertEqualObjects(step[@"name"], @"index");
+  XCTAssertEqualObjects(step[@"hop"], @NO);
+  XCTAssertTrue([step[@"thread"] isKindOfClass:[NSString class]]);
+  XCTAssertEqualObjects(step[@"queued"], @0, @"a step on the caller's thread is not queued");
+  XCTAssertGreaterThan([step[@"start"] doubleValue], 0);
+  XCTAssertLessThanOrEqual([step[@"start"] doubleValue], [step[@"end"] doubleValue]);
 }
 
 - (void)testNilShape {
