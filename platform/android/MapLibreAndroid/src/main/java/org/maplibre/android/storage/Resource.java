@@ -14,7 +14,7 @@ public final class Resource {
   /**
    * Resource type variants.
    */
-  @IntDef( {UNKNOWN, STYLE, SOURCE, TILE, GLYPHS, SPRITE_IMAGE, SPRITE_JSON})
+  @IntDef( {UNKNOWN, STYLE, SOURCE, TILE, GLYPHS, SPRITE_IMAGE, SPRITE_JSON, IMAGE})
   @Retention(RetentionPolicy.SOURCE)
   public @interface Kind {
   }
@@ -57,4 +57,9 @@ public final class Resource {
    * https://maplibre.org/maplibre-style-spec/root/#sprite and a JSON file extension.
    */
   public static final int SPRITE_JSON = 6;
+
+  /**
+   * An image, such as an image source's
+   */
+  public static final int IMAGE = 7;
 }
