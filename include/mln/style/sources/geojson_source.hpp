@@ -43,8 +43,8 @@ struct GeoJSONOptions {
 
     // The source's off-thread work runs on the label lane
     // (`Scheduler::GetLabelLane()`), not on the shared worker pool: its body's
-    // parse, its tiles' parse and layout, and its geojson-vt cuts (on a
-    // sequenced scheduler of its own). Refused with `synchronousUpdate` and
+    // parse, its tiles' parse and layout, and its geojson-vt cuts (on one thread
+    // that every lane source shares). Refused with `synchronousUpdate` and
     // with `cluster` (Supercluster cuts on the render thread).
     bool labelLane = false;
 

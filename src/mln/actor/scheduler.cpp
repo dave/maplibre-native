@@ -101,4 +101,19 @@ std::shared_ptr<Scheduler> Scheduler::GetLabelLane() {
     return *lane;
 }
 
+// static
+std::shared_ptr<Scheduler> Scheduler::GetLabelLaneSlicer() {
+    // Leaked on purpose, as the lane is.
+    static const std::shared_ptr<Scheduler>* slicer = [] {
+        try {
+            return new std::shared_ptr<Scheduler>(std::make_shared<SequencedScheduler>("Label lane s"));
+        } catch (const std::exception& error) {
+            Log::Error(Event::General, std::string("The label lane's slicer cannot be made: ") + error.what());
+            assert(false);
+            return new std::shared_ptr<Scheduler>();
+        }
+    }();
+    return *slicer;
+}
+
 } // namespace mln

@@ -112,6 +112,15 @@ public:
     /// cannot be made; every later call returns null too.
     [[nodiscard]] static std::shared_ptr<Scheduler> GetLabelLane();
 
+    /// Get the label lane's slicer: one thread, named "Label lane s", for the
+    /// geojson-vt cuts of every `GeoJSONOptions::labelLane` source. geojson-vt
+    /// is not thread-safe, and the shared `GetSequenced()` ring also serves
+    /// other sources and logging. Made on the first call and never destroyed.
+    ///
+    /// Returns null, with a logged error and a debug assert, if it cannot be
+    /// made; every later call returns null too.
+    [[nodiscard]] static std::shared_ptr<Scheduler> GetLabelLaneSlicer();
+
     /// Set a function to be called when an exception occurs on a thread controlled by the scheduler
     void setExceptionHandler(std::function<void(const std::exception_ptr)> handler_) { handler = std::move(handler_); }
 
