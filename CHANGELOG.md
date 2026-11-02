@@ -39,6 +39,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] Fix a render-target leak in `RenderHillshadeLayer`: a tile that prepares again after a neighbour loads frees its old render target. Before, each old target stayed alive, and was drawn every frame, until the layer stopped rendering.
 - [core] WebGPU: `RenderingStats::numFrameBuffers` now counts an offscreen texture when it is made, as on Metal, Vulkan and OpenGL. Before, it was only decremented when one was freed, so it went below zero.
 - [core] Fix seams between adjacent hillshade tiles after a raster-dem tile parses a new body (for example, a network answer that differs from the cached one). The tile's neighbour bits are reset, so its own border is filled again, and each loaded neighbour is filled again with the tile's new edge.
 - [core] Fix rendered-feature queries near the final endpoint of an offset line.
@@ -53,7 +54,6 @@
 - [core] Fix thread-unsafe headless OpenGL display singleton initialization [#4332](https://github.com/maplibre/maplibre-native/pull/4332)
 - [macos] Fix `mlt-cpp` and `mbgl-vendor-icu` not being included in the amalgamation
 - [core] Fix hillshade overzoom seam at tile boundaries. Widens the DEMData neighbour border to 3 pixels, extends the prepare-pass output to `(dim+3)²` with two "ghost" texels per side beyond the displayed tile area, and insets the hillshade-color and color-relief vertex shader sampling so bilinear filtering at the tile boundary stays in shared-data territory ([#4280](https://github.com/maplibre/maplibre-native/pull/4280)).
-- [core] Fix render-target leak in `RenderHillshadeLayer` when the prepare pass re-runs after a backfill ([#4280](https://github.com/maplibre/maplibre-native/pull/4280)).
 - [core] Fix memory access violation exception in vector_tile_data.cpp [#632](https://github.com/maplibre/maplibre-native/pull/632)
 - [iOS] Fix a bug where the compass was determined to be misplaced when hidden [#498](https://github.com/maplibre/maplibre-native/pull/498).
 - [core] `MaptilerFileSource` renamed to `MBTilesFileSource` [#198](https://github.com/maplibre/maplibre-native/pull/198).
