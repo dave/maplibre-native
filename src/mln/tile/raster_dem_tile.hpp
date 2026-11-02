@@ -39,9 +39,9 @@ enum class DEMTileNeighbors : uint8_t {
     NoUpper = 0b00011100,
     // 0b11100000
     NoLower = 0b11100000,
-    // 0b11111100 — single-tile worlds (zoom 0) where neither upper nor
-    // lower neighbours exist; explicit so the bitwise OR doesn't produce
-    // an unnamed enum value the static analyzer flags as out-of-range.
+    // 0b11111100: the single tile at zoom 0, which has neither upper nor
+    // lower neighbours. Named, so that the bitmask never holds an unnamed
+    // enum value (the static analyser flags one as out of range).
     NoUpperAndLower = 0b11111100,
     // 0b11111111
     Complete = 0b11111111
@@ -86,6 +86,11 @@ public:
     // neighboringTiles is a bitmask for which neighboring tiles have been backfilled
     // there are max 8 possible neighboring tiles, so each bit represents one neighbor
     DEMTileNeighbors neighboringTiles = DEMTileNeighbors::Empty;
+
+    /// The bitmask of a tile with no neighbour backfilled yet: the sides
+    /// that have no neighbour (the top and bottom rows of the world) are
+    /// set.
+    static DEMTileNeighbors initialNeighbors(const CanonicalTileID&);
 
     void setMask(TileMask&&) override;
 
