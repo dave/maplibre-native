@@ -38,7 +38,7 @@ layout (std140) uniform LineSDFDrawableUBO {
     // Interpolations
     lowp float u_color_t;
     lowp float u_blur_t;
-    lowp float u_opacity_t;
+    highp float u_opacity_t;
     lowp float u_gapwidth_t;
     lowp float u_offset_t;
     lowp float u_width_t;
@@ -67,7 +67,7 @@ out float v_gamma_scale;
 out highp float v_lineprogress;
 
 #pragma mapbox: define lowp float blur
-#pragma mapbox: define lowp float opacity
+#pragma mapbox: define highp float opacity
 #pragma mapbox: define mediump float gapwidth
 #pragma mapbox: define lowp float offset
 #pragma mapbox: define mediump float width
@@ -75,7 +75,7 @@ out highp float v_lineprogress;
 
 void main() {
     #pragma mapbox: initialize lowp float blur
-    #pragma mapbox: initialize lowp float opacity
+    #pragma mapbox: initialize highp float opacity
     #pragma mapbox: initialize mediump float gapwidth
     #pragma mapbox: initialize lowp float offset
     #pragma mapbox: initialize mediump float width

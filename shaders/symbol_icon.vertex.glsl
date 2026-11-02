@@ -60,12 +60,12 @@ layout (std140) uniform SymbolEvaluatedPropsUBO {
 out vec2 v_tex;
 out float v_fade_opacity;
 
-#pragma mapbox: define lowp float opacity
+#pragma mapbox: define highp float opacity
 
 void main() {
     highp float u_opacity = u_is_text_prop ? u_text_opacity : u_icon_opacity;
 
-    #pragma mapbox: initialize lowp float opacity
+    #pragma mapbox: initialize highp float opacity
 
     vec2 a_pos = a_pos_offset.xy;
     vec2 a_offset = a_pos_offset.zw;

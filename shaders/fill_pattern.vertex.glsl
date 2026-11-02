@@ -48,13 +48,13 @@ out vec2 v_pos_a;
 out vec2 v_pos_b;
 
 #pragma mapbox: define highp vec4 color
-#pragma mapbox: define lowp float opacity
+#pragma mapbox: define highp float opacity
 #pragma mapbox: define lowp vec4 pattern_from
 #pragma mapbox: define lowp vec4 pattern_to
 
 void main() {
     #pragma mapbox: initialize highp vec4 color
-    #pragma mapbox: initialize lowp float opacity
+    #pragma mapbox: initialize highp float opacity
     #pragma mapbox: initialize mediump vec4 pattern_from
     #pragma mapbox: initialize mediump vec4 pattern_to
 
