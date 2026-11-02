@@ -112,19 +112,22 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
 }
 
 void RenderContourSource::rebindUpstream(const TileParameters& parameters) {
-    // Resolve the upstream raster-dem source by ID for this frame. A null
-    // result means the upstream source has been removed from the style or
-    // hasn't been added yet — either way, our cached pointer must drop.
+    // Resolve the upstream raster-dem source by ID for this frame. A style has
+    // its sources together, so a name that does not resolve is a mistake in the
+    // style: it is an error, once until the source appears. Tile parameters made
+    // outside RenderOrchestrator can have no lookup: nothing can be said then.
     RenderRasterDEMSource* resolved = nullptr;
     if (parameters.getRenderSource) {
-        if (RenderSource* found = parameters.getRenderSource(impl().getOptions().sourceID)) {
-            if (found->baseImpl->type == SourceType::RasterDEM) {
-                resolved = static_cast<RenderRasterDEMSource*>(found);
-            } else {
-                Log::Warning(Event::Style,
-                             "contour source `" + impl().id + "` references `" + impl().getOptions().sourceID +
-                                 "` which is not a raster-dem source");
-            }
+        const std::string& sourceID = impl().getOptions().sourceID;
+        RenderSource* found = parameters.getRenderSource(sourceID);
+        if (found != nullptr && found->baseImpl->type == SourceType::RasterDEM) {
+            resolved = static_cast<RenderRasterDEMSource*>(found);
+            reportedBadSource = false;
+        } else if (!reportedBadSource) {
+            reportedBadSource = true;
+            Log::Error(Event::Style,
+                       "contour source `" + impl().id + "` names source `" + sourceID + "`, which is " +
+                           (found != nullptr ? "not a raster-dem source" : "not in the style"));
         }
     }
 
