@@ -3,6 +3,14 @@
 ## main
 
 - Mark `LabelSteps`, the step recorder for debug probes and tests, `@RestrictTo(LIBRARY_GROUP)`: it is not public API. While the recorder is off it allocates nothing.
+- ⚠️ Binary break: `GeoJsonSource.setGeoJson(...)` now returns `Long?` (the body's data generation; null for a detached source) and `setUri(...)` returns `Long`. Both returned `Unit` (JVM `void`) before. Source code that ignores the result compiles unchanged, but an app or library compiled against an earlier release gets `NoSuchMethodError` until it is rebuilt.
+- Add `MapLibreMap.setNoFadeInSources(String[])` and `getNoFadeInSources()`: the symbols of the named sources appear at full opacity when first placed, with no fade-in (core `Map::setNoFadeInSources`).
+- Add `Projection.getVisibleRegionAt(CameraPosition)`: the region `getVisibleRegion()` would give with the camera there. The map does not move.
+- Add `GeoJsonOptions.withLabelLane(true)`: the source's parse, tile cuts and tile layout run on a worker thread of their own, not the pool shared with the other sources. A lane source refuses `withSynchronousUpdate`, `withCluster` and a synchronous override.
+- Add GeoJSON data generations: each `setGeoJson`/`setUri` call answers the generation of its body, `GeoJsonSource.dataGeneration` is the latest one given out and `landedGeneration` the one that has landed in the source. `MapView.addOnSourceLaidOutListener()` reports a generation once every tile in view is laid out with it.
+- Add `GeoJsonSource.landingLimit`: while set, a body with a higher generation is laid out but not drawn; raising the limit draws it in the frame that takes the change.
+- Add `reloadEmptyTiles()` to `VectorSource`, `RasterSource` and `RasterDemSource`: the map asks again for each tile of the source whose last answer was empty or an error.
+- A synchronous `GeoJsonSource` (`withSynchronousUpdate`) lands each body in the call that sets it, so the body is in the same render update as the other style changes made with it. Before, it landed one main-loop task later, and a frame could draw the other changes with the old body.
 - `MapLibreMap.setNoFadeInSources()` throws `IllegalArgumentException` for a null element, and keeps the ids set before. Before, a null element aborted the process in native code.
 - `Projection.getVisibleRegionAt(CameraPosition)` keeps the map's own zoom, bearing and tilt for a field the camera does not set, as `moveCamera` does. Before, an unset field was read as -1: zoom 0, bearing 359° and tilt 0.
 - The C++ unit test app (`test/android`) takes a `gtest_filter` instrumentation argument, so a run can name the tests it runs: `am instrument -e class android.app.NativeActivityTest -e gtest_filter '<filter>' …`. Without it the default filter is used, as before.
