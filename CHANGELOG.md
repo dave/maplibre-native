@@ -32,6 +32,7 @@
 - [core] A GeoJSON URL body that does not parse no longer empties its source: the source keeps the body it holds and reports the error, as for a body that the Android binding could not make. Its generation is not reported through `onSourceLaidOut`.
 - [core] A GeoJSON URL that answers an error or no content no longer leaves its source waiting for the body: layer changes, later ones and those made while it loaded, are reported through `onSourceLaidOut`. A source with no body reports them too.
 - [core] The GeoJSON label lane's real-data test asserts that bodies land and where their steps run; its timings move to a disabled test. A rebuild test no longer depends on a race.
+- [core] Test `Map::setNoFadeInSources` in `MapMode::Tile` and document that it leaves `PlacedSymbolData::intersectsTileBorder` alone.
 - [core] While the GeoJSON step recorder (`util::LabelSteps`) is off, a step costs one relaxed atomic load and allocates nothing; before, each tile's cut copied the source ID into its task. A step sent while the recorder is off is not recorded.
 - [core] The step recorder's header moves from `include/mln/util/label_steps.hpp` to `src/mln/util/label_steps.hpp`: it is not public API. The iOS and Android bindings expose it as private API only.
 - [core] `HillshadeRendering.NoOverzoomCornerSeam` now fails when its terrain fixtures are missing or the hillshade is not drawn. Before, a missing fixture became an empty tile, and a blank image passed the seam check.
