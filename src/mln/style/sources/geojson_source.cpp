@@ -235,10 +235,16 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
                         if (capturedReqGeneration ==
                             requestGeneration) { // If a new request is being processed, ignore this impl.
                             auto* error = std::get_if<std::string>(&parsed);
-                            // A body that does not parse makes the source empty,
-                            // so that no tile waits for ever, and is reported.
-                            auto data = error ? nullptr : std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed));
-                            baseImpl = makeMutable<Impl>(impl(), std::move(data), landingGeneration(generation));
+                            // A body that does not parse is reported, and the
+                            // source keeps the body it holds. With none, it
+                            // has no tile for anything to wait on.
+                            if (error) {
+                                bodyWillNotLand(generation);
+                            } else {
+                                baseImpl = makeMutable<Impl>(impl(),
+                                                             std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)),
+                                                             landingGeneration(generation));
+                            }
                             loaded = true;
                             if (error) {
                                 observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error(*error)));
