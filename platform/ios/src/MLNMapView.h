@@ -1099,10 +1099,9 @@ of north, the map will automatically snap to exact north.
  Changes the zoom level of the map, keeping the coordinate under `anchorPoint`
  at that point for the whole change, over a duration and on a curve.
 
- This is the anchored change the double-tap and two-finger-tap gestures make,
- but to exactly `zoomLevel` (the gestures go to the nearest whole level plus
- or minus one), with the caller's duration and curve. The zoom level follows
- the curve; the anchor's coordinate stays under the anchor on every frame.
+ The zoom level ends at exactly `zoomLevel` and follows the curve on the way;
+ the anchor's coordinate stays under the anchor on every frame. A zoom level
+ equal to the current one changes nothing.
 
  @param zoomLevel The new zoom level for the map.
  @param anchorPoint The point in this view's coordinate system that stays
