@@ -37,6 +37,7 @@
 #include <mln/test/map_adapter.hpp>
 
 #include <mln/gfx/headless_frontend.hpp>
+#include <mln/renderer/renderer.hpp>
 #include <mln/gfx/backend_scope.hpp>
 #include <mln/gfx/context.hpp>
 #include <mln/gfx/renderer_backend.hpp>
@@ -357,6 +358,17 @@ public:
         }
     }
 
+    /// Moves the view into the first z1 tile and zooms in. The source stops at z1, so
+    /// one overscaled tile, a new tile for the pyramid, covers the view. It answers
+    /// that tile's request.
+    void zoomIntoOneTile() {
+        map.jumpTo(CameraOptions().withCenter(LatLng{45.0, -90.0}).withZoom(3.0));
+        frame();
+        observer.parsed.clear();
+        answer({1, 0, 0});
+        frame();
+    }
+
     int frameBuffers() {
         gfx::BackendScope scope{*frontend.getBackend()};
         return frontend.getBackend()->getContext().renderingStats().numFrameBuffers;
@@ -391,4 +403,52 @@ TEST(HillshadeRendering, APrepareAgainFreesTheOldRenderTarget) {
 
     EXPECT_EQ(noTiles + 4, allAtOnce.frameBuffers());
     EXPECT_EQ(noTiles + 4, oneByOne.frameBuffers()) << "one render target for each tile";
+}
+
+// A tile that leaves the view stops being prepared, and with no cache to keep it, its
+// render target is freed. Before, the layer kept it, and drew it every frame, until the
+// layer stopped rendering.
+TEST(HillshadeRendering, ATileThatLeavesFreesItsRenderTarget) {
+    TileByTileHillshadeMap test;
+    test.frontend.getRenderer()->setTileCacheEnabled(false);
+    const int noTiles = test.frameBuffers();
+    for (const auto& id : TileByTileHillshadeMap::tiles()) {
+        test.answer(id);
+    }
+    test.frame();
+    test.frame();
+    ASSERT_EQ(noTiles + 4, test.frameBuffers());
+
+    test.zoomIntoOneTile();
+    test.frame();
+    test.frame();
+
+    EXPECT_EQ(noTiles + 1, test.frameBuffers()) << "one render target for the one tile in view";
+}
+
+// A tile that returns from the cache has lost its place among the render targets,
+// so it prepares again and draws.
+TEST(HillshadeRendering, ATileBackFromTheCacheHasARenderTarget) {
+    TileByTileHillshadeMap test;
+    const int noTiles = test.frameBuffers();
+    for (const auto& id : TileByTileHillshadeMap::tiles()) {
+        test.answer(id);
+    }
+    test.frame();
+    test.frame();
+    const int loaded = test.frameBuffers();
+    ASSERT_EQ(noTiles + 4, loaded);
+
+    test.zoomIntoOneTile();
+    test.frame();
+    test.frame();
+
+    test.map.jumpTo(CameraOptions().withCenter(LatLng{0.0, 0.0}).withZoom(0.0));
+    test.frame();
+    test.frame();
+
+    // The four tiles are back, each with one render target to draw. Any more would be
+    // a target that is in no tile's bucket; the zoomed tile's is in the cache.
+    EXPECT_LE(test.frameBuffers(), noTiles + 5);
+    EXPECT_GE(test.frameBuffers(), noTiles + 4);
 }

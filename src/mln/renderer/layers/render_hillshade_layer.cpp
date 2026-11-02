@@ -25,6 +25,9 @@
 #include <mln/gfx/shader_group.hpp>
 #include <mln/gfx/shader_registry.hpp>
 
+#include <algorithm>
+#include <unordered_set>
+
 namespace mln {
 
 using namespace style;
@@ -156,6 +159,23 @@ void RenderHillshadeLayer::removeRenderTargets(UniqueChangeRequestVec& changes) 
     activatedRenderTargets.clear();
 }
 
+void RenderHillshadeLayer::removeLeftRenderTargets(UniqueChangeRequestVec& changes) {
+    std::unordered_set<const RenderTarget*> inUse;
+    for (const RenderTile& tile : *renderTiles) {
+        if (const auto* bucket = tile.getBucket(*baseImpl)) {
+            inUse.insert(static_cast<const HillshadeBucket*>(bucket)->renderTarget.get());
+        }
+    }
+    const auto left = std::ranges::remove_if(activatedRenderTargets, [&](const RenderTargetPtr& renderTarget) {
+        if (inUse.contains(renderTarget.get())) {
+            return false;
+        }
+        activateRenderTarget(renderTarget, false, changes);
+        return true;
+    });
+    activatedRenderTargets.erase(left.begin(), left.end());
+}
+
 static const std::string HillshadePrepareShaderGroupName = "HillshadePrepareShader";
 static const std::string HillshadeShaderGroupName = "HillshadeShader";
 
@@ -168,8 +188,11 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
                                   UniqueChangeRequestVec& changes) {
     if (!renderTiles || renderTiles->empty()) {
         removeAllDrawables();
+        removeRenderTargets(changes);
         return;
     }
+
+    removeLeftRenderTargets(changes);
 
     // Set up a layer group
     if (!layerGroup) {
@@ -257,6 +280,14 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             removeTile(renderPass, tileID);
         }
         setRenderTileBucketID(tileID, bucket.getID());
+
+        // A tile back from the cache: its render target stopped being drawn when
+        // the tile left, so it needs a new one, and this frame prepares it.
+        if (bucket.renderTarget &&
+            std::ranges::find(activatedRenderTargets, bucket.renderTarget) == activatedRenderTargets.end()) {
+            bucket.renderTarget.reset();
+            bucket.renderTargetPrepared = false;
+        }
 
         if (!bucket.renderTargetPrepared) {
             // Drop the previous render target before allocating a new one.
