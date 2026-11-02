@@ -90,8 +90,9 @@ private:
     std::shared_ptr<ThreadPool> threadPool;
     std::unique_ptr<OptionalActor<FeatureConverter>> converter;
 
+    /// Lands the body in the call for a synchronous source, else converts it in the background first.
     template <class JNIType>
-    jni::jlong setCollectionAsync(jni::JNIEnv&, const jni::Object<JNIType>&);
+    jni::jlong setCollection(jni::JNIEnv&, const jni::Object<JNIType>&);
 
     jni::jlong setAsync(Update::Converter);
 
@@ -99,9 +100,6 @@ private:
     uint64_t beginSynchronousUpdate();
     /// Lands a converted body, or reports why it could not be made.
     void land(uint64_t generation, style::GeoJSONData::ParseResult);
-
-    template <class JNIType>
-    void setCollectionSync(jni::JNIEnv&, const jni::Object<JNIType>&);
 
     jboolean isUpdateSynchronous(jni::JNIEnv&);
     jni::jlong getDataGeneration(jni::JNIEnv&);

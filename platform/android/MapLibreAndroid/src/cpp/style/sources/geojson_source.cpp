@@ -102,15 +102,15 @@ jni::jlong GeoJSONSource::setGeoJSONString(jni::JNIEnv& env, const jni::String& 
 
 jni::jlong GeoJSONSource::setFeatureCollection(jni::JNIEnv& env,
                                                const jni::Object<geojson::FeatureCollection>& jFeatures) {
-    return setCollectionAsync(env, jFeatures);
+    return setCollection(env, jFeatures);
 }
 
 jni::jlong GeoJSONSource::setFeature(jni::JNIEnv& env, const jni::Object<geojson::Feature>& jFeature) {
-    return setCollectionAsync(env, jFeature);
+    return setCollection(env, jFeature);
 }
 
 jni::jlong GeoJSONSource::setGeometry(jni::JNIEnv& env, const jni::Object<geojson::Geometry>& jGeometry) {
-    return setCollectionAsync(env, jGeometry);
+    return setCollection(env, jGeometry);
 }
 
 jni::jlong GeoJSONSource::setURL(jni::JNIEnv& env, const jni::String& url) {
@@ -198,7 +198,7 @@ jni::Local<jni::Object<Source>> GeoJSONSource::createJavaPeer(jni::JNIEnv& env) 
 }
 
 template <class JNIType>
-jni::jlong GeoJSONSource::setCollectionAsync(jni::JNIEnv& env, const jni::Object<JNIType>& jObject) {
+jni::jlong GeoJSONSource::setCollection(jni::JNIEnv& env, const jni::Object<JNIType>& jObject) {
     auto& core = *source.as<style::GeoJSONSource>();
     if (core.isUpdateSynchronous()) {
         const uint64_t generation = beginSynchronousUpdate();
