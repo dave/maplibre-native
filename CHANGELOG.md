@@ -55,6 +55,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] A contour source whose `source` is not in the style, or is not a `raster-dem` source, logs one error. Before, the first case logged nothing and the second logged a warning on every frame.
 - [core] A closed contour line has no corner where its ring is joined. Before, smoothing pinned that point as if it were the end of a line, so every hilltop and depression showed a cusp.
 - [core] Contour lines are built from heights with their fraction. Before, heights were truncated to whole metres, which moved each line by up to a metre of height and made short intervals (such as 10 ft) alias.
 - [core] Remove the contour source's `overzoom` property and `ContourSource::getOverzoom`. It was parsed and validated, but nothing read it. A style that sets it now has it ignored, like any unknown key.

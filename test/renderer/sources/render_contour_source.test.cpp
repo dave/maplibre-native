@@ -1,4 +1,5 @@
 #include <mln/test/fake_file_source.hpp>
+#include <mln/test/fixture_log_observer.hpp>
 #include <mln/test/util.hpp>
 
 #include <mln/actor/scheduler.hpp>
@@ -550,4 +551,73 @@ TEST(RenderContourSource, TheIntervalFollowsTheMapZoomWithSmallDEMTiles) {
     // Map zoom 11, DEM tile zoom 12: below the first stop.
     EXPECT_DOUBLE_EQ(200.0, intervalOf(contourFeatures(11.0, 256, schedule)));
     EXPECT_DOUBLE_EQ(100.0, intervalOf(contourFeatures(12.0, 512, schedule)));
+}
+
+// A source that names no source in the style draws nothing. It says so, once.
+TEST(RenderContourSource, AMissingDEMSourceIsOneError) {
+    FixtureLog log;
+    RenderContourSourceTest test;
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+
+    auto params = test.makeParameters([](const std::string&) -> RenderSource* { return nullptr; });
+    for (int frame = 0; frame < 3; frame++) {
+        source.update(impl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    }
+
+    EXPECT_EQ(1u,
+              log.count({EventSeverity::Error,
+                         Event::Style,
+                         -1,
+                         "contour source `contours` names source `dem`, which is not in the style"}));
+}
+
+// A source of another type is the same mistake: one error, not one per frame.
+TEST(RenderContourSource, ADEMSourceOfTheWrongTypeIsOneError) {
+    FixtureLog log;
+    RenderContourSourceTest test;
+    auto impl = test.makeContourImpl("contours", "raster");
+    RenderContourSource source(impl, test.threadPool);
+    Immutable<style::Source::Impl> rasterImpl = makeMutable<style::TileSource::Impl>(
+        style::SourceType::Raster, "raster", util::tileSize_I);
+    auto raster = RenderSource::create(rasterImpl, test.threadPool);
+
+    auto params = test.makeParameters([&](const std::string&) -> RenderSource* { return raster.get(); });
+    for (int frame = 0; frame < 3; frame++) {
+        source.update(impl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    }
+
+    EXPECT_EQ(1u,
+              log.count({EventSeverity::Error,
+                         Event::Style,
+                         -1,
+                         "contour source `contours` names source `raster`, which is not a raster-dem source"}));
+    EXPECT_EQ(0u, log.count({EventSeverity::Warning, Event::Style, -1, "raster-dem"}, /*substring=*/true));
+}
+
+// A DEM source added later ends the problem; if it goes again, that is a new one.
+TEST(RenderContourSource, ADEMSourceThatLeavesIsANewError) {
+    FixtureLog log;
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    RenderRasterDEMSource dem(demImpl, test.threadPool);
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+
+    RenderSource* current = nullptr;
+    auto params = test.makeParameters([&](const std::string&) -> RenderSource* { return current; });
+    auto update = [&] {
+        source.update(impl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
+    };
+    update();
+    current = &dem;
+    update();
+    current = nullptr;
+    update();
+
+    EXPECT_EQ(2u,
+              log.count({EventSeverity::Error,
+                         Event::Style,
+                         -1,
+                         "contour source `contours` names source `dem`, which is not in the style"}));
 }

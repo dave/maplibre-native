@@ -53,6 +53,8 @@ private:
     // a new source can get the address of a destroyed one, and must still be
     // seen as new.
     mapbox::base::WeakPtr<RenderRasterDEMSource> upstream;
+    // The source's name resolved to nothing usable, and that has been logged.
+    bool reportedBadSource = false;
     std::optional<RenderRasterDEMSource::ListenerHandle> listenerHandle;
 
     mapbox::base::WeakPtrFactory<RenderContourSource> weakFactory{this};
