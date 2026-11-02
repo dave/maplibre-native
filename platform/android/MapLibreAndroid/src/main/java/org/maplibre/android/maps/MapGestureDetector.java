@@ -75,6 +75,14 @@ final class MapGestureDetector {
    */
   private boolean flingStartedAtThisLift;
 
+  /**
+   * The end of the fling started at this lift, reported at the end of its ACTION_UP once no zoom
+   * or rotate glide started at the same lift; null when there is none to report.
+   */
+  @Nullable
+  private CameraPosition flingEnd;
+  private long flingDurationMs;
+
   private final CopyOnWriteArrayList<MapLibreMap.OnMoveListener> onMoveListenerList
     = new CopyOnWriteArrayList<>();
 
@@ -246,6 +254,9 @@ final class MapGestureDetector {
         doubleTapFinished();
         transform.setGestureInProgress(false);
 
+        // A zoom or rotate glide from this lift, in whichever order its detector ran, or one
+        // still running, cuts the fling short.
+        boolean flingCutShort = isScheduledOrStarted(scaleAnimator) || isScheduledOrStarted(rotateAnimator);
         if (!scheduledAnimators.isEmpty()) {
           // Start all awaiting velocity animations
           animationsTimeoutHandler.removeCallbacksAndMessages(null);
@@ -254,10 +265,16 @@ final class MapGestureDetector {
           }
           scheduledAnimators.clear();
         }
+        // Reported after the move has started.
+        if (flingEnd != null && !flingCutShort) {
+          notifyOnCameraGlideListeners(flingEnd, flingDurationMs, MapLibreMap.GlideKind.PAN);
+        }
+        flingEnd = null;
         flingStartedAtThisLift = false;
         break;
 
       case MotionEvent.ACTION_CANCEL:
+        flingEnd = null;
         flingStartedAtThisLift = false;
         scheduledAnimators.clear();
         transform.setGestureInProgress(false);
@@ -475,13 +492,13 @@ final class MapGestureDetector {
       notifyOnFlingListeners();
       cameraChangeDispatcher.onCameraMoveStarted(REASON_API_GESTURE);
 
-      // A scale or rotate glide from this lift starts after this and cuts the fling short.
+      // A zoom or rotate glide from this lift cuts the fling short: the end is reported at the
+      // end of the lift, after the move has started, and only if none started.
       flingStartedAtThisLift = true;
-      if (!onCameraGlideListenerList.isEmpty()
-        && !isScheduledOrStarted(scaleAnimator) && !isScheduledOrStarted(rotateAnimator)) {
-        notifyOnCameraGlideListeners(transform.getCameraForMoveBy(offsetX, offsetY, animationTime),
-          animationTime, MapLibreMap.GlideKind.PAN);
-      }
+      // From the camera before the move, as moveBy takes it.
+      flingEnd = onCameraGlideListenerList.isEmpty()
+        ? null : transform.getCameraForMoveBy(offsetX, offsetY, animationTime);
+      flingDurationMs = animationTime;
 
       // update transformation
       transform.moveBy(offsetX, offsetY, animationTime);
@@ -959,10 +976,13 @@ final class MapGestureDetector {
         transform.cancelTransitions();
         cameraChangeDispatcher.onCameraMoveStarted(REASON_API_GESTURE);
         // Each frame zooms about the same point, so the end is one zoom about it from here.
+        // Reported once the animator has started, before its first frame.
         if (!onCameraGlideListenerList.isEmpty()
           && !flingStartedAtThisLift && !isScheduledOrStarted(rotateAnimator)) {
-          notifyOnCameraGlideListeners(transform.getCameraForZoomAround(endZoom, animationFocalPoint),
-            animationTime, MapLibreMap.GlideKind.ZOOM);
+          CameraPosition end = transform.getCameraForZoomAround(endZoom, animationFocalPoint);
+          if (end != null) {
+            notifyOnCameraGlideListeners(end, animationTime, MapLibreMap.GlideKind.ZOOM);
+          }
         }
       }
 
