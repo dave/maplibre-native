@@ -792,11 +792,18 @@ void NativeMapView::latLngsForPixelsAtCamera(JNIEnv& env,
     for (std::size_t i = 0; i + 1 < len; i += 2) {
         coordinates.emplace_back(input.Get(env, i), input.Get(env, i + 1));
     }
-    const auto camera = mln::CameraOptions()
-                            .withCenter(mln::LatLng(latitude, longitude))
-                            .withZoom(zoom)
-                            .withBearing(bearing)
-                            .withPitch(pitch);
+    // -1 is a CameraPosition field that was not set: the map keeps its own
+    // value for it, as jumpTo does.
+    auto camera = mln::CameraOptions().withCenter(mln::LatLng(latitude, longitude));
+    if (zoom != -1) {
+        camera.zoom = zoom;
+    }
+    if (bearing != -1) {
+        camera.bearing = bearing;
+    }
+    if (pitch != -1) {
+        camera.pitch = pitch;
+    }
     std::vector<mln::LatLng> latLngs = map->latLngsForPixelsAtCamera(camera, coordinates);
     std::vector<jdouble> buffer;
     buffer.reserve(len);
