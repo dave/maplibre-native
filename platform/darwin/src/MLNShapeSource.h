@@ -398,23 +398,6 @@ MLN_EXPORT
 @property (nonatomic, copy, nullable) NSNumber *landingLimit;
 
 /**
- The step recorder, for debug builds and tests: when on, every shape source's
- off-thread steps and tile hops record the thread they ran on and their
- times. Off by default.
- */
-+ (void)setRecordsLabelSteps:(BOOL)recording;
-
-/**
- The steps recorded since the last call, in the order they ended. Each is a
- dictionary with `sourceID` (NSString), `name` (NSString: "convert",
- "parse-url", "slice", "tile-parse", "tile-layout", or a tile hop "hop-data",
- "hop-glyphs", "hop-images", "hop-layout"), `thread` (NSString), `hop`
- (NSNumber, Boolean), and `queued`, `start` and `end` (NSNumber, seconds on the
- steady clock; `queued` is 0 where the recorder cannot see it).
- */
-+ (NSArray<NSDictionary<NSString *, id> *> *)takeLabelSteps;
-
-/**
  Returns an array of map features for this source, filtered by the given
  predicate.
 
