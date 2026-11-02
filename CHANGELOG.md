@@ -55,6 +55,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] Contour lines come in order of elevation, not in the order of a hash map, so a tile's draw order is the same on every platform.
 - [core] A fractional contour interval keeps its value: with `intervals: [0.5]`, `interval` is 0.5 and not 1, each line has its own `ele`, and `major` follows the real multiple. A whole interval still has whole numbers.
 - [core] `style::ContourSource` throws `std::invalid_argument` for an invalid `intervals` or `majorMultiplier` schedule. The style parser already rejected them; from the C++ API, the source silently drew no lines or no major lines.
 - [core] A contour source whose `source` is not in the style, or is not a `raster-dem` source, logs one error. Before, the first case logged nothing and the second logged a warning on every frame.

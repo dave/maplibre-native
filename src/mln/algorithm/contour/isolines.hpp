@@ -47,8 +47,9 @@ struct ContourLineString {
 /// @param width   number of columns of samples. Must be ≥ 2.
 /// @param height  number of rows of samples. Must be ≥ 2.
 /// @param thresholds configuration; `interval` must be > 0.
-/// @return One ContourLineString per stitched polyline. Lines are not
-///   simplified or smoothed — that is the consumer's responsibility.
+/// @return One ContourLineString per stitched polyline, by rising elevation, and
+///   within an elevation in the order of the scan. Lines are not simplified or
+///   smoothed — that is the consumer's responsibility.
 std::vector<ContourLineString> generateContours(std::span<const float> heights,
                                                 int width,
                                                 int height,
