@@ -9,6 +9,7 @@
 #include <mln/util/client_options.hpp>
 #include <mln/util/constants.hpp>
 #include <mln/util/logging.hpp>
+#include <mln/util/mapbox.hpp>
 #include <mln/util/platform.hpp>
 #include <mln/util/thread.hpp>
 
@@ -229,8 +230,7 @@ void DatabaseFileSource::forward(const Resource& res, const Response& response, 
 
 bool DatabaseFileSource::canRequest(const Resource& resource) const {
     return resource.hasLoadingMethod(Resource::LoadingMethod::Cache) &&
-           resource.url.rfind(mln::util::ASSET_PROTOCOL, 0) == std::string::npos &&
-           resource.url.rfind(mln::util::FILE_PROTOCOL, 0) == std::string::npos;
+           util::mapbox::isNetworkURL(impl->getResourceOptions().tileServerOptions(), resource.url);
 }
 
 void DatabaseFileSource::setDatabasePath(const std::string& path, std::function<void()> callback) {
