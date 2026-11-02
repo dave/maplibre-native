@@ -1,0 +1,111 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 64,
+      "description": "One render pass draws the tile clipping masks three times: for the four z1 tiles of a GeoJSON source, for the one z1 tile (1/1/1) that a vector source's bounds allow, and for the four z1 tiles again. Each fill layer must clip to its own tiles, so the red bottom layer shows through the half-transparent top layer in every quadrant."
+    }
+  },
+  "center": [
+    0,
+    0
+  ],
+  "zoom": 1,
+  "sources": {
+    "four-tiles": {
+      "type": "geojson",
+      "maxzoom": 1,
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -170,
+                    -80
+                  ],
+                  [
+                    -170,
+                    80
+                  ],
+                  [
+                    170,
+                    80
+                  ],
+                  [
+                    170,
+                    -80
+                  ],
+                  [
+                    -170,
+                    -80
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "one-tile": {
+      "type": "vector",
+      "tiles": [
+        "local://tiles/{z}-{x}-{y}.osm_basemap.pbf"
+      ],
+      "minzoom": 1,
+      "maxzoom": 1,
+      "bounds": [
+        1,
+        -80,
+        179,
+        -1
+      ]
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "white"
+      }
+    },
+    {
+      "id": "bottom",
+      "type": "fill",
+      "source": "four-tiles",
+      "paint": {
+        "fill-color": "red",
+        "fill-opacity": 0.99,
+        "fill-antialias": false
+      }
+    },
+    {
+      "id": "middle",
+      "type": "fill",
+      "source": "one-tile",
+      "source-layer": "land",
+      "paint": {
+        "fill-color": "blue",
+        "fill-opacity": 0.99,
+        "fill-antialias": false
+      }
+    },
+    {
+      "id": "top",
+      "type": "fill",
+      "source": "four-tiles",
+      "paint": {
+        "fill-color": "rgb(0, 128, 0)",
+        "fill-opacity": 0.5,
+        "fill-antialias": false
+      }
+    }
+  ]
+}
