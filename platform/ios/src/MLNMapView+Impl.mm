@@ -195,6 +195,13 @@ void MLNMapViewImpl::onSourceLaidOut(const std::string& sourceID, uint64_t gener
   [mapView sourceDidLayOut:[NSString stringWithUTF8String:sourceID.c_str()] generation:generation];
 }
 
+void MLNMapViewImpl::onSourceBodyFailed(const std::string& sourceID, uint64_t generation,
+                                        const std::string& message) {
+  [mapView sourceBodyDidFail:[NSString stringWithUTF8String:sourceID.c_str()]
+                  generation:generation
+                     message:[NSString stringWithUTF8String:message.c_str()]];
+}
+
 void MLNMapViewImpl::onSpriteLoaded(const std::optional<mln::style::Sprite>& spriteID) {
   if (!spriteID.has_value()) {
     [mapView spriteDidLoad:nil url:nil];
