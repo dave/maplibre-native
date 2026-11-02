@@ -454,10 +454,11 @@ void TilePyramid::clearAll() {
     cache.clear();
 }
 
-void TilePyramid::reloadEmptyTiles() {
+void TilePyramid::reloadTiles(style::ReloadFilter filter) {
     for (auto& entry : tiles) {
-        entry.second->reloadIfEmpty();
+        entry.second->reload(filter);
     }
+    cache.forEach([filter](Tile& tile) { tile.reload(filter); });
 }
 
 void TilePyramid::addRenderTile(const UnwrappedTileID& tileID, Tile& tile) {

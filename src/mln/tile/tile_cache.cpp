@@ -155,6 +155,12 @@ bool TileCache::has(const OverscaledTileID& key) {
     return tiles.contains(key);
 }
 
+void TileCache::forEach(const std::function<void(Tile&)>& visit) {
+    for (auto& entry : tiles) {
+        visit(*entry.second);
+    }
+}
+
 void TileCache::clear() {
     for (auto& item : tiles) {
         deferredRelease(std::move(item.second));

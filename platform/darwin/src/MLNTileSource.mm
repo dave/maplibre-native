@@ -80,7 +80,7 @@ const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem =
 
 - (void)reloadEmptyTiles {
   MLNAssertStyleSourceIsValid();
-  static_cast<mln::style::TileSource *>(self.rawSource)->reloadEmptyTiles();
+  static_cast<mln::style::TileSource *>(self.rawSource)->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
 @end

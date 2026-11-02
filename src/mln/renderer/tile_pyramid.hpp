@@ -19,6 +19,10 @@
 
 namespace mln {
 
+namespace style {
+enum class ReloadFilter : uint8_t;
+} // namespace style
+
 class PaintParameters;
 class TransformState;
 class RenderLayer;
@@ -74,7 +78,7 @@ public:
     void clearAll();
     /// Asks the network again for each tile in the pyramid whose last answer
     /// was empty or an error. Cached tiles ask again when they are needed.
-    void reloadEmptyTiles();
+    void reloadTiles(style::ReloadFilter);
 
     void updateFadingTiles();
     bool hasFadingTiles() const { return fadingTiles; }
