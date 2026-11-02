@@ -49,6 +49,7 @@
 #include <mln/util/run_loop.hpp>
 #include <mln/util/timer.hpp>
 
+#include <algorithm>
 #include <atomic>
 
 using namespace mln;
@@ -2414,4 +2415,41 @@ TEST(Map, TileSelectionOptionsPublishUpdates) {
     check(&Map::setTileLodPitchThreshold, &UpdateParameters::tileLodPitchThreshold, 0.5);
     check(&Map::setTileLodZoomShift, &UpdateParameters::tileLodZoomShift, 1.0);
     check(&Map::setTileLodMode, &UpdateParameters::tileLodMode, TileLodMode::Distance);
+}
+
+// `Map::setNoFadeInSources` draws a listed source's new symbols whole. It does
+// not change what a tile records for its neighbours: a symbol over the tile's
+// edge is marked as crossing it in `MapMode::Tile`, listed or not.
+TEST(Map, NoFadeInSourcesKeepTheTileBorderData) {
+    const auto crossesTheBorder = [](const std::set<std::string>& noFadeIn) {
+        util::RunLoop runLoop;
+        auto fileSource = std::make_shared<StubFileSource>();
+        fileSource->glyphsResponse = [](const Resource&) {
+            Response response;
+            response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+            return response;
+        };
+        StubMapObserver observer;
+        // One tile fills the view.
+        HeadlessFrontend frontend{Size{512, 512}, 1.0f};
+        MapAdapter map{
+            frontend, observer, fileSource, MapOptions().withMapMode(MapMode::Tile).withSize(frontend.getSize())};
+        map.getStyle().loadJSON(R"({"version": 8,
+            "glyphs": "http://glyphs/{fontstack}/{range}.pbf",
+            "sources": {"names": {"type": "geojson", "data": {"type": "Point", "coordinates": [179, 0]}}},
+            "layers": [{"id": "names", "type": "symbol", "source": "names",
+              "layout": {"text-field": "abab", "text-font": ["Test Stack"], "text-size": 24}}]})");
+        map.jumpTo(CameraOptions().withZoom(0).withCenter(LatLng{0, 0}));
+        map.setNoFadeInSources(noFadeIn);
+        frontend.getRenderer()->collectPlacedSymbolData(true);
+        // The first placement of a tile is a reload, which never counts as crossing.
+        frontend.render(map);
+        map.triggerRepaint();
+        frontend.render(map);
+        const auto& placed = frontend.getRenderer()->getPlacedSymbolsData();
+        EXPECT_FALSE(placed.empty());
+        return std::ranges::any_of(placed, [](const auto& symbol) { return symbol.intersectsTileBorder; });
+    };
+    EXPECT_TRUE(crossesTheBorder({})) << "the control: the symbol must cross the tile's edge";
+    EXPECT_TRUE(crossesTheBorder({"names"})) << "no-fade-in changed the tile's border data";
 }
