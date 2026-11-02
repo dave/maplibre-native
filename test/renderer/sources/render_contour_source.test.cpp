@@ -15,8 +15,14 @@
 #include <mln/style/sources/tile_source_impl.hpp>
 #include <mln/style/style.hpp>
 #include <mln/text/glyph_manager.hpp>
+#include <mln/util/image.hpp>
 #include <mln/util/run_loop.hpp>
 #include <mln/util/tileset.hpp>
+#include <mln/util/timer.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <optional>
 
 using namespace mln;
 
@@ -46,6 +52,7 @@ public:
     AnnotationManager annotationManager{style};
 
     Tileset tileset{{"https://example.com/{z}/{x}/{y}.png"}, {0, 12}};
+    uint8_t prefetchZoomDelta = 0;
 
     RenderContourSourceTest()
         : threadPool(Scheduler::GetBackground(), uniqueID),
@@ -66,7 +73,7 @@ public:
                 .annotationManager = annotationManager.makeWeakPtr(),
                 .imageManager = imageManager,
                 .glyphManager = glyphManager,
-                .prefetchZoomDelta = 0,
+                .prefetchZoomDelta = prefetchZoomDelta,
                 .threadPool = threadPool,
                 .dynamicTextureAtlas = dynamicTextureAtlas,
                 .getRenderSource = std::move(getRenderSource)};
@@ -232,4 +239,194 @@ TEST(RenderContourSource, RebindToNullClearsHandleWithoutDereferencingDeadUpstre
     // Next update sees nullptr from getRenderSource — must not dereference
     // the now-dangling cached pointer.
     contour->update(contourImpl, {}, /*needsRendering=*/false, /*needsRelayout=*/false, params);
+}
+
+namespace {
+
+// A raster-dem source and a contour source that reads it, updated as
+// RenderOrchestrator updates them: the DEM source first, both every frame.
+class ContourStack {
+public:
+    RenderContourSourceTest test;
+    Immutable<style::TileSource::Impl> demImpl;
+    RenderRasterDEMSource dem;
+    Immutable<style::ContourSource::Impl> contourImpl;
+    RenderContourSource contour;
+
+    explicit ContourStack(std::optional<LatLngBounds> bounds = std::nullopt,
+                          std::optional<uint8_t> demPrefetchZoomDelta = std::nullopt)
+        : demImpl(makeDEMImpl(test, bounds, demPrefetchZoomDelta)),
+          dem(demImpl, test.threadPool),
+          contourImpl(test.makeContourImpl("contours", "dem")),
+          contour(contourImpl, test.threadPool) {}
+
+    void update() {
+        auto params = test.makeParameters(
+            [&](const std::string& id) -> RenderSource* { return id == "dem" ? &dem : nullptr; });
+        static_cast<RenderSource&>(dem).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+        contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    }
+
+    // Answers every open DEM tile request.
+    void respond(const Response& response) {
+        auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+        while (fileSource.respond(Resource::Tile, response)) {
+        }
+    }
+
+    // Runs the loop until the contour source has no tile left to finish. The
+    // timer only ends a run that would otherwise never return.
+    bool contourFinishes() {
+        util::Timer watchdog;
+        bool timedOut = false;
+        watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+        while (!contour.isLoaded() && !timedOut) {
+            test.loop.runOnce();
+            update();
+        }
+        return contour.isLoaded();
+    }
+
+private:
+    static Immutable<style::TileSource::Impl> makeDEMImpl(RenderContourSourceTest& test,
+                                                          std::optional<LatLngBounds> bounds,
+                                                          std::optional<uint8_t> prefetchZoomDelta) {
+        Tileset tileset = test.tileset;
+        tileset.bounds = bounds;
+        auto impl = makeMutable<style::TileSource::Impl>(
+            *makeMutable<style::TileSource::Impl>(style::SourceType::RasterDEM, "dem", util::tileSize_I), tileset);
+        impl->setPrefetchZoomDelta(prefetchZoomDelta);
+        return impl;
+    }
+};
+
+std::shared_ptr<const std::string> flatDEMTile() {
+    PremultipliedImage image({16, 16});
+    std::fill_n(image.data.get(), image.bytes(), static_cast<uint8_t>(255));
+    return std::make_shared<const std::string>(encodePNG(image));
+}
+
+} // namespace
+
+TEST(RenderContourSource, ContourTileCompletesWhenItsDEMTileLoads) {
+    ContourStack stack;
+    stack.update();
+    ASSERT_FALSE(stack.contour.isLoaded());
+
+    Response response;
+    response.data = flatDEMTile();
+    stack.respond(response);
+
+    EXPECT_TRUE(stack.contourFinishes());
+}
+
+// A DEM tile with no content is the normal case over the ocean. Before, the
+// contour tile never heard of it and held the map's load open for ever.
+TEST(RenderContourSource, ContourTileCompletesWhenItsDEMTileHasNoContent) {
+    ContourStack stack;
+    stack.update();
+    ASSERT_FALSE(stack.contour.isLoaded());
+
+    Response response;
+    response.noContent = true;
+    stack.respond(response);
+
+    EXPECT_TRUE(stack.contourFinishes());
+}
+
+TEST(RenderContourSource, ContourTileCompletesWhenItsDEMTileFails) {
+    ContourStack stack;
+    stack.update();
+    ASSERT_FALSE(stack.contour.isLoaded());
+
+    Response response;
+    response.error = std::make_unique<Response::Error>(Response::Error::Reason::Server, "no DEM today");
+    stack.respond(response);
+
+    EXPECT_TRUE(stack.contourFinishes());
+}
+
+// The DEM source asks for no tile outside its bounds, so the contour source
+// must not make one: nothing would ever arrive for it.
+TEST(RenderContourSource, ThereIsNoContourTileOutsideTheDEMBounds) {
+    const auto elsewhere = LatLngBounds::hull(LatLng{60.0, 10.0}, LatLng{61.0, 11.0});
+    ContourStack stack(elsewhere);
+    stack.test.transform.jumpTo(CameraOptions().withCenter(LatLng{-30.0, -60.0}).withZoom(6.0));
+    stack.test.transformState = stack.test.transform.getState();
+
+    stack.update();
+
+    EXPECT_TRUE(stack.dem.isLoaded());
+    EXPECT_TRUE(stack.contour.isLoaded());
+    EXPECT_TRUE(static_cast<FakeFileSource&>(*stack.test.fileSource).requests.empty());
+}
+
+// A contour tile made after its DEM tile settled has nothing to wait for.
+TEST(RenderContourSource, ContourTileMadeAfterItsDEMTileHadNoContentCompletes) {
+    ContourStack stack;
+    auto params = stack.test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? &stack.dem : nullptr; });
+    static_cast<RenderSource&>(stack.dem).update(
+        stack.demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+
+    Response response;
+    response.noContent = true;
+    stack.respond(response);
+
+    util::Timer watchdog;
+    bool timedOut = false;
+    watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+    while (!stack.dem.isLoaded() && !timedOut) {
+        stack.test.loop.runOnce();
+    }
+    ASSERT_TRUE(stack.dem.isLoaded());
+
+    stack.update();
+    EXPECT_TRUE(stack.contourFinishes());
+}
+
+// With no DEM source there is nothing to wait for: no tile, not a tile for a
+// guessed zoom range that nothing will ever fill.
+TEST(RenderContourSource, ThereIsNoContourTileWithoutTheDEMSource) {
+    RenderContourSourceTest test;
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+
+    auto params = test.makeParameters([](const std::string&) -> RenderSource* { return nullptr; });
+    source.update(impl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+
+    EXPECT_TRUE(source.isLoaded());
+}
+
+// While the DEM's tileset loads, its zoom range is not known.
+TEST(RenderContourSource, ThereIsNoContourTileBeforeTheDEMTilesetLoads) {
+    RenderContourSourceTest test;
+    Immutable<style::TileSource::Impl> demImpl = makeMutable<style::TileSource::Impl>(
+        style::SourceType::RasterDEM, "dem", util::tileSize_I);
+    RenderRasterDEMSource dem(demImpl, test.threadPool);
+    auto impl = test.makeContourImpl("contours", "dem");
+    RenderContourSource source(impl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? &dem : nullptr; });
+    source.update(impl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+
+    EXPECT_TRUE(source.isLoaded());
+}
+
+// A DEM source that prefetches no lower zoom has no tile for a contour tile to
+// wait for at that zoom, whatever the map's own prefetch setting says.
+TEST(RenderContourSource, ContourSourcePrefetchesWhatTheDEMSourcePrefetches) {
+    ContourStack stack(std::nullopt, /*demPrefetchZoomDelta=*/0);
+    stack.test.prefetchZoomDelta = 4;
+    stack.test.transform.jumpTo(CameraOptions().withCenter(LatLng{10.0, 10.0}).withZoom(6.0));
+    stack.test.transformState = stack.test.transform.getState();
+    stack.update();
+    ASSERT_FALSE(stack.contour.isLoaded());
+
+    Response response;
+    response.noContent = true;
+    stack.respond(response);
+
+    EXPECT_TRUE(stack.contourFinishes());
 }

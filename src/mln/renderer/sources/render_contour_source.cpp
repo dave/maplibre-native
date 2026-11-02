@@ -59,53 +59,43 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
 
     rebindUpstream(parameters);
 
-    // Mirror the upstream DEM source's zoom range so contour tiles share
-    // the DEM's canonical zoom (e.g. canonical.z = DEM maxzoom = 12 for a
-    // Terrarium source). At display zoom > maxzoom the renderer overscales
-    // both pyramids in lock-step — same canonical tile, same line geometry
-    // reused for the bigger screen area. Diverging the two pyramids' zoom
-    // ranges leaves the contour pyramid asking for tiles at coords that
-    // have no upstream DEM, with no matching listener fire — empty tiles.
-    //
-    // Default to (0..12) when the upstream's zoom range isn't available
-    // yet (style still loading) so the very first frame doesn't go
-    // through a wide-range path that has nothing to populate from.
-    Range<std::uint8_t> contourZoomRange{0, 12};
-    uint16_t contourTileSize = util::tileSize_I;
-    if (upstream != nullptr) {
-        if (auto upstreamRange = upstream->getZoomRange()) {
-            contourZoomRange = *upstreamRange;
-        }
-        // Mirror the upstream DEM source's tileSize. tilePyramid's
-        // OverscaledTileID coordinates are derived from (display zoom,
-        // tileSize), so a contour pyramid with tileSize=512 and a DEM
-        // pyramid with tileSize=256 produce different overscaledZ for
-        // the same canonical tile — the tile-load listener fires with
-        // the DEM's coords and tilePyramid::getTile(...) on the contour
-        // side returns no match.
-        contourTileSize = upstream->getTileSize();
+    // While the DEM source or its tileset is not there, the contour source has
+    // no tiles: nothing could arrive for them, and the tile coords are not
+    // known. The style's own load state covers a tileset that is still loading.
+    const auto demZoomRange = upstream != nullptr ? upstream->getZoomRange() : std::nullopt;
+    if (!demZoomRange) {
+        tilePyramid.update(
+            layers, /*needsRendering=*/false, needsRelayout, parameters, *baseImpl, util::tileSize_I, {0, 0}, {}, {});
+        return;
     }
+
+    // Make the tiles the DEM source makes, so that each contour tile has its
+    // DEM tile and hears when it settles. The same OverscaledTileIDs need the
+    // DEM's tile size, zoom range and bounds, and its source settings for the
+    // pyramid (prefetch, parent tiles). At display zoom > maxzoom both pyramids
+    // overscale in lock-step: same canonical tile, same line geometry reused
+    // for the bigger screen area.
     tilePyramid.update(layers,
                        needsRendering,
                        needsRelayout,
                        parameters,
-                       *baseImpl,
-                       contourTileSize,
-                       contourZoomRange,
-                       std::optional<LatLngBounds>{},
+                       *upstream->baseImpl,
+                       upstream->getTileSize(),
+                       *demZoomRange,
+                       upstream->getBounds(),
                        [&](const OverscaledTileID& tileID, TileObserver* observer_) {
                            auto tile = std::make_unique<ContourTile>(tileID, impl().id, parameters, observer_);
-                           // If the upstream DEM has already loaded this coord, populate
-                           // synchronously — closes the race between contour-pyramid update
-                           // and DEM tile arrivals (the listener already fired earlier and
-                           // had no pyramid tile to target).
-                           if (upstream != nullptr) {
-                               if (const RasterDEMTile* dem = upstream->getRenderableTile(tileID)) {
+                           // If the DEM tile has already settled, settle this one
+                           // now: its notification came before this tile existed.
+                           if (const RasterDEMTile* dem = upstream->getTile(tileID)) {
+                               if (dem->isRenderable()) {
                                    const auto& opts = impl().getOptions();
                                    const double zoom = static_cast<double>(tileID.canonical.z);
                                    const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
                                    const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
                                    tile->populateFromDEM(*dem, interval, major, opts.unit);
+                               } else if (dem->isComplete()) {
+                                   tile->setNoData();
                                }
                            }
                            return tile;
@@ -159,12 +149,9 @@ void RenderContourSource::onUpstreamTileLoaded(const RasterDEMTile& demTile) {
     // borders it backfilled, and several arrivals are often handled in one
     // go. Keep the newest snapshot for each tile and populate each once,
     // after the render thread's current messages. A snapshot, not the DEM
-    // tile: the DEM source and its tiles can go away before then.
-    auto taken = ContourTile::snapshot(demTile);
-    if (!taken) {
-        return;
-    }
-    pendingPopulate.insert_or_assign(demTile.id, std::move(*taken));
+    // tile: the DEM source and its tiles can go away before then. No snapshot:
+    // the DEM tile has no data, and the contour tile completes with no lines.
+    pendingPopulate.insert_or_assign(demTile.id, ContourTile::snapshot(demTile));
     if (populateScheduled) {
         return;
     }
@@ -183,15 +170,20 @@ void RenderContourSource::populatePending() {
         Tile* match = tilePyramid.getTile(id);
         if (match == nullptr) {
             // No contour tile at this coord (yet, or any more) — the createTile
-            // callback populates one made later via getRenderableTile, so
-            // missing the notify is harmless.
+            // callback settles one made later via getTile, so missing the
+            // notify is harmless.
+            continue;
+        }
+        auto& tile = static_cast<ContourTile&>(*match);
+        if (!taken) {
+            tile.setNoData();
             continue;
         }
         const auto& opts = impl().getOptions();
         const double zoom = static_cast<double>(id.canonical.z);
         const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
         const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
-        static_cast<ContourTile&>(*match).populate(taken, interval, major, opts.unit);
+        tile.populate(*taken, interval, major, opts.unit);
     }
 }
 

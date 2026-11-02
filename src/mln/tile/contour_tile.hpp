@@ -81,6 +81,10 @@ public:
                   std::int64_t majorMultiplier,
                   const algorithm::contour::UnitConfig& unit);
 
+    // The DEM tile has no data: it had no content or it failed. The tile
+    // completes with no lines, and any population still running is dropped.
+    void setNoData();
+
     // The generation of the last result applied to the tile: 0 before any
     // result, otherwise the number of the `populateFromDEM` call it came from.
     std::uint64_t populatedGeneration() const { return appliedGeneration; }

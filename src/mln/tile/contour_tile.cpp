@@ -288,6 +288,12 @@ std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTil
                        .unpack = dem.getUnpackVector()};
 }
 
+void ContourTile::setNoData() {
+    appliedGeneration = ++requestedGeneration;
+    latestGeneration->store(requestedGeneration);
+    setData(nullptr);
+}
+
 void ContourTile::populate(const DEMSnapshot& snapshot_,
                            double intervalDisplayUnits,
                            std::int64_t majorMultiplier,

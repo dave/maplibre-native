@@ -132,7 +132,7 @@ protected:
     bool enabled = false;
 
     void onTileChanged(Tile&) override;
-    void onTileError(Tile&, std::exception_ptr) final;
+    void onTileError(Tile&, std::exception_ptr) override;
     void onTileAction(OverscaledTileID, std::string, TileOperation) override;
     void onSymbolError(const std::string&) override;
 };
