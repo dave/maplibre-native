@@ -55,6 +55,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] Contour lines are built from heights with their fraction. Before, heights were truncated to whole metres, which moved each line by up to a metre of height and made short intervals (such as 10 ft) alias.
 - [core] Remove the contour source's `overzoom` property and `ContourSource::getOverzoom`. It was parsed and validated, but nothing read it. A style that sets it now has it ignored, like any unknown key.
 - [core] A contour source reads `intervals` and `majorMultiplier` at the map zoom a tile is drawn at. Before, it read them at the DEM tile's zoom: a band above the DEM's `maxzoom` was never used, and with 256 px DEM tiles every band started one zoom early.
 - [core] A contour source follows a new `raster-dem` source that gets the address of the one it replaced. Before, it compared addresses, kept no listener on the new source, and its lines stopped updating.

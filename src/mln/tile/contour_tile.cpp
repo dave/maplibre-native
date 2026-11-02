@@ -300,10 +300,10 @@ mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(
     const int dim = snapshot_.dim;
     const int width = dim + 2 * DEMData::border;
 
-    std::vector<std::int16_t> heights(static_cast<std::size_t>(width) * width);
+    std::vector<float> heights(static_cast<std::size_t>(width) * width);
     const uint8_t* rgba = snapshot_.image->data.get();
     for (std::size_t i = 0; i < heights.size(); i++) {
-        heights[i] = static_cast<std::int16_t>(DEMData::decode(rgba + i * 4, snapshot_.unpack));
+        heights[i] = DEMData::decodeHeight(rgba + i * 4, snapshot_.unpack);
     }
 
     // The configured `intervalDisplayUnits` is in display units (feet,

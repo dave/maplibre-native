@@ -18,8 +18,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -165,4 +168,65 @@ TEST(ContourTile, ADEMTileWithNoDataGivesNoSnapshot) {
     const auto params = test.parameters();
     RasterDEMTile dem(OverscaledTileID(0, 0, 0), "dem", params, test.tileset);
     EXPECT_FALSE(ContourTile::snapshot(dem));
+}
+
+namespace {
+
+// A snapshot whose samples hold the heights a function gives, by buffered column,
+// in the terrarium encoding. Its tile covers 16 samples.
+template <typename Height>
+ContourTile::DEMSnapshot terrariumSnapshot(Height height) {
+    constexpr int dim = 16;
+    constexpr int width = dim + (2 * DEMData::border);
+    PremultipliedImage image({width, width});
+    for (int y = 0; y < width; y++) {
+        for (int x = 0; x < width; x++) {
+            const double value = height(x, y) + 32768.0;
+            uint8_t* pixel = image.data.get() + (static_cast<std::size_t>(y * width + x) * 4);
+            pixel[0] = static_cast<uint8_t>(std::floor(value / 256.0));
+            pixel[1] = static_cast<uint8_t>(static_cast<int>(std::floor(value)) % 256);
+            pixel[2] = static_cast<uint8_t>((value - std::floor(value)) * 256.0);
+            pixel[3] = 255;
+        }
+    }
+    return {.image = std::make_shared<const PremultipliedImage>(std::move(image)),
+            .dim = dim,
+            .unpack = DEMData::unpackVector(Tileset::RasterEncoding::Terrarium)};
+}
+
+using ContourLine = mapbox::geometry::line_string<std::int16_t>;
+
+} // namespace
+
+// A height keeps its fraction: the 100 m line crosses between 99.75 m and
+// 100.75 m a quarter of the way along, and whole metres would have no line there.
+TEST(ContourTile, HeightsKeepTheirFraction) {
+    constexpr int firstHigh = 10;
+    const auto snapshot = terrariumSnapshot([](int x, int) { return x < firstHigh ? 99.75 : 100.75; });
+
+    const auto features = ContourTile::buildFeatures(snapshot, 100.0, 5, {});
+
+    ASSERT_EQ(1u, features.size());
+    EXPECT_EQ(100, features[0].properties.at("ele").get<std::int64_t>());
+    // A buffered column x is a tile sample at (x - border + 0.5) cells; a cell is
+    // EXTENT / dim = 512 units. The crossing is a quarter of a cell after column 9.
+    const double expected = (firstHigh - 1 - DEMData::border + 0.5 + 0.25) * 512.0;
+    for (const auto& point : features[0].geometry.get<ContourLine>()) {
+        EXPECT_NEAR(expected, point.x, 1.0);
+    }
+}
+
+// The fraction is kept below sea level too: truncation moved heights toward zero.
+TEST(ContourTile, NegativeHeightsKeepTheirFraction) {
+    constexpr int firstHigh = 10;
+    const auto snapshot = terrariumSnapshot([](int x, int) { return x < firstHigh ? -100.25 : -99.25; });
+
+    const auto features = ContourTile::buildFeatures(snapshot, 100.0, 5, {});
+
+    ASSERT_EQ(1u, features.size());
+    EXPECT_EQ(-100, features[0].properties.at("ele").get<std::int64_t>());
+    const double expected = (firstHigh - 1 - DEMData::border + 0.5 + 0.25) * 512.0;
+    for (const auto& point : features[0].geometry.get<ContourLine>()) {
+        EXPECT_NEAR(expected, point.x, 1.0);
+    }
 }
