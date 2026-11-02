@@ -1208,3 +1208,65 @@ TEST(Source, GeoJSONSourceOptionsThatDoNotConvertFailTheSource) {
     ASSERT_TRUE(good) << none.message;
     EXPECT_EQ(5, (*good)->as<GeoJSONSource>()->getOptions().maxzoom);
 }
+
+// A resource names the source that asked for it, for a file source that serves
+// each source differently.
+TEST(Source, ATileResourceCarriesItsSourceID) {
+    SourceTest test;
+    std::string sourceID;
+    test.fileSource->tileResponse = [&](const Resource& resource) {
+        sourceID = resource.sourceID;
+        test.end();
+        return Response{};
+    };
+    LineLayer layer("id", "named");
+    layer.setSourceLayer("water");
+    Immutable<LayerProperties> layerProperties = makeMutable<LineLayerProperties>(
+        staticImmutableCast<LineLayer::Impl>(layer.baseImpl));
+    std::vector<Immutable<LayerProperties>> layers{layerProperties};
+    Tileset tileset;
+    tileset.tiles = {"tiles"};
+    VectorSource source("named", tileset);
+    source.setObserver(&test.styleObserver);
+    source.loadDescription(*test.fileSource);
+    auto renderSource = RenderSource::create(source.baseImpl, test.threadPool);
+    renderSource->setObserver(&test.renderSourceObserver);
+    renderSource->update(source.baseImpl, layers, true, true, test.tileParameters());
+    test.run();
+    EXPECT_EQ("named", sourceID);
+}
+
+TEST(Source, AGeoJSONURLResourceCarriesItsSourceID) {
+    SourceTest test;
+    std::string sourceID;
+    test.fileSource->sourceResponse = [&](const Resource& resource) {
+        sourceID = resource.sourceID;
+        test.end();
+        Response response;
+        response.noContent = true;
+        return response;
+    };
+    GeoJSONSource source("named");
+    source.setURL("http://body");
+    source.setObserver(&test.styleObserver);
+    source.loadDescription(*test.fileSource);
+    test.run();
+    EXPECT_EQ("named", sourceID);
+}
+
+TEST(Source, ATileJSONResourceCarriesItsSourceID) {
+    SourceTest test;
+    std::string sourceID;
+    test.fileSource->sourceResponse = [&](const Resource& resource) {
+        sourceID = resource.sourceID;
+        test.end();
+        Response response;
+        response.noContent = true;
+        return response;
+    };
+    VectorSource source("named", "http://tilejson");
+    source.setObserver(&test.styleObserver);
+    source.loadDescription(*test.fileSource);
+    test.run();
+    EXPECT_EQ("named", sourceID);
+}

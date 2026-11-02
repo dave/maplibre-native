@@ -30,6 +30,7 @@ TileLoader<T>::TileLoader(T& tile_,
                               Resource::LoadingMethod::CacheOnly)),
       fileSource(parameters.fileSource) {
     assert(!request);
+    resource.sourceID = tile.sourceID;
 
     shared = std::make_shared<Shared>();
 
