@@ -30,7 +30,8 @@ ContourTile::LineOptions lineOptions(const style::ContourSourceOptions& options,
     const double zoom = id.overscaledZ - std::log2(util::tileSize_D / tileSize);
     return {.intervalDisplayUnits = algorithm::contour::intervalForZoom(options.intervals, zoom),
             .majorMultiplier = std::llround(algorithm::contour::intervalForZoom(options.majorMultiplier, zoom)),
-            .unit = options.unit};
+            .unit = options.unit,
+            .tileSize = static_cast<double>(tileSize)};
 }
 
 } // namespace
