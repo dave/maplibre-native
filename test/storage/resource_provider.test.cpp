@@ -678,3 +678,62 @@ TEST(ResourceProvider, AResourceTransformLetsTheNetworkTakeAnyScheme) {
     online.setResourceTransform({});
     EXPECT_FALSE(online.canRequest({Resource::Unknown, "custom://a/b"}));
 }
+
+// The requests in flight, and their peak, per provider. A request is in flight
+// from its start until its answer or its cancel. There is no limit.
+TEST(ResourceProvider, TheCountsFollowTheRequestsInFlight) {
+    util::RunLoop loop;
+    EXPECT_FALSE(getResourceProviderCounts("provider-test"));
+    Registered registered("provider-test");
+    const auto counts = [] {
+        return *getResourceProviderCounts("provider-test");
+    };
+    EXPECT_EQ(0u, counts().inFlight);
+    EXPECT_EQ(0u, counts().peakInFlight);
+
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    auto first = fs.request({Resource::Unknown, "provider-test://1"}, [](Response) {});
+    auto second = fs.request({Resource::Unknown, "provider-test://2"}, [](Response) {});
+    auto third = fs.request({Resource::Unknown, "provider-test://3"}, [](Response) {});
+    ASSERT_TRUE(runUntil(loop, [&] { return registered.provider->started() == 3; }, "the starts"));
+    EXPECT_EQ(3u, counts().inFlight);
+    EXPECT_EQ(3u, counts().peakInFlight);
+
+    // A second answer does not count again.
+    registered.provider->responder(0)->empty();
+    {
+        FixtureLog log;
+        registered.provider->responder(0)->empty();
+        EXPECT_EQ(1u,
+                  log.count({EventSeverity::Warning,
+                             Event::General,
+                             -1,
+                             "Resource provider request provider-test://1 was answered twice"}));
+    }
+    EXPECT_EQ(2u, counts().inFlight);
+
+    second.reset();
+    ASSERT_TRUE(runUntil(loop, [&] { return registered.provider->cancels() == 1; }, "the cancel"));
+    EXPECT_EQ(1u, counts().inFlight);
+
+    registered.provider->responder(2)->data(bytes("x"));
+    EXPECT_EQ(0u, counts().inFlight);
+    EXPECT_EQ(3u, counts().peakInFlight);
+
+    // An answer to a dropped request has already ended it.
+    registered.provider->responder(1)->empty();
+    EXPECT_EQ(0u, counts().inFlight);
+}
+
+TEST(ResourceProvider, AnotherProviderCountsFromZero) {
+    util::RunLoop loop;
+    Registered registered("provider-test");
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    auto first = fs.request({Resource::Unknown, "provider-test://1"}, [](Response) {});
+    ASSERT_TRUE(runUntil(loop, [&] { return registered.provider->started() == 1; }, "the start"));
+    EXPECT_EQ(1u, getResourceProviderCounts("provider-test")->peakInFlight);
+    registerResourceProvider("provider-test", std::make_shared<TestProvider>());
+    EXPECT_EQ(0u, getResourceProviderCounts("provider-test")->inFlight);
+    EXPECT_EQ(0u, getResourceProviderCounts("provider-test")->peakInFlight);
+    registerResourceProvider("provider-test", registered.provider);
+}
