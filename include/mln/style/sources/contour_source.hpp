@@ -39,6 +39,8 @@ struct ContourSourceOptions {
     // Default: a single-output schedule of `{5}` (every 5th line is major
     // at every zoom).
     algorithm::contour::IntervalSchedule majorMultiplier{{5.0}};
+
+    bool operator==(const ContourSourceOptions&) const = default;
 };
 
 // Source-on-source: reads decoded DEM data from an upstream `raster-dem`
