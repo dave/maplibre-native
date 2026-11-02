@@ -22,6 +22,8 @@ public:
 
     void reloadEmptyTiles(jni::JNIEnv&);
 
+    void reloadTiles(jni::JNIEnv&, jni::jint filter);
+
 private:
     jni::Local<jni::Object<Source>> createJavaPeer(jni::JNIEnv&);
 

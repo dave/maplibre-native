@@ -218,6 +218,22 @@ class VectorSource : Source {
         nativeReloadEmptyTiles()
     }
 
+    /**
+     * Asks the network or the resource provider again for each tile of this source whose
+     * last answer matches [filter] and that the map needs now.
+     *
+     * Each tile keeps what it draws until its new answer lands. Tiles that have data are
+     * not asked again, and none is cleared, so the tiles on screen do not flash. A tile
+     * that the map does not need now asks again when the map needs it.
+     * Core: `mln::style::TileSource::reloadTiles`.
+     *
+     * @param filter the last answers to ask again for
+     */
+    fun reloadTiles(filter: ReloadFilter) {
+        checkThread()
+        nativeReloadTiles(filter.nativeValue)
+    }
+
     @Keep
     protected external fun initialize(layerId: String?, payload: Any?)
 
@@ -230,6 +246,9 @@ class VectorSource : Source {
 
     @Keep
     private external fun nativeReloadEmptyTiles()
+
+    @Keep
+    private external fun nativeReloadTiles(filter: Int)
 
     @Keep
     private external fun querySourceFeatures(sourceLayerId: Array<String>, filter: Array<Any>?): Array<Feature>
