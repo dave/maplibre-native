@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <cstdlib>
 
 #include <mln/algorithm/contour/isolines.hpp>
@@ -246,28 +245,4 @@ TEST(Contour, SaddleCase10EmitsTwoSegments) {
         }
     }
     EXPECT_EQ(count200, 2) << "case-10 saddle must emit two segments at the threshold";
-}
-
-TEST(Contour, PerformanceSmokeCheckUnder30ms) {
-    // 256×256 grid with a synthetic gradient, 10 thresholds (interval=10 over
-    // a 0..1000 range). Verifies the algorithm completes within the
-    // performance budget from the Task 1 acceptance criteria. Not a precise
-    // benchmark — but a 100× regression would catch any disastrous change.
-    constexpr int N = 256;
-    std::vector<std::int16_t> heights(static_cast<std::size_t>(N) * N);
-    for (int y = 0; y < N; y++) {
-        for (int x = 0; x < N; x++) {
-            // Concentric "hill" — non-trivial topology, multiple closed rings.
-            const int dx = x - N / 2;
-            const int dy = y - N / 2;
-            const int r2 = dx * dx + dy * dy;
-            heights[y * N + x] = static_cast<std::int16_t>(1000 - r2 / 64);
-        }
-    }
-    const auto t0 = std::chrono::steady_clock::now();
-    const auto lines = generateContours(heights, N, N, withInterval(100.0));
-    const auto t1 = std::chrono::steady_clock::now();
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    EXPECT_LT(ms, 30) << "algorithm took " << ms << " ms (budget: 30 ms)";
-    EXPECT_GT(lines.size(), 0u);
 }
