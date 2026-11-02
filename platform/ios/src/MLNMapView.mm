@@ -449,7 +449,9 @@ public:
 @property (nonatomic) CADisplayLink *displayLink;
 /// The screen of the window the map left while `keepsRenderingOffWindow` held
 /// its display link; nil while the map is in a window or does not render off it.
-@property (nonatomic, weak) UIScreen *offWindowScreen;
+/// Strong: the map renders off its window until it is told to stop, even if
+/// the screen disconnects meanwhile.
+@property (nonatomic) UIScreen *offWindowScreen;
 /// The screen of the last window the map left.
 @property (nonatomic, weak) UIScreen *lastWindowScreen;
 @property (nonatomic, assign) BOOL needsDisplayRefresh;
