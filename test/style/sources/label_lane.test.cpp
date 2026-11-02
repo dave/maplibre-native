@@ -2192,3 +2192,62 @@ TEST(RenderGeoJSONSource, ATileMadeInTheFrameOfARaiseDrawsTheBodyAtTheLimit) {
     test.labels().setLandingLimit(std::nullopt);
     EXPECT_TRUE(runUntil(test.loop, [&] { return drawsMark(test, "newest"); }, "the newest body after the release"));
 }
+
+// A tile keeps at most `maxKeptLayouts` bodies above the limit. A raise to an
+// older one, which is freed, can land nothing: it is an error the caller sees.
+
+namespace {
+
+struct HeldBodies {
+    util::RunLoop loop;
+    StubStyleObserver observer;
+    std::vector<std::string> errors;
+    GeoJSONSource source{"source", laneOptions()};
+    std::vector<uint64_t> held;
+
+    HeldBodies() {
+        observer.sourceError = [this](Source&, std::exception_ptr error) {
+            errors.push_back(util::toString(error));
+        };
+        source.setObserver(&observer);
+        const uint64_t landed = set();
+        source.setLandingLimit(landed);
+        for (std::size_t i = 0; i < GeometryTile::maxKeptLayouts + 1; ++i) {
+            held.push_back(set());
+        }
+    }
+    uint64_t set() { return source.setGeoJSON(points()); }
+};
+
+} // namespace
+
+TEST(GeoJSONSource, ARaiseToAGenerationTheBoundHasFreedIsAnError) {
+    HeldBodies test;
+    test.source.setLandingLimit(test.held.front());
+    ASSERT_EQ(1u, test.errors.size()) << "a raise to a freed body said nothing";
+    EXPECT_NE(std::string::npos, test.errors[0].find(std::to_string(test.held.front()))) << test.errors[0];
+    EXPECT_EQ(test.held.front(), test.source.getLandingLimit()) << "the limit is the caller's, freed body or not";
+}
+
+TEST(GeoJSONSource, ARaiseToAKeptGenerationIsNoError) {
+    HeldBodies test;
+    test.source.setLandingLimit(test.held[1]);
+    EXPECT_TRUE(test.errors.empty()) << test.errors[0];
+}
+
+TEST(GeoJSONSource, ClearingTheLimitWithAFreedBodyIsNoError) {
+    HeldBodies test;
+    test.source.setLandingLimit(std::nullopt);
+    EXPECT_TRUE(test.errors.empty()) << test.errors[0];
+}
+
+// The kept bodies count from the raise on: a later hold has no freed body.
+TEST(GeoJSONSource, ALaterHoldStartsWithNoFreedBody) {
+    HeldBodies test;
+    test.source.setLandingLimit(std::nullopt);
+    const uint64_t landed = test.set();
+    test.source.setLandingLimit(landed);
+    const uint64_t held = test.set();
+    test.source.setLandingLimit(held);
+    EXPECT_TRUE(test.errors.empty()) << test.errors[0];
+}
