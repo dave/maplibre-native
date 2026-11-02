@@ -246,3 +246,22 @@ TEST(Contour, SaddleCase10EmitsTwoSegments) {
     }
     EXPECT_EQ(count200, 2) << "case-10 saddle must emit two segments at the threshold";
 }
+
+// Lines come in order of elevation, then in the order the scan met them, so the
+// draw order of a tile's lines does not depend on a standard library's hash map.
+TEST(Contour, LinesComeInOrderOfElevation) {
+    constexpr int size = 40;
+    std::vector<float> heights;
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            heights.push_back(static_cast<float>((x * 13) + (y * 7)));
+        }
+    }
+
+    const auto lines = generateContours(heights, size, size, withInterval(25.0));
+
+    ASSERT_GT(lines.size(), 20u);
+    for (std::size_t i = 1; i < lines.size(); i++) {
+        EXPECT_LE(lines[i - 1].elevation, lines[i].elevation) << i;
+    }
+}
