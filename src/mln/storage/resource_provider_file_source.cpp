@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <map>
+#include <optional>
 #include <shared_mutex>
 #include <stdexcept>
 
@@ -14,21 +15,45 @@ namespace mln {
 
 namespace {
 
+class Counts {
+public:
+    void started() {
+        const std::size_t now = ++inFlight;
+        std::size_t peak = peakInFlight.load();
+        while (now > peak && !peakInFlight.compare_exchange_weak(peak, now)) {
+        }
+    }
+    void ended() { --inFlight; }
+    ResourceProviderCounts read() const { return {.inFlight = inFlight.load(), .peakInFlight = peakInFlight.load()}; }
+
+private:
+    std::atomic<std::size_t> inFlight{0};
+    std::atomic<std::size_t> peakInFlight{0};
+};
+
+struct Registration {
+    std::shared_ptr<ResourceProvider> provider;
+    std::shared_ptr<Counts> counts;
+};
+
 std::shared_mutex providersMutex;
-std::map<std::string, std::shared_ptr<ResourceProvider>, std::less<>>& providers() {
+std::map<std::string, Registration, std::less<>>& providers() {
     // Leaked on purpose: a map's loader thread can outlive static destruction.
-    static auto* table = new std::map<std::string, std::shared_ptr<ResourceProvider>, std::less<>>();
+    static auto* table = new std::map<std::string, Registration, std::less<>>();
     return *table;
 }
 
-std::shared_ptr<ResourceProvider> providerOf(const std::string& url) {
+std::optional<Registration> registrationOf(const std::string& url) {
     const auto end = url.find("://");
     if (end == std::string::npos) {
-        return nullptr;
+        return std::nullopt;
     }
     const std::shared_lock lock(providersMutex);
     const auto it = providers().find(std::string_view(url).substr(0, end));
-    return it == providers().end() ? nullptr : it->second;
+    if (it == providers().end()) {
+        return std::nullopt;
+    }
+    return it->second;
 }
 
 // The fork's etag, on an answer that has data or says "empty". A URL names its
@@ -47,8 +72,9 @@ uint64_t nextRequestID() {
 // One request. One atomic state decides how it ends: an answer or a cancel, never both.
 class Responder final : public ProviderResponder {
 public:
-    Responder(FileSource::Callback callback_, const Resource& resource)
+    Responder(FileSource::Callback callback_, const Resource& resource, std::shared_ptr<Counts> counts_)
         : callback(std::move(callback_)),
+          counts(std::move(counts_)),
           url(resource.url),
           kind(resource.kind),
           localOnly(isLocalOnly(resource)) {}
@@ -83,7 +109,11 @@ public:
     /// True if the request had no answer yet: it is cancelled now.
     bool cancel() {
         State expected = State::Waiting;
-        return state.compare_exchange_strong(expected, State::Cancelled);
+        if (!state.compare_exchange_strong(expected, State::Cancelled)) {
+            return false;
+        }
+        counts->ended();
+        return true;
     }
 
 private:
@@ -108,6 +138,7 @@ private:
     void answer(const Response& response) {
         State expected = State::Waiting;
         if (state.compare_exchange_strong(expected, State::Answered)) {
+            counts->ended();
             callback(response);
         } else if (expected == State::Answered) {
             // An answer that races a cancel is expected. A second answer is not.
@@ -116,6 +147,7 @@ private:
     }
 
     const FileSource::Callback callback;
+    const std::shared_ptr<Counts> counts;
     const std::string url;
     const Resource::Kind kind;
     const bool localOnly;
@@ -152,12 +184,21 @@ void registerResourceProvider(const std::string& scheme, std::shared_ptr<Resourc
         throw std::invalid_argument("registerResourceProvider: null provider for " + scheme);
     }
     const std::unique_lock lock(providersMutex);
-    providers()[scheme] = std::move(provider);
+    providers()[scheme] = {.provider = std::move(provider), .counts = std::make_shared<Counts>()};
 }
 
 void unregisterResourceProvider(const std::string& scheme) {
     const std::unique_lock lock(providersMutex);
     providers().erase(scheme);
+}
+
+std::optional<ResourceProviderCounts> getResourceProviderCounts(const std::string& scheme) {
+    const std::shared_lock lock(providersMutex);
+    const auto it = providers().find(scheme);
+    if (it == providers().end()) {
+        return std::nullopt;
+    }
+    return it->second.counts->read();
 }
 
 ResourceProviderFileSource::ResourceProviderFileSource(const ResourceOptions& resourceOptions_,
@@ -175,13 +216,16 @@ std::unique_ptr<AsyncRequest> ResourceProviderFileSource::request(const Resource
         callback(response);
         return std::make_unique<AsyncRequest>();
     }
-    auto provider = providerOf(resource.url);
-    auto responder = std::make_shared<Responder>(std::move(callback), resource);
-    if (!provider) {
+    const auto registration = registrationOf(resource.url);
+    if (!registration) {
         // Removed since `canRequest` said yes.
-        responder->error("No resource provider for " + resource.url);
+        Response response;
+        response.error = std::make_unique<Response::Error>(Response::Error::Reason::Other,
+                                                           "No resource provider for " + resource.url);
+        callback(response);
         return std::make_unique<AsyncRequest>();
     }
+    auto responder = std::make_shared<Responder>(std::move(callback), resource, registration->counts);
     const ProviderRequest request{.id = nextRequestID(),
                                   .kind = resource.kind,
                                   .url = resource.url,
@@ -189,12 +233,13 @@ std::unique_ptr<AsyncRequest> ResourceProviderFileSource::request(const Resource
                                   .tile = resource.tileData,
                                   .localOnly = isLocalOnly(resource),
                                   .priority = resource.priority};
-    provider->start(request, responder);
-    return std::make_unique<ProviderAsyncRequest>(provider, responder, request.id);
+    registration->counts->started();
+    registration->provider->start(request, responder);
+    return std::make_unique<ProviderAsyncRequest>(registration->provider, responder, request.id);
 }
 
 bool ResourceProviderFileSource::canRequest(const Resource& resource) const {
-    return providerOf(resource.url) != nullptr;
+    return registrationOf(resource.url).has_value();
 }
 
 void ResourceProviderFileSource::setResourceOptions(ResourceOptions options) {
