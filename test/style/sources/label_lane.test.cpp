@@ -288,6 +288,16 @@ TEST(LabelLane, TheStyleRefusesTheLaneWithASynchronousUpdate) {
     auto lane = conversion::convertJSON<GeoJSONOptions>(R"({"labelLane": true})", error);
     ASSERT_TRUE(lane) << error.message;
     EXPECT_TRUE(lane->labelLane);
+
+    // A style source with options that do not convert fails: it is not made
+    // with the default options.
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    style::Style style{fileSource, 1, {Scheduler::GetBackground(), util::SimpleIdentity{}}};
+    Log::setObserver(std::make_unique<Log::NullObserver>());
+    style.loadJSON(R"({"version": 8, "sources": {"labels": {"type": "geojson", "data": "http://body",
+        "labelLane": true, "synchronousUpdate": true}}, "layers": []})");
+    EXPECT_EQ(nullptr, style.getSource("labels"));
 }
 
 TEST(LabelLane, ALaneSourceRefusesASynchronousOverride) {
