@@ -4,6 +4,8 @@
 #include <mln/style/sources/tile_source_impl.hpp>
 #include <mln/util/listener_set.hpp>
 
+#include <mapbox/std/weak.hpp>
+
 namespace mln {
 
 class RasterDEMTile;
@@ -56,6 +58,8 @@ public:
     // same display zoom, which breaks the contour-to-DEM listener match.
     uint16_t getTileSize() const;
 
+    mapbox::base::WeakPtr<RenderRasterDEMSource> makeWeakPtr() { return weakFactory.makeWeakPtr(); }
+
     // Bounds of the upstream DEM tileset: its pyramid makes no tile outside
     // them. Nothing while the tileset is not loaded, or when it has no bounds.
     std::optional<LatLngBounds> getBounds() const;
@@ -75,6 +79,9 @@ private:
     void onTileError(Tile&, std::exception_ptr) override;
 
     ListenerSet<const RasterDEMTile&> tileLoadListeners;
+
+    mapbox::base::WeakPtrFactory<RenderRasterDEMSource> weakFactory{this};
+    // Do not add members here, see `WeakPtrFactory`.
 };
 
 } // namespace mln
