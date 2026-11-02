@@ -126,6 +126,8 @@ extension MLNMapViewDelegateIntegrationTests: MLNMapViewDelegate {
 
     func mapView(_: MLNMapView, sourceDidLayOut _: String, generation _: UInt64) {}
 
+    func mapView(_: MLNMapView, sourceBodyDidFail _: String, generation _: UInt64, message _: String) {}
+
     func mapView(_: MLNMapView, willGlideToCenter _: CLLocationCoordinate2D, zoomLevel _: Double,
                  direction _: CLLocationDirection, pitch _: CGFloat, duration _: TimeInterval) {}
 

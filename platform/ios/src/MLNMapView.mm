@@ -7354,6 +7354,21 @@ static void *windowScreenContext = &windowScreenContext;
   }
 }
 
+- (void)sourceBodyDidFail:(nonnull NSString *)sourceIdentifier
+               generation:(uint64_t)generation
+                  message:(nonnull NSString *)message {
+  if (!_mbglMap) {
+    return;
+  }
+
+  if ([self.delegate respondsToSelector:@selector(mapView:sourceBodyDidFail:generation:message:)]) {
+    [self.delegate mapView:self
+         sourceBodyDidFail:sourceIdentifier
+                generation:generation
+                   message:message];
+  }
+}
+
 - (void)spriteWillLoad:(nullable NSString *)id url:(nullable NSString *)url {
   if (!_mbglMap) {
     return;

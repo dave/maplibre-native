@@ -71,6 +71,9 @@ FOUNDATION_EXTERN MLN_EXPORT MLNExceptionName const _Nonnull MLNUnderlyingMapUna
                  overscaledZ:(NSInteger)overscaledZ
                     sourceID:(nonnull NSString *)sourceID;
 - (void)sourceDidLayOut:(nonnull NSString *)sourceIdentifier generation:(uint64_t)generation;
+- (void)sourceBodyDidFail:(nonnull NSString *)sourceIdentifier
+               generation:(uint64_t)generation
+                  message:(nonnull NSString *)message;
 
 /// YES while the map view has no window and `keepsRenderingOffWindow` keeps
 /// it rendering on the screen of the window it left.
