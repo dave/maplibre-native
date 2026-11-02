@@ -45,11 +45,8 @@ void main() {
     gl_Position = drawable.matrix * vec4(in_position, 0.0, 1.0);
     gl_Position.y *= -1.0;
 
-    // DEM border is 3 (stride = dim + 6); the prepare-pass output is
-    // (dim + 3)² and each output texel i is centred on DEM buffer texel
-    // i + 2. Matches the GL / Metal hillshade_prepare vertex shader.
-    const vec2 epsilon = vec2(2.0) / tileProps.dimension;
-    const float scale = (tileProps.dimension.x - 3.0) / tileProps.dimension.x;
+    const vec2 epsilon = vec2(1.0) / tileProps.dimension;
+    const float scale = (tileProps.dimension.x - 2.0) / tileProps.dimension.x;
     frag_position = in_texture_position / 8192.0 * scale + epsilon;
 }
 )";
@@ -82,11 +79,9 @@ void main() {
     return;
 #endif
 
-    // epsilon is one DEM texel step in normalized coords (unchanged).
-    // tileSize is the displayed tile width = stride - 2*border = dim
-    // (with border = 3, stride = dim + 6). Matches the GL fragment shader.
     const vec2 epsilon = 1.0 / tileProps.dimension;
-    const float tileSize = tileProps.dimension.x - 6.0;
+    // the tile's interior width: the DEM stride less DEMData::border (2) texels on each side.
+    const float tileSize = tileProps.dimension.x - 4.0;
 
     // queried pixels (using Sobel operator kernel):
     // +-----------+

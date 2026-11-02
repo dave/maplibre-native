@@ -60,11 +60,9 @@ void main() {
     gl_Position = drawable.matrix * vec4(in_position, 0, 1);
     applySurfaceTransform();
 
-    // DEM border is 3 (stride = dim + 6); inset to skip the 3-pixel border
-    // ring on each side so the displayed tile area maps to interior texels.
-    // Matches the GL / Metal color_relief vertex shader.
-    highp vec2 epsilon = 3.0 / tileProps.dimension;
-    float scale = (tileProps.dimension.x - 6.0) / tileProps.dimension.x;
+    // dimension is the DEM stride: skip DEMData::border (2) texels on each side.
+    highp vec2 epsilon = 2.0 / tileProps.dimension;
+    float scale = (tileProps.dimension.x - 4.0) / tileProps.dimension.x;
     frag_position = (vec2(in_position) / 8192.0) * scale + epsilon;
 
     // Handle poles (use in_position to match GLSL a_pos)

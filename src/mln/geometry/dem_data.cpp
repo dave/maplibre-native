@@ -55,13 +55,10 @@ DEMData::DEMData(const PremultipliedImage& _image, Tileset::RasterEncoding _enco
 // querying its 8 neighbours, and without the buffered ring we get seams at
 // tile boundaries.
 //
-// At overzoom (display zoom > raster-dem maxzoom) the prepare pass extends
-// one pixel past the tile interior so adjacent tiles share an identical
-// edge value. That requires `border` to be at least 2 — the outermost
-// boundary-aligned output pixel on tile A reads into B's first two
-// interior columns, and vice versa. With `border == 1` the boundary
-// outputs would have to fall back to a different kernel and would no
-// longer be exactly equal across the seam.
+// The prepare pass renders one texel past the tile interior on each side,
+// so that the colour pass can filter across the tile boundary. The Sobel
+// kernel of that outer texel reads one pixel further, into the second
+// border pixel: hence `border` is 2.
 void DEMData::backfillBorder(const DEMData& borderTileData, int8_t dx, int8_t dy) {
     auto& o = borderTileData;
 

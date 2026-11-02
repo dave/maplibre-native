@@ -32,8 +32,6 @@ struct GlobalIndexUBO {
 
 struct HillshadeDrawableUBO {
     matrix: mat4x4<f32>,
-    dimension: vec2<f32>,
-    pad0: vec2<f32>,
 };
 
 @group(0) @binding(1) var<uniform> globalIndex: GlobalIndexUBO;
@@ -46,16 +44,6 @@ fn main(in: VertexInput) -> VertexOutput {
     out.position = drawable.matrix * vec4<f32>(f32(in.position.x), f32(in.position.y), 0.0, 1.0);
 
     var tex = vec2<f32>(f32(in.texcoord.x), f32(in.texcoord.y)) / 8192.0;
-    // Inset to the inner dim+1 texels of the (dim+3) prepare output.
-    // See shaders/hillshade.vertex.glsl for the rationale. Apply the inset
-    // BEFORE the Y-flip — same order as the Metal shader. With flip-first
-    // the offset/scale lands on the mirrored side of the texture, so the
-    // bilinear partner at the south tile boundary picks the wrong row of
-    // the prepare output and leaves a residual horizontal seam.
-    let texW = drawable.dimension.x;
-    let scale = (texW - 3.0) / texW;
-    let offset = 1.0 / texW;
-    tex = tex * scale + offset;
     tex.y = 1.0 - tex.y;
     out.tex_coord = tex;
     return out;
@@ -211,7 +199,12 @@ fn main(in: FragmentInput) -> @location(0) vec4<f32> {
 #endif
 
     let tileProps = tilePropsVector[globalIndex.value];
-    let pixel = textureSample(hillshade_texture, texture_sampler, in.tex_coord);
+    // The prepare pass renders one texel beyond the tile on each side. Sample
+    // the tile's own part, so that linear filtering at the tile boundary
+    // blends with the neighbour's slopes instead of clamping.
+    let size = vec2<f32>(textureDimensions(hillshade_texture, 0));
+    let texturePos = (in.tex_coord * (size - 2.0) + 1.0) / size;
+    let pixel = textureSample(hillshade_texture, texture_sampler, texturePos);
 
     let latRange = tileProps.latrange;
     let latitude = (latRange.x - latRange.y) * in.tex_coord.y + latRange.y;

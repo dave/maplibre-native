@@ -13,26 +13,13 @@ layout (location = 1) in vec2 a_texture_pos;
 
 layout (std140) uniform HillshadeDrawableUBO {
     highp mat4 u_matrix;
-    highp vec2 u_dimension;
-    highp vec2 pad_drawable0;
 };
 
 out vec2 v_pos;
 
 void main() {
     gl_Position = u_matrix * vec4(a_pos, 0, 1);
-    // The prepare-pass renders a (dim+3)² texture: one "ghost" texel
-    // on each side beyond the displayed tile area, whose Sobel inputs
-    // are all backfilled from the matching neighbour. Inset v_pos so
-    // the displayed tile [world 0, dim] maps to the inner dim+1
-    // texels (indices 1 to dim+1), with the outer ring providing
-    // shared-data bilinear partners at the boundary. u_dimension is
-    // populated from the C++ side because Metal can't sample the
-    // texture in the vertex stage.
-    float texW = u_dimension.x;
-    float scale = (texW - 3.0) / texW;
-    float offset = 1.0 / texW;
-    v_pos = (a_texture_pos / 8192.0) * scale + offset;
+    v_pos = a_texture_pos / 8192.0;
 }
 )";
     static constexpr const char* fragment = R"(in vec2 v_pos;
@@ -189,7 +176,12 @@ void igor_hillshade(vec2 deriv) {
 }
 
 void main() {
-    vec4 pixel = texture(u_image, v_pos);
+    // The prepare pass renders one texel beyond the tile on each side. Sample
+    // the tile's own part, so that linear filtering at the tile boundary
+    // blends with the neighbour's slopes instead of clamping.
+    vec2 size = vec2(textureSize(u_image, 0));
+    vec2 texturePos = (v_pos * (size - 2.0) + 1.0) / size;
+    vec4 pixel = texture(u_image, texturePos);
 
     // Scale the derivative based on the mercator distortion at this latitude (v_pos.y)
     float scaleFactor = cos(radians((u_latrange[0] - u_latrange[1]) * (1.0 - v_pos.y) + u_latrange[1]));
