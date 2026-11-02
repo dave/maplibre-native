@@ -272,16 +272,11 @@ std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTil
     // exclusive pixel range — sample 0 of tile L sits at world
     // west_L + 0.5·cellWidth, sample dim-1 at east_L - 0.5·cellWidth.
     //
-    // We sample the entire (dim + 2·border) buffered view rather than
-    // just the 1-pixel inner ring. With DEMData::border = 2 the
-    // marching-squares skirt extends two cells past the tile edge on
-    // every side, which
-    // gives the downstream Douglas-Peucker / Chaikin smoothing more
-    // context near the boundary so adjacent tiles' smoothed contours
-    // share a tangent direction at the seam, not just an endpoint.
-    // Adjacent tiles' overlapping output regions are clipped during
-    // rendering, so the extra width costs only a small per-tile
-    // generation step.
+    // We sample the entire (dim + 2·border) buffered view, so that a
+    // marching-squares cell can straddle the tile edge and adjacent tiles
+    // find the same crossing there. The lines are clipped to the tile before
+    // they are simplified and smoothed, so the rest of the border adds nothing
+    // to them.
     //
     // Snapshot here on the render thread because backfillBorder mutates
     // the same image when more neighbours arrive. The snapshot is a copy of
