@@ -16,12 +16,16 @@
 //
 // Measurement. We compute the mean per-pixel absolute luminance
 // difference between the row immediately above and the row immediately
-// below the centre line, and again for two control rows that are not
-// aligned with any tile boundary. A seam shows up as the centre-row
-// diff being much larger than the control-row diff. We accept the
-// rendering as seam-free when the centre diff is no more than
-// 1.5× the larger of the two control diffs. The same test runs for
-// the vertical boundary along column W/2.
+// below the centre line, and the mean of the same difference over many
+// control rows that are not aligned with any tile boundary. A seam
+// shows up as the centre-row diff being much larger than the control
+// mean. We accept the rendering as seam-free when the centre diff is
+// no more than 1.25 times the control mean. The same test runs for the
+// vertical boundary along column W/2.
+//
+// A blank image has no seam either, so the test first checks that the
+// hillshade was drawn: the fixtures must load, and the image must show
+// the terrain's shading.
 //
 // Test data. The four required terrain.png tiles already live under
 // metrics/integration/tiles/ for the render-test integration suite;
@@ -41,8 +45,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <regex>
 #include <string>
+#include <utility>
 
 using namespace mln;
 
@@ -102,6 +108,12 @@ double meanRowDiff(const PremultipliedImage& img, int y0, int y1) {
     return sum / w;
 }
 
+// A drawn hillshade of these tiles has a mean adjacent-row (and
+// -column) luminance diff well above this. A blank or flat image has 0.
+constexpr double kMinControlDiff = 1.0;
+// A pixel darker than this is not the white background.
+constexpr double kShadedLuminance = 240.0;
+
 double meanColDiff(const PremultipliedImage& img, int x0, int x1) {
     const int w = static_cast<int>(img.size.width);
     const int h = static_cast<int>(img.size.height);
@@ -128,39 +140,45 @@ public:
                    MapOptions().withMapMode(MapMode::Static).withSize(frontend.getSize()).withPixelRatio(1.0)};
 
     HillshadeSeamTest() {
-        // Serve the four z=12 terrain tiles that the chosen viewport
-        // requires, plus any z<12 ancestor the renderer happens to
-        // request. The URL is http://tiles/{z}/{x}/{y}.terrain.png —
-        // we parse z/x/y back out and dispatch to the matching
-        // metrics/integration/tiles fixture.
-        fileSource->tileResponse = [](const Resource& res) -> std::optional<Response> {
-            // Every tile request gets a synchronous response. For URLs we
-            // don't recognise or zoom levels we don't have fixtures for,
-            // we return a `noContent`-flagged empty Response rather than
-            // `std::nullopt` — the latter leaves the request pending in
-            // StubFileSource's async path, which under bazel coverage's
-            // slower task scheduling can occasionally surface as a hang
-            // in `render()` waiting for a parent tile that never resolves.
-            Response empty;
-            empty.noContent = true;
+        // Read the four z=12 corner tiles before the map asks for them.
+        // util::read_file throws when a fixture is missing (for example,
+        // when the test runs from the wrong directory), so a missing
+        // fixture fails the test instead of rendering a blank image.
+        std::map<std::pair<uint32_t, uint32_t>, std::shared_ptr<const std::string>> tiles;
+        for (const uint32_t x : {758u, 759u}) {
+            for (const uint32_t y : {1608u, 1609u}) {
+                tiles[{x, y}] = std::make_shared<const std::string>(readTerrainTile(x, y));
+            }
+        }
+
+        // Every tile request gets a synchronous response. `std::nullopt`
+        // would leave the request pending in StubFileSource's async path,
+        // and `render()` would wait for a tile that never resolves.
+        fileSource->tileResponse = [tiles = std::move(tiles)](const Resource& res) -> std::optional<Response> {
             static const std::regex urlRe{R"(/(\d+)/(\d+)/(\d+)\.terrain\.png$)"};
-            std::smatch m;
-            if (!std::regex_search(res.url, m, urlRe)) return empty;
-            const uint32_t z = static_cast<uint32_t>(std::stoul(m[1].str()));
-            const uint32_t x = static_cast<uint32_t>(std::stoul(m[2].str()));
-            const uint32_t y = static_cast<uint32_t>(std::stoul(m[3].str()));
-            // We only ship the four z=12 corner tiles as fixtures.
-            // Anything else: empty Response (the renderer falls back to
-            // its overzoom path from the available parents — here z=12
-            // is the source maxzoom, so overzoom upward is what we want).
-            if (z != 12) return empty;
             Response r;
-            try {
-                r.data = std::make_shared<std::string>(readTerrainTile(x, y));
-            } catch (...) {
+            std::smatch m;
+            if (!std::regex_search(res.url, m, urlRe)) {
+                ADD_FAILURE() << "unexpected tile URL " << res.url;
                 r.noContent = true;
                 return r;
             }
+            const uint32_t z = static_cast<uint32_t>(std::stoul(m[1].str()));
+            const uint32_t x = static_cast<uint32_t>(std::stoul(m[2].str()));
+            const uint32_t y = static_cast<uint32_t>(std::stoul(m[3].str()));
+            // The source has data only for the four z=12 corner tiles. The
+            // renderer overzooms them, so other zoom levels have no data.
+            if (z != 12) {
+                r.noContent = true;
+                return r;
+            }
+            const auto it = tiles.find({x, y});
+            if (it == tiles.end()) {
+                ADD_FAILURE() << "unexpected z=12 tile " << x << "/" << y;
+                r.noContent = true;
+                return r;
+            }
+            r.data = it->second;
             return r;
         };
     }
@@ -227,6 +245,20 @@ TEST(HillshadeRendering, NoOverzoomCornerSeam) {
     const double ctrlH = meanRowDiffControls();
     const double seamV = meanColDiff(img, cx - 1, cx + 1);
     const double ctrlV = meanColDiffControls();
+
+    // A blank or flat image has no seam, so check first that the
+    // hillshade was drawn: most pixels of this steep terrain are darker
+    // than the white background, and adjacent rows and columns differ.
+    std::size_t shadedPixels = 0;
+    for (std::size_t i = 0; i < img.bytes(); i += 4) {
+        const double lum = (img.data[i] + img.data[i + 1] + img.data[i + 2]) / 3.0;
+        if (lum < kShadedLuminance) ++shadedPixels;
+    }
+    const std::size_t pixelCount = img.bytes() / 4;
+    ASSERT_GT(shadedPixels, pixelCount / 2)
+        << "the hillshade was not drawn: " << shadedPixels << " of " << pixelCount << " pixels are shaded";
+    ASSERT_GT(ctrlH, kMinControlDiff) << "the hillshade has no shading across rows: control mean=" << ctrlH;
+    ASSERT_GT(ctrlV, kMinControlDiff) << "the hillshade has no shading across columns: control mean=" << ctrlV;
 
     // 1.25× headroom over the typical adjacent-row diff is tight
     // enough to detect the pre-fix horizontal seam (which sits
