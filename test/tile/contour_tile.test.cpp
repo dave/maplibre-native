@@ -79,66 +79,6 @@ public:
 
 } // namespace
 
-// A contour tile is populated again whenever its DEM tile's border is
-// backfilled from a newly arrived neighbour. The populations run on a thread
-// pool and can finish in either order, so an older result must not replace a
-// newer one.
-TEST(ContourTile, OlderPopulateResultDoesNotReplaceNewer) {
-    ContourTileTest test;
-    const OverscaledTileID id(0, 0, 0);
-    const auto params = test.parameters();
-    RasterDEMTile dem(id, "dem", params, test.tileset);
-    dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
-    ASSERT_NE(nullptr, dem.getBucket());
-
-    ContourTile tile(id, "contours", params);
-    const ContourTile::LineOptions lineOptions{.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}};
-
-    auto& tasks = test.scheduler->tasks;
-    const auto before = tasks.size();
-    tile.populateFromDEM(dem, lineOptions);
-    ASSERT_EQ(before + 1, tasks.size());
-    auto first = std::move(tasks.back());
-    tasks.pop_back();
-    tile.populateFromDEM(dem, lineOptions);
-    ASSERT_EQ(before + 1, tasks.size());
-    auto second = std::move(tasks.back());
-    tasks.pop_back();
-
-    // The second population finishes first, then the first one.
-    second();
-    first();
-    test.loop.runOnce();
-
-    EXPECT_EQ(2u, tile.populatedGeneration());
-}
-
-TEST(ContourTile, PopulateResultsInOrderApplyTheNewest) {
-    ContourTileTest test;
-    const OverscaledTileID id(0, 0, 0);
-    const auto params = test.parameters();
-    RasterDEMTile dem(id, "dem", params, test.tileset);
-    dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
-
-    ContourTile tile(id, "contours", params);
-    const ContourTile::LineOptions lineOptions{.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}};
-    EXPECT_EQ(0u, tile.populatedGeneration());
-
-    auto& tasks = test.scheduler->tasks;
-    tile.populateFromDEM(dem, lineOptions);
-    auto first = std::move(tasks.back());
-    tasks.pop_back();
-    tile.populateFromDEM(dem, lineOptions);
-    auto second = std::move(tasks.back());
-    tasks.pop_back();
-
-    first();
-    second();
-    test.loop.runOnce();
-
-    EXPECT_EQ(2u, tile.populatedGeneration());
-}
-
 // A snapshot keeps the DEM image as it was: the contour source populates from
 // it after the render thread's current messages, by when a backfill may have
 // changed the DEM tile, or the DEM tile may be gone.
@@ -268,4 +208,67 @@ TEST(ContourTile, AWholeIntervalHasWholeValues) {
         EXPECT_EQ(50, feature.properties.at("interval").get<std::int64_t>());
         EXPECT_EQ(elevation % 100 == 0, feature.properties.at("major").get<bool>()) << elevation;
     }
+}
+
+// Neighbours arriving while a tile's lines are being built add one more build, of
+// the newest image, however many of them arrive. Before, each started its own job.
+TEST(ContourTile, OnlyOneBuildRunsAndTheNewestIsNext) {
+    ContourTileTest test;
+    const OverscaledTileID id(0, 0, 0);
+    const auto params = test.parameters();
+    RasterDEMTile dem(id, "dem", params, test.tileset);
+    dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
+
+    ContourTile tile(id, "contours", params);
+    const ContourTile::LineOptions lineOptions{.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}};
+
+    auto& tasks = test.scheduler->tasks;
+    const auto before = tasks.size();
+    tile.populateFromDEM(dem, lineOptions);
+    ASSERT_EQ(before + 1, tasks.size());
+    auto first = std::move(tasks.back());
+    tasks.pop_back();
+
+    // Eight neighbours arrive while the first build waits or runs.
+    for (int neighbour = 0; neighbour < 8; neighbour++) {
+        tile.populateFromDEM(dem, lineOptions);
+    }
+    EXPECT_EQ(before, tasks.size()) << "no second build runs alongside the first";
+
+    first();
+    test.loop.runOnce();
+
+    // The first result is out of date, so it is dropped, and the newest is next.
+    EXPECT_EQ(0u, tile.populatedGeneration());
+    ASSERT_EQ(before + 1, tasks.size());
+    auto second = std::move(tasks.back());
+    tasks.pop_back();
+
+    second();
+    test.loop.runOnce();
+    EXPECT_EQ(9u, tile.populatedGeneration());
+}
+
+// With no data the tile completes at once; a build still running must not bring
+// back lines from the old image.
+TEST(ContourTile, NoDataDropsABuildStillRunning) {
+    ContourTileTest test;
+    const OverscaledTileID id(0, 0, 0);
+    const auto params = test.parameters();
+    RasterDEMTile dem(id, "dem", params, test.tileset);
+    dem.onParsed(std::make_unique<HillshadeBucket>(PremultipliedImage({16, 16}), Tileset::RasterEncoding::Mapbox), 0);
+
+    ContourTile tile(id, "contours", params);
+    auto& tasks = test.scheduler->tasks;
+    tile.populateFromDEM(dem, {.intervalDisplayUnits = 10.0, .majorMultiplier = 5, .unit = {}});
+    auto build = std::move(tasks.back());
+    tasks.pop_back();
+
+    tile.setNoData();
+    const auto generation = tile.populatedGeneration();
+    EXPECT_EQ(2u, generation);
+
+    build();
+    test.loop.runOnce();
+    EXPECT_EQ(generation, tile.populatedGeneration());
 }

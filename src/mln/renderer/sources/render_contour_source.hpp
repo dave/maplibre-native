@@ -7,8 +7,7 @@
 
 #include <mapbox/std/weak.hpp>
 
-#include <map>
-#include <optional>
+#include <set>
 
 namespace mln {
 
@@ -35,18 +34,19 @@ private:
     // built from the previous upstream go.
     void rebindUpstream(const TileParameters& parameters);
 
-    // Listener body: when an upstream DEM tile settles, queue the matching
-    // contour tile in our pyramid (same OverscaledTileID) to be populated, or
-    // completed with no lines if the DEM tile has no data.
+    // Listener body: an upstream DEM tile settled. Queue the contour tile at the
+    // same OverscaledTileID.
     void onUpstreamTileLoaded(const RasterDEMTile&);
 
-    // Populates the tiles in `pendingPopulate`, once the render thread's
-    // current messages are handled: one DEM arrival notifies up to nine
-    // tiles, and several arrivals often come together, so each tile is
-    // populated once, from the newest snapshot of its DEM. No snapshot: the
-    // DEM tile has no data.
+    // Settles the queued tiles, once the render thread's current messages are
+    // handled: one DEM arrival notifies up to nine tiles, and several arrivals
+    // often come together. So each tile takes one copy of its DEM image, the
+    // newest, however many notifications it had.
     void populatePending();
-    std::map<OverscaledTileID, std::optional<ContourTile::DEMSnapshot>> pendingPopulate;
+    // Populates a contour tile from its DEM tile, or completes it with no lines
+    // if the DEM tile has no data. Nothing yet if the DEM tile has not settled.
+    void settle(ContourTile&, const RasterDEMTile&, const RenderRasterDEMSource&);
+    std::set<OverscaledTileID> pendingPopulate;
     bool populateScheduled = false;
 
     // The DEM source this source listens to. A weak pointer, not its address:
