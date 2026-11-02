@@ -453,7 +453,6 @@ list(APPEND INCLUDE_FILES
     ${PROJECT_SOURCE_DIR}/include/mln/util/indexed_tuple.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/instrumentation.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/interpolate.hpp
-    ${PROJECT_SOURCE_DIR}/include/mln/util/listener_set.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/logging.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/lru_cache.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/math.hpp
@@ -997,6 +996,7 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/util/interpolate.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/intersection_tests.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/intersection_tests.hpp
+    ${PROJECT_SOURCE_DIR}/src/mln/util/listener_set.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/io.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/io.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/literal.hpp
