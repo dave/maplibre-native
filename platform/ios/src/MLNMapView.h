@@ -565,6 +565,10 @@ MLN_EXPORT
 /**
  The identifiers of the sources whose symbols appear at full opacity when
  first placed, with no fade-in. Fade-out and other sources are unchanged.
+
+ The default is an empty set. An identifier with no source in the style is
+ kept, and applies once a source with that identifier is added. The set
+ belongs to the map view, so it is kept when the style changes.
  */
 @property (nonatomic, copy) NSSet<NSString *> *noFadeInSourceIdentifiers;
 
