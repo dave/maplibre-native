@@ -24,6 +24,7 @@
 ### ✨ Technical Improvements
 
 - *...Add new stuff here...*
+- [core] `GeoJSONSource::setLandingLimit` to a generation whose body the bound of `maxHeldBodies` has freed is a source error; before, it landed nothing and said nothing.
 - [core] A tile made in the frame that raises a GeoJSON source's landing limit below its newest body draws the body at the limit, not the body from before the hold.
 - [core] `GeoJSONSource::setGeoJSONData(data, generation)` refuses a body older than one that has landed. A body older than a pending URL no longer cancels that URL's request.
 - [core] A GeoJSON URL body that does not parse no longer empties its source: the source keeps the body it holds and reports the error, as for a body that the Android binding could not make. Its generation is not reported through `onSourceLaidOut`.

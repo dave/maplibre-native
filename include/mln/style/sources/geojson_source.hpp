@@ -6,6 +6,7 @@
 #include <mln/util/constants.hpp>
 #include <mln/util/geojson.hpp>
 
+#include <deque>
 #include <map>
 #include <memory>
 #include <string>
@@ -164,7 +165,13 @@ public:
     /// Placement of the landed symbols runs in that frame when the style's
     /// placement transitions are off (with them on, it waits for the next
     /// placement period).
+    ///
+    /// At most `maxHeldBodies` bodies above the limit are kept, the newest;
+    /// an older one is freed. A limit that reaches only freed bodies lands
+    /// nothing, and is a source error (`SourceObserver::onSourceError`). The
+    /// limit still takes effect.
     void setLandingLimit(std::optional<uint64_t>);
+    static constexpr std::size_t maxHeldBodies = 4;
     std::optional<uint64_t> getLandingLimit() const;
 
 protected:
@@ -173,6 +180,7 @@ protected:
 private:
     uint64_t landingGeneration(uint64_t generation);
     void bodyWillNotLand(uint64_t generation);
+    void noteBodyLanded();
 
     std::optional<std::string> url;
     uint64_t urlGeneration = 0;
@@ -183,6 +191,10 @@ private:
     uint64_t pendingBody = 0;
     // The generation the newest landed body was asked for with: an older body is refused.
     uint64_t newestBody = 0;
+    // The bodies landed above the limit that the tiles still keep, oldest
+    // first, and the oldest of those they have freed (0 for none).
+    std::deque<uint64_t> heldBodies;
+    uint64_t firstFreedBody = 0;
     std::unique_ptr<AsyncRequest> req;
     std::atomic<uint64_t> requestGeneration{0};
     std::shared_ptr<Scheduler> parseScheduler;
