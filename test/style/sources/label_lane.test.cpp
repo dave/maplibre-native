@@ -587,6 +587,9 @@ public:
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override {
         laidOut.emplace_back(sourceID, generation);
     }
+    void onSourceBodyFailed(const std::string& sourceID, uint64_t generation, const std::string& message) override {
+        failed.push_back({sourceID, generation, message});
+    }
     void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
         ++frames;
         fullFrames = status.mode == RenderMode::Full ? fullFrames + 1 : 0;
@@ -599,7 +602,13 @@ public:
     bool has(const std::string& sourceID, uint64_t generation) const {
         return std::ranges::find(laidOut, std::make_pair(sourceID, generation)) != laidOut.end();
     }
+    struct FailedBody {
+        std::string sourceID;
+        uint64_t generation;
+        std::string message;
+    };
     std::vector<std::pair<std::string, uint64_t>> laidOut;
+    std::vector<FailedBody> failed;
     int frames = 0;
 };
 
@@ -2260,4 +2269,86 @@ TEST(GeoJSONSource, ALaterHoldStartsWithNoFreedBody) {
     const uint64_t held = test.set();
     test.source.setLandingLimit(held);
     EXPECT_TRUE(test.errors.empty()) << test.errors[0];
+}
+
+// A body that will not land names its generation to the map's observer, so
+// that a caller waiting for that generation can stop.
+
+namespace {
+
+void expectOneFailedBody(LaneMap& test, uint64_t generation, const std::string& message) {
+    ASSERT_EQ(1u, test.observer.failed.size());
+    EXPECT_EQ("labels", test.observer.failed[0].sourceID);
+    EXPECT_EQ(generation, test.observer.failed[0].generation);
+    EXPECT_NE(std::string::npos, test.observer.failed[0].message.find(message)) << test.observer.failed[0].message;
+    EXPECT_FALSE(test.observer.has("labels", generation));
+}
+
+void expectFailedURLAnswerReported(const Response& failure, const std::string& message) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    bool answered = false;
+    answerSourcesWith(test, failure, answered);
+    const uint64_t failed = test.labels().setURL("http://bodies/missing.json");
+    ASSERT_TRUE(runUntil(test.loop, [&] { return answered; }, "the failed load"));
+    expectOneFailedBody(test, failed, message);
+}
+
+} // namespace
+
+TEST(GeoJSONSource, ABodyThatCannotBeMadeNamesItsGenerationToTheMapObserver) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const uint64_t failed = test.labels().nextDataGeneration();
+    test.labels().setGeoJSONError(failed, "Failed to parse GeoJSON data: bad");
+    expectOneFailedBody(test, failed, "Failed to parse GeoJSON data: bad");
+}
+
+TEST(GeoJSONSource, AURLThatAnswersAnErrorNamesItsGenerationToTheMapObserver) {
+    expectFailedURLAnswerReported(errorResponse(), "no body");
+}
+
+TEST(GeoJSONSource, AURLThatAnswersNothingNamesItsGenerationToTheMapObserver) {
+    expectFailedURLAnswerReported(noContentResponse(), "unexpectedly empty GeoJSON");
+}
+
+TEST(GeoJSONSource, AURLBodyThatDoesNotParseNamesItsGenerationToTheMapObserver) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    ASSERT_TRUE(loadURLBody(test, "{not json"));
+    expectOneFailedBody(test, test.labels().getLatestGeneration(), "Failed to parse GeoJSON data");
+}
+
+// A later error from a URL whose body has landed (a failed revalidation) takes
+// nothing away, and no caller waits for that generation. A failure that comes
+// again (a retry) names its generation once.
+TEST(GeoJSONSource, ARepeatedOrLateURLErrorNamesNoNewGeneration) {
+    class Failures final : public StubStyleObserver {
+    public:
+        void onSourceBodyFailed(Source&, uint64_t generation, const std::string&) override {
+            generations.push_back(generation);
+        }
+        std::vector<uint64_t> generations;
+    };
+    util::RunLoop loop;
+    FakeFileSource fileSource;
+    Failures observer;
+    GeoJSONSource source("source", laneOptions());
+    source.setObserver(&observer);
+    const uint64_t first = source.setURL("http://body");
+    source.loadDescription(fileSource);
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, errorResponse()));
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, errorResponse()));
+    EXPECT_EQ((std::vector<uint64_t>{first}), observer.generations);
+
+    Response answer;
+    answer.data = std::make_shared<std::string>(kPoints);
+    bool loaded = false;
+    observer.sourceLoaded = [&](Source&) {
+        loaded = true;
+    };
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, answer));
+    ASSERT_TRUE(runUntil(loop, [&] { return loaded; }, "the body"));
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, errorResponse()));
+    EXPECT_EQ((std::vector<uint64_t>{first}), observer.generations);
 }
