@@ -324,7 +324,7 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
             result.lane.merge(threadsOf(*map.getStyle().getSource(id)->as<GeoJSONSource>()->getSliceScheduler(), 1));
         }
     }
-    EXPECT_EQ(arm == Arm::Lane ? 4u : 2u, result.lane.size())
+    EXPECT_EQ(arm == Arm::Lane ? 3u : 2u, result.lane.size())
         << armName(arm) << ": the lane threads were not told apart";
     return result;
 }

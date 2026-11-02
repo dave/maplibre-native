@@ -42,6 +42,15 @@ std::shared_ptr<Scheduler> labelLane() {
     return lane;
 }
 
+std::shared_ptr<Scheduler> labelLaneSlicer() {
+    auto slicer = Scheduler::GetLabelLaneSlicer();
+    if (!slicer) {
+        // GetLabelLaneSlicer logged the cause and asserted.
+        throw std::runtime_error("GeoJSON source labelLane: the label lane's slicer cannot be made");
+    }
+    return slicer;
+}
+
 } // namespace
 
 // static
@@ -53,11 +62,7 @@ Immutable<GeoJSONOptions> GeoJSONOptions::defaultOptions() {
 GeoJSONSource::GeoJSONSource(std::string id, Immutable<GeoJSONOptions> options)
     : Source(makeMutable<Impl>(std::move(id), checkedOptions(options))),
       parseScheduler(options->labelLane ? labelLane() : Scheduler::GetBackground()),
-      // A lane source cuts on a thread of its own: geojson-vt is not
-      // thread-safe, and the shared sequenced ring also serves other sources
-      // and logging.
-      sequencedScheduler(options->labelLane ? std::make_shared<SequencedScheduler>("Label lane s")
-                                            : Scheduler::GetSequenced()) {}
+      sequencedScheduler(options->labelLane ? labelLaneSlicer() : Scheduler::GetSequenced()) {}
 
 GeoJSONSource::~GeoJSONSource() = default;
 
