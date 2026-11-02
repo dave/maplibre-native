@@ -309,12 +309,14 @@ public class Transform implements MapView.OnCameraDidChangeListener {
     }
   }
 
-  @NonNull
+  /** Null once the map is destroyed. */
+  @Nullable
   CameraPosition getCameraForMoveBy(double offsetX, double offsetY, long duration) {
     return nativeMap.getCameraForMoveBy(offsetX, offsetY, duration);
   }
 
-  @NonNull
+  /** Null once the map is destroyed. */
+  @Nullable
   CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint) {
     return nativeMap.getCameraForZoomAround(zoom, focalPoint);
   }

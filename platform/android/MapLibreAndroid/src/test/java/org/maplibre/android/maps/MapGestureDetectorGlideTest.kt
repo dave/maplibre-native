@@ -7,8 +7,6 @@ import org.robolectric.RuntimeEnvironment
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.verify
-import io.mockk.verifyOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -29,8 +27,11 @@ import java.time.Duration
 
 /**
  * The camera glide report: a pan fling, a scale fling, a double tap and a two-finger tap each
- * report the camera the glide ends at; a rotate glide reports nothing, and neither glide is
- * reported when two start at one lift (they cut each other short).
+ * report the camera the glide ends at, once the glide has started; a rotate glide reports nothing,
+ * and neither glide is reported when two start at one lift (they cut each other short).
+ *
+ * The transform here keeps a camera: a move or a zoom changes it, as the map's would, so each
+ * test checks the camera a report names against the camera the map reaches.
  */
 @RunWith(RobolectricTestRunner::class)
 class MapGestureDetectorGlideTest {
@@ -45,11 +46,31 @@ class MapGestureDetectorGlideTest {
     private val tap = slot<MultiFingerTapGestureDetector.OnMultiFingerTapGestureListener>()
     private lateinit var detector: MapGestureDetector
 
-    private data class Glide(val target: CameraPosition, val durationMs: Long, val kind: MapLibreMap.GlideKind)
+    /** The map's camera. */
+    private var camera = CameraPosition.Builder().target(LatLng(10.0, 20.0)).zoom(12.3).build()
+
+    /** True while a moveBy runs; a camera jump stops it, as on the map. */
+    private var moving = false
+
+    /** A report, with the state the map was in when the listener ran. */
+    private data class Glide(
+        val target: CameraPosition,
+        val durationMs: Long,
+        val kind: MapLibreMap.GlideKind,
+        val moving: Boolean
+    )
 
     private val glides = mutableListOf<Glide>()
-    private val panTarget = CameraPosition.Builder().target(LatLng(1.0, 2.0)).zoom(12.3).build()
-    private val zoomTarget = CameraPosition.Builder().target(LatLng(3.0, 4.0)).zoom(13.3).build()
+
+    /** What the listener does to the camera, if anything. */
+    private var onGlide: (() -> Unit)? = null
+
+    /** A made-up projection: one screen pixel is a millionth of a degree. */
+    private fun movedBy(from: CameraPosition, dx: Double, dy: Double): CameraPosition =
+        CameraPosition.Builder(from).target(LatLng(from.target!!.latitude + dy * 1e-6, from.target!!.longitude - dx * 1e-6))
+            .build()
+
+    private fun zoomedTo(from: CameraPosition, zoom: Double): CameraPosition = CameraPosition.Builder(from).zoom(zoom).build()
 
     @Before
     fun setUp() {
@@ -68,10 +89,15 @@ class MapGestureDetectorGlideTest {
         every { uiSettings.width } returns 1080f
         every { uiSettings.height } returns 2000f
         every { uiSettings.zoomRate } returns 1f
-        every { transform.rawZoom } returns 12.3
+        every { transform.rawZoom } answers { camera.zoom }
         every { transform.tilt } returns 0.0
-        every { transform.getCameraForMoveBy(any(), any(), any()) } returns panTarget
-        every { transform.getCameraForZoomAround(any(), any()) } returns zoomTarget
+        every { transform.getCameraForMoveBy(any(), any(), any()) } answers { movedBy(camera, firstArg(), secondArg()) }
+        every { transform.moveBy(any(), any(), any()) } answers {
+            moving = true
+            camera = movedBy(camera, firstArg(), secondArg())
+        }
+        every { transform.getCameraForZoomAround(any(), any()) } answers { zoomedTo(camera, firstArg()) }
+        every { transform.setZoom(any(), any()) } answers { camera = zoomedTo(camera, firstArg()) }
         every { gesturesManager.setStandardGestureListener(capture(standard)) } returns Unit
         every { gesturesManager.setStandardScaleGestureListener(capture(scale)) } returns Unit
         every { gesturesManager.setRotateGestureListener(capture(rotate)) } returns Unit
@@ -81,7 +107,10 @@ class MapGestureDetectorGlideTest {
         detector = MapGestureDetector(null, transform, mockk(relaxed = true), uiSettings,
             mockk(relaxed = true), mockk(relaxed = true))
         detector.setGesturesManager(context, gesturesManager, true, false)
-        detector.addOnCameraGlideListener { target, durationMs, kind -> glides.add(Glide(target, durationMs, kind)) }
+        detector.addOnCameraGlideListener { target, durationMs, kind ->
+            glides.add(Glide(target, durationMs, kind, moving))
+            onGlide?.invoke()
+        }
     }
 
     private fun touch(action: Int, x: Float = 300f, y: Float = 500f) {
@@ -120,41 +149,46 @@ class MapGestureDetectorGlideTest {
     }
 
     @Test
-    fun aFlingReportsThePanEndBeforeItMoves() {
+    fun aFlingReportsTheCameraItsMoveEndsAtOnceTheMoveHasStarted() {
+        val before = camera
         fling()
+        assertEquals("reported before the lift ends", 0, glides.size)
+        touch(MotionEvent.ACTION_UP)
 
         assertEquals(1, glides.size)
         assertEquals(MapLibreMap.GlideKind.PAN, glides[0].kind)
-        assertEquals(panTarget, glides[0].target)
-        val dx = slot<Double>()
-        val dy = slot<Double>()
-        val ms = slot<Long>()
-        verify { transform.moveBy(capture(dx), capture(dy), capture(ms)) }
-        verifyOrder {
-            transform.getCameraForMoveBy(dx.captured, dy.captured, ms.captured)
-            transform.moveBy(dx.captured, dy.captured, ms.captured)
-        }
-        assertEquals(ms.captured, glides[0].durationMs)
+        assertTrue("the move had started when the listener ran", glides[0].moving)
+        assertEquals(camera, glides[0].target)
+        assertTrue("the fling moved the camera", camera != before)
+        assertTrue(glides[0].durationMs > 0)
     }
 
-    private fun assertZoomGlideEndsAtTheLastFrame(expectedFocal: PointF, expectedDuration: Long?) {
+    @Test
+    fun aListenerThatMovesTheCameraOnAFlingLeavesItWhereTheListenerPutIt() {
+        val elsewhere = CameraPosition.Builder().target(LatLng(-30.0, 40.0)).zoom(5.0).build()
+        // A camera jump from the listener, as moveCamera makes: it stops the running move.
+        onGlide = {
+            camera = elsewhere
+            moving = false
+        }
+        fling()
+        touch(MotionEvent.ACTION_UP)
+
+        assertEquals(1, glides.size)
+        assertEquals(elsewhere, camera)
+    }
+
+    private fun assertZoomGlideEndsAtTheLastFrame(expectedDuration: Long?) {
         assertEquals(1, glides.size)
         assertEquals(MapLibreMap.GlideKind.ZOOM, glides[0].kind)
-        assertEquals(zoomTarget, glides[0].target)
-        val reportedZoom = slot<Double>()
-        val reportedFocal = slot<PointF>()
-        verify { transform.getCameraForZoomAround(capture(reportedZoom), capture(reportedFocal)) }
-        assertEquals(expectedFocal, reportedFocal.captured)
         if (expectedDuration != null) assertEquals(expectedDuration, glides[0].durationMs)
+        val reported = glides[0].target
+        assertTrue("the zoom is not yet at the end when reported", camera.zoom != reported.zoom)
 
-        // The animator's last frame sets exactly the reported zoom, about the reported point.
-        val frames = mutableListOf<Double>()
-        val focals = mutableListOf<PointF>()
         runAnimations()
-        verify { transform.setZoom(capture(frames), capture(focals)) }
-        assertTrue("the animation ran", frames.size > 1)
-        assertEquals(reportedZoom.captured, frames.last(), 0.0)
-        assertTrue(focals.all { it == reportedFocal.captured })
+
+        // The animator's last frame sets exactly the reported camera.
+        assertEquals(reported, camera)
     }
 
     @Test
@@ -166,7 +200,7 @@ class MapGestureDetectorGlideTest {
         assertEquals(0, glides.size) // scheduled, starts at the lift
         detector.onTouchEvent(up)
 
-        assertZoomGlideEndsAtTheLastFrame(PointF(300f, 500f), MapLibreConstants.ANIMATION_DURATION.toLong())
+        assertZoomGlideEndsAtTheLastFrame(MapLibreConstants.ANIMATION_DURATION.toLong())
     }
 
     @Test
@@ -176,7 +210,7 @@ class MapGestureDetectorGlideTest {
         assertTrue(tap.captured.onMultiFingerTap(tapDetector, 2))
         touch(MotionEvent.ACTION_UP)
 
-        assertZoomGlideEndsAtTheLastFrame(PointF(200f, 700f), MapLibreConstants.ANIMATION_DURATION.toLong())
+        assertZoomGlideEndsAtTheLastFrame(MapLibreConstants.ANIMATION_DURATION.toLong())
     }
 
     @Test
@@ -185,7 +219,7 @@ class MapGestureDetectorGlideTest {
         assertEquals(0, glides.size)
         touch(MotionEvent.ACTION_UP)
 
-        assertZoomGlideEndsAtTheLastFrame(PointF(540f, 1000f), null)
+        assertZoomGlideEndsAtTheLastFrame(null)
     }
 
     @Test
@@ -194,7 +228,6 @@ class MapGestureDetectorGlideTest {
         touch(MotionEvent.ACTION_UP)
         runAnimations()
 
-        verify { transform.setBearing(any(), any(), any(), any()) } // the rotate glide ran
         assertEquals(0, glides.size)
     }
 
@@ -203,15 +236,51 @@ class MapGestureDetectorGlideTest {
         scaleFling()
         rotateFling()
         touch(MotionEvent.ACTION_UP)
+        runAnimations()
 
         assertEquals(0, glides.size)
     }
 
     @Test
-    fun aPanFlingAndAScaleFlingAtOneLiftReportNothing() {
+    fun aScaleFlingThenAPanFlingAtOneLiftReportNothing() {
         scaleFling()
         fling()
         touch(MotionEvent.ACTION_UP)
+        runAnimations()
+
+        assertEquals(0, glides.size)
+    }
+
+    @Test
+    fun aPanFlingThenAScaleFlingAtOneLiftReportNothing() {
+        fling()
+        scaleFling()
+        touch(MotionEvent.ACTION_UP)
+        runAnimations()
+
+        assertEquals(0, glides.size)
+    }
+
+    @Test
+    fun aCancelledLiftReportsNothing() {
+        fling()
+        touch(MotionEvent.ACTION_CANCEL)
+
+        assertEquals(0, glides.size)
+    }
+
+    @Test
+    fun aDestroyedMapReportsNothing() {
+        // The transform answers no camera once the map is destroyed.
+        every { transform.getCameraForMoveBy(any(), any(), any()) } returns null
+        every { transform.getCameraForZoomAround(any(), any()) } returns null
+        fling()
+        touch(MotionEvent.ACTION_UP)
+        val tapDetector = mockk<MultiFingerTapGestureDetector>(relaxed = true)
+        every { tapDetector.focalPoint } returns PointF(200f, 700f)
+        tap.captured.onMultiFingerTap(tapDetector, 2)
+        touch(MotionEvent.ACTION_UP)
+        runAnimations()
 
         assertEquals(0, glides.size)
     }

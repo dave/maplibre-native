@@ -346,19 +346,19 @@ final class NativeMapView implements NativeMap {
   }
 
   @Override
-  @NonNull
+  @Nullable
   public CameraPosition getCameraForMoveBy(double dx, double dy, long duration) {
     if (checkState("getCameraForMoveBy")) {
-      return new CameraPosition.Builder().build();
+      return null;
     }
     return withEdgeInsets(nativeGetCameraForMoveBy(dx / pixelRatio, dy / pixelRatio, duration));
   }
 
   @Override
-  @NonNull
+  @Nullable
   public CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint) {
     if (checkState("getCameraForZoomAround")) {
-      return new CameraPosition.Builder().build();
+      return null;
     }
     return withEdgeInsets(nativeGetCameraForZoomAround(zoom, focalPoint.x / pixelRatio, focalPoint.y / pixelRatio));
   }

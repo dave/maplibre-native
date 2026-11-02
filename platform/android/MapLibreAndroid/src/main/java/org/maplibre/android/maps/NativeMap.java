@@ -54,12 +54,18 @@ interface NativeMap {
 
   void moveBy(double deltaX, double deltaY, long duration);
 
-  /** The camera moveBy(deltaX, deltaY, duration) would end at, from the camera now. Moves nothing. */
-  @NonNull
+  /**
+   * The camera moveBy(deltaX, deltaY, duration) would end at, from the camera now. Moves nothing.
+   * Null once the map is destroyed, when moveBy moves nothing either.
+   */
+  @Nullable
   CameraPosition getCameraForMoveBy(double deltaX, double deltaY, long duration);
 
-  /** The camera setZoom(zoom, focalPoint, 0) would give, from the camera now. Moves nothing. */
-  @NonNull
+  /**
+   * The camera setZoom(zoom, focalPoint, 0) would give, from the camera now. Moves nothing.
+   * Null once the map is destroyed, when setZoom moves nothing either.
+   */
+  @Nullable
   CameraPosition getCameraForZoomAround(double zoom, @NonNull PointF focalPoint);
 
   @NonNull
