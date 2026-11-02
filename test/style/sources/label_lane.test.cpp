@@ -1236,6 +1236,7 @@ private:
 TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrame) {
     LaneMap test(circleStyleJSON());
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
     ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
     ASSERT_EQ(4u, drawnCircles(test)) << "the body's four points are not drawn";
 
@@ -1251,6 +1252,7 @@ TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrame) {
 TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrameWithABodyHeldOnTheLane) {
     LaneMap test(circleStyleJSON());
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
     ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
     ASSERT_EQ(4u, drawnCircles(test));
 
@@ -1280,6 +1282,7 @@ TEST(LabelLane, AFilterChangeIsDrawnInTheNextFrameWithABodyHeldOnTheLane) {
 
     block.release();
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the held body laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
     ASSERT_TRUE(runOneFrame(test, "a frame with the held body"));
     EXPECT_EQ(1u, drawnCircles(test)) << "the held body with the filter";
 }
@@ -1291,6 +1294,7 @@ TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
     Recording recording;
     LaneMap test(circleStyleJSON());
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    test.map->triggerRepaint(); // the laid-out frame may be the last one
     ASSERT_TRUE(runOneFrame(test, "a frame with the body"));
     ASSERT_EQ(4u, drawnCircles(test));
 
