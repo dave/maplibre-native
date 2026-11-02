@@ -20,7 +20,7 @@ public:
     Range<uint8_t> getZoomRange() const;
     std::weak_ptr<GeoJSONData> getData() const;
     /// The generation of `getData()` (see `GeoJSONSource`); 0 for none yet.
-    uint64_t getDataGeneration() const { return dataGeneration; }
+    uint64_t getLandedGeneration() const { return dataGeneration; }
     const Immutable<GeoJSONOptions>& getOptions() const { return options; }
     /// Names the `GeoJSONSource` object this impl came from; every copy of it
     /// keeps the number. The generations count per source object, so a render

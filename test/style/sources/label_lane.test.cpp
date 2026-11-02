@@ -414,9 +414,9 @@ TEST(LabelLane, TheLaidOutSignalComesOnceForEachBodyAfterItsLastTile) {
     world.transformState = transform.getState();
 
     GeoJSONSource source("source", laneOptions());
-    EXPECT_EQ(0u, source.getDataGeneration());
+    EXPECT_EQ(0u, source.getLandedGeneration());
     EXPECT_EQ(1u, source.setGeoJSON(points()));
-    EXPECT_EQ(1u, source.getDataGeneration());
+    EXPECT_EQ(1u, source.getLandedGeneration());
     RenderGeoJSONSource renderSource{staticImmutableCast<GeoJSONSource::Impl>(source.baseImpl),
                                      world.parameters(true).threadPool};
     const std::vector<Immutable<LayerProperties>> layers{world.layerProperties};
@@ -556,10 +556,10 @@ TEST(LabelLane, AURLBodyHasTheGenerationItsSetterAnswered) {
     source.setObserver(&observer);
     EXPECT_EQ(1u, source.setGeoJSON(points()));
     EXPECT_EQ(2u, source.setURL("http://body"));
-    EXPECT_EQ(1u, source.getDataGeneration());
+    EXPECT_EQ(1u, source.getLandedGeneration());
     source.loadDescription(*fileSource);
     ASSERT_TRUE(runUntil(loop, [&] { return loaded; }, "the URL body"));
-    EXPECT_EQ(2u, source.getDataGeneration());
+    EXPECT_EQ(2u, source.getLandedGeneration());
 }
 
 // The map: the orchestrator's wiring, the step recorder, and the lifetime.
@@ -773,20 +773,20 @@ TEST(LabelLane, AURLBodyAnsweredAgainIsANewBodyOnlyIfItDiffers) {
 
     ASSERT_TRUE(answer(kPoints));
     ASSERT_TRUE(runUntil(loop, [&] { return loads == 1; }, "the first body"));
-    EXPECT_EQ(1u, source.getDataGeneration());
+    EXPECT_EQ(1u, source.getLandedGeneration());
     const auto firstData = source.impl().getData().lock();
 
     // The same bytes, in a new string: ignored when the answer comes, before
     // any parse is scheduled.
     ASSERT_TRUE(answer(kPoints));
-    EXPECT_EQ(1u, source.getDataGeneration());
+    EXPECT_EQ(1u, source.getLandedGeneration());
     EXPECT_EQ(firstData, source.impl().getData().lock());
 
     const std::string other = R"({"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [5, 5]}}]})";
     ASSERT_TRUE(answer(other));
     ASSERT_TRUE(runUntil(loop, [&] { return loads == 2; }, "the second, different body"));
-    EXPECT_EQ(2u, source.getDataGeneration());
+    EXPECT_EQ(2u, source.getLandedGeneration());
     EXPECT_NE(firstData, source.impl().getData().lock());
 }
 
@@ -934,20 +934,20 @@ TEST(LabelLane, AFilterOrLayoutChangeMovesTheSourcesGeneration) {
     auto& labels = *style.getSource("labels")->as<GeoJSONSource>();
     auto& labelsLayer = static_cast<CircleLayer&>(*style.getLayer("labels"));
     auto& otherLayer = static_cast<CircleLayer&>(*style.getLayer("other"));
-    const uint64_t start = labels.getDataGeneration();
+    const uint64_t start = labels.getLandedGeneration();
     ASSERT_EQ(1u, start);
 
     labelsLayer.setFilter(*filterFrom(R"(["==", ["get", "form"], "tag"])"));
-    EXPECT_EQ(start + 1, labels.getDataGeneration()) << "a filter change";
+    EXPECT_EQ(start + 1, labels.getLandedGeneration()) << "a filter change";
 
     labelsLayer.setCircleColor(Color::red());
-    EXPECT_EQ(start + 1, labels.getDataGeneration()) << "a paint change moved it";
+    EXPECT_EQ(start + 1, labels.getLandedGeneration()) << "a paint change moved it";
 
     labelsLayer.setCircleSortKey(PropertyValue<float>(2.0f));
-    EXPECT_EQ(start + 2, labels.getDataGeneration()) << "a layout change";
+    EXPECT_EQ(start + 2, labels.getLandedGeneration()) << "a layout change";
 
     otherLayer.setFilter(*filterFrom(R"(["==", ["get", "form"], "badge"])"));
-    EXPECT_EQ(start + 2, labels.getDataGeneration()) << "another source's layer moved it";
+    EXPECT_EQ(start + 2, labels.getLandedGeneration()) << "another source's layer moved it";
 }
 
 // A body made off the calling thread lands after a layer change took a later
@@ -960,10 +960,10 @@ TEST(LabelLane, ABodyThatLandsAfterALayerChangeTakesANewGeneration) {
     ASSERT_GT(layers, asked);
     EXPECT_EQ(layers, source.getLatestGeneration());
     // Pending: the source holds no generation as new as the body's yet.
-    EXPECT_LT(source.getDataGeneration(), asked);
+    EXPECT_LT(source.getLandedGeneration(), asked);
     source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), asked);
     // The body covers the layer change given out while it was pending.
-    EXPECT_EQ(layers, source.getDataGeneration());
+    EXPECT_EQ(layers, source.getLandedGeneration());
 }
 
 // ios-names' case: a layer change while a body is pending (a URL load, a
@@ -1030,10 +1030,10 @@ TEST(LabelLane, AnOlderBodyLandingKeepsAGenerationBelowThePendingOne) {
     const uint64_t older = source.nextDataGeneration();
     const uint64_t newer = source.nextDataGeneration();
     source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), older);
-    EXPECT_EQ(older, source.getDataGeneration());
-    EXPECT_LT(source.getDataGeneration(), newer);
+    EXPECT_EQ(older, source.getLandedGeneration());
+    EXPECT_LT(source.getLandedGeneration(), newer);
     source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), newer);
-    EXPECT_EQ(newer, source.getDataGeneration());
+    EXPECT_EQ(newer, source.getLandedGeneration());
 }
 
 // The laid-out signal for a layer change: reported once, after the last tile
@@ -1105,7 +1105,7 @@ TEST(LabelLane, AFilterChangeOnTheMapIsReportedLaidOut) {
     LaneMap test;
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
     test.map->getStyle().getLayer("labels")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "none"])"));
-    const uint64_t generation = test.labels().getDataGeneration();
+    const uint64_t generation = test.labels().getLandedGeneration();
     ASSERT_EQ(2u, generation);
     ASSERT_TRUE(
         runUntil(test.loop, [&] { return test.observer.has("labels", generation); }, "the filter change laid out"));
@@ -1325,7 +1325,7 @@ TEST(LabelLane, IOSReproAFilterChangeOnALaneSourceIsDrawnInTheFirstFrame) {
     };
     ASSERT_TRUE(runUntil(
         loop,
-        [&] { return observer.has("lane", body) && observer.has("overlay", overlay.getDataGeneration()); },
+        [&] { return observer.has("lane", body) && observer.has("overlay", overlay.getLandedGeneration()); },
         "both sources laid out"));
     // Let the frames settle, as the iOS test sleeps 500 ms.
     for (int i = 0; i < 5; ++i) {
