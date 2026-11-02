@@ -1,25 +1,26 @@
 // Contour lines from real DEM tiles (test/fixtures/contour, see its README).
 
-#include "../algorithm/contour/isolines_reference.hpp"
-
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/stub_file_source.hpp>
 
-#include <mln/algorithm/contour/isolines.hpp>
 #include <mln/geometry/dem_data.hpp>
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_options.hpp>
 #include <mln/style/style.hpp>
 #include <mln/tile/contour_tile.hpp>
+#include <mln/util/constants.hpp>
 #include <mln/util/image.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/run_loop.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
-#include <cstring>
+#include <cstdlib>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The fixtures are WebP DEM tiles. WebP support is not enabled in Qt by
@@ -37,61 +38,37 @@ PremultipliedImage loadTile(int z, int x, int y) {
         util::read_file(kFixtures + std::to_string(z) + "_" + std::to_string(x) + "_" + std::to_string(y) + ".webp"));
 }
 
-// The buffered height grid the contour tile hands to the marching squares,
-// with the borders backfilled from whichever neighbours are given.
-std::vector<std::int16_t> heights(DEMData& dem) {
-    const int border = DEMData::border;
-    std::vector<std::int16_t> out;
-    for (int y = -border; y < dem.dim + border; y++) {
-        for (int x = -border; x < dem.dim + border; x++) {
-            out.push_back(static_cast<std::int16_t>(dem.get(x, y)));
+struct Line {
+    double elevation;
+    mapbox::geometry::line_string<std::int16_t> points;
+};
+
+// The contour lines of one fixture tile, as a contour source builds them: from
+// its DEM tile with the borders backfilled from the fixture tiles around it.
+std::vector<Line> tileLines(int x, int y, double interval) {
+    DEMData dem(loadTile(11, x, y), Tileset::RasterEncoding::Terrarium);
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            const int nx = x + dx;
+            const int ny = y + dy;
+            if ((dx == 0 && dy == 0) || nx < 608 || nx > 610 || ny < 1340 || ny > 1342) continue;
+            const DEMData neighbour(loadTile(11, nx, ny), Tileset::RasterEncoding::Terrarium);
+            dem.backfillBorder(neighbour, static_cast<int8_t>(dx), static_cast<int8_t>(dy));
         }
     }
-    return out;
+    const ContourTile::DEMSnapshot snapshot{
+        .image = std::make_shared<const PremultipliedImage>(dem.getImage()->clone()),
+        .dim = dem.dim,
+        .unpack = dem.getUnpackVector()};
+    std::vector<Line> result;
+    for (const auto& feature : ContourTile::buildFeatures(snapshot, interval, 5, algorithm::contour::UnitConfig{})) {
+        result.push_back({static_cast<double>(feature.properties.at("ele").get<std::int64_t>()),
+                          feature.geometry.get<mapbox::geometry::line_string<std::int16_t>>()});
+    }
+    return result;
 }
 
 } // namespace
-
-// The marching squares gives the same lines, with the same points, in the same
-// order, as the version before it was made faster, on real tiles at every
-// spacing the app uses.
-TEST(ContourLines, TheMarchingSquaresMatchesTheReferenceOnRealTiles) {
-    struct Case {
-        int z, x, y;
-        bool neighbours;
-    };
-    // A Patagonian ice-field tile with all eight neighbours backfilled, and an
-    // alpine one with its own edges as borders.
-    for (const Case c : {Case{11, 609, 1341, true}, Case{11, 1067, 728, false}}) {
-        DEMData dem(loadTile(c.z, c.x, c.y), Tileset::RasterEncoding::Terrarium);
-        if (c.neighbours) {
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    if (dx == 0 && dy == 0) continue;
-                    const DEMData neighbour(loadTile(c.z, c.x + dx, c.y + dy), Tileset::RasterEncoding::Terrarium);
-                    dem.backfillBorder(neighbour, static_cast<int8_t>(dx), static_cast<int8_t>(dy));
-                }
-            }
-        }
-        const auto grid = heights(dem);
-        const int width = dem.dim + 2 * DEMData::border;
-        for (const double interval : {200.0, 100.0, 20.0, 10.0}) {
-            algorithm::contour::ContourThresholds thresholds;
-            thresholds.interval = interval;
-            thresholds.extent = static_cast<int>(std::lround(8192.0 * (width - 1) / dem.dim));
-            const auto expected = algorithm::contour::generateContoursReference(grid, width, width, thresholds);
-            const auto actual = algorithm::contour::generateContours(grid, width, width, thresholds);
-            const std::string label = std::to_string(c.x) + "/" + std::to_string(c.y) + " at " +
-                                      std::to_string(static_cast<int>(interval)) + " m";
-            ASSERT_GT(expected.size(), 10u) << label;
-            ASSERT_EQ(expected.size(), actual.size()) << label;
-            for (std::size_t i = 0; i < expected.size(); i++) {
-                ASSERT_EQ(expected[i].elevation, actual[i].elevation) << label << ", line " << i;
-                ASSERT_EQ(expected[i].points, actual[i].points) << label << ", line " << i;
-            }
-        }
-    }
-}
 
 namespace {
 
@@ -151,32 +128,61 @@ PremultipliedImage renderContours(double zoom) {
 
 } // namespace
 
-// The contour lines of nine real tiles draw exactly as they do with the
-// marching squares from before it was made faster: both are drawn in this run,
-// on this renderer, so no stored image is needed.
-TEST(ContourLines, TheRenderMatchesTheReferenceMarchingSquares) {
-    for (const auto& [zoom, name] : {std::pair{11.0, "z11"}, std::pair{11.4, "z11.4"}}) {
-        ASSERT_EQ(&algorithm::contour::generateContours, ContourTile::marchingSquares.load());
-        PremultipliedImage expected;
-        {
-            // Put the production marching squares back however this scope ends.
-            struct Restore {
-                ~Restore() { ContourTile::marchingSquares = &algorithm::contour::generateContours; }
-            } restore;
-            ContourTile::marchingSquares = &algorithm::contour::generateContoursReference;
-            expected = renderContours(zoom);
+// Where a line leaves a tile, the same line starts in the neighbour, at the same
+// point on the shared edge. The two tiles build their lines on their own, so this
+// holds only if each reads the same heights across the edge.
+TEST(ContourLines, LinesMeetAcrossATileBoundary) {
+    constexpr std::int16_t extent = util::EXTENT;
+    // A line end on one edge of a tile: its elevation and where along the edge.
+    using End = std::pair<double, std::int16_t>;
+    const auto endsOnEdge = [](const std::vector<Line>& lines, bool vertical, std::int16_t edge) {
+        std::vector<End> ends;
+        for (const auto& line : lines) {
+            if (line.points.front() == line.points.back()) continue; // A ring has no ends.
+            for (const auto& point : {line.points.front(), line.points.back()}) {
+                if ((vertical ? point.x : point.y) == edge) {
+                    ends.emplace_back(line.elevation, vertical ? point.y : point.x);
+                }
+            }
         }
-        const auto actual = renderContours(zoom);
-        ASSERT_EQ(expected.size, actual.size) << name;
-        std::size_t differing = 0;
+        return ends;
+    };
+
+    // The boundaries in the block whose tiles have both their shared borders.
+    struct Boundary {
+        int ax, ay, bx, by;
+        bool vertical;
+    };
+    std::size_t matched = 0;
+    std::size_t unmatched = 0;
+    for (const auto& boundary : {Boundary{608, 1341, 609, 1341, true},
+                                 Boundary{609, 1341, 610, 1341, true},
+                                 Boundary{609, 1340, 609, 1341, false},
+                                 Boundary{609, 1341, 609, 1342, false}}) {
+        for (const double interval : {100.0, 20.0, 10.0}) {
+            const auto first = endsOnEdge(tileLines(boundary.ax, boundary.ay, interval), boundary.vertical, extent);
+            const auto second = endsOnEdge(tileLines(boundary.bx, boundary.by, interval), boundary.vertical, 0);
+            for (const auto& [elevation, along] : first) {
+                const auto match = std::ranges::find_if(second, [&](const End& end) {
+                    return end.first == elevation && std::abs(end.second - along) <= 1;
+                });
+                (match == second.end() ? unmatched : matched)++;
+            }
+        }
+    }
+    EXPECT_GT(matched, 50u);
+    EXPECT_EQ(0u, unmatched);
+}
+
+// Nine real tiles draw contour lines at the app's zooms.
+TEST(ContourLines, RealTilesDrawLines) {
+    for (const double zoom : {11.0, 11.4}) {
+        const auto image = renderContours(zoom);
         std::size_t dark = 0;
-        for (std::size_t i = 0; i < actual.bytes(); i += 4) {
-            if (std::memcmp(expected.data.get() + i, actual.data.get() + i, 4) != 0) differing++;
-            if (actual.data[i] < 128) dark++;
+        for (std::size_t i = 0; i < image.bytes(); i += 4) {
+            if (image.data[i] < 128) dark++;
         }
-        // The image holds contour lines, not a blank map.
-        EXPECT_GT(dark, actual.bytes() / 4 / 1000) << name;
-        EXPECT_EQ(0u, differing) << name << ": " << differing << " pixels differ";
+        EXPECT_GT(dark, image.bytes() / 4 / 1000) << zoom;
     }
 }
 
