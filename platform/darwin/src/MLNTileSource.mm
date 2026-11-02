@@ -78,9 +78,31 @@ const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem =
   self.rawSource->setPrefetchZoomDelta(delta);
 }
 
+- (void)reloadTilesWithFilter:(MLNTileReloadFilter)filter {
+  MLNAssertStyleSourceIsValid();
+  mln::style::ReloadFilter coreFilter;
+  switch (filter) {
+    case MLNTileReloadFilterEmpty:
+      coreFilter = mln::style::ReloadFilter::Empty;
+      break;
+    case MLNTileReloadFilterFailed:
+      coreFilter = mln::style::ReloadFilter::Failed;
+      break;
+    case MLNTileReloadFilterEmptyAndFailed:
+      coreFilter = mln::style::ReloadFilter::EmptyAndFailed;
+      break;
+    default:
+      [NSException raise:NSInvalidArgumentException
+                  format:@"%lu is not a tile reload filter.", (unsigned long)filter];
+      return;
+  }
+  static_cast<mln::style::TileSource *>(self.rawSource)->reloadTiles(coreFilter);
+}
+
 - (void)reloadEmptyTiles {
   MLNAssertStyleSourceIsValid();
-  static_cast<mln::style::TileSource *>(self.rawSource)->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
+  static_cast<mln::style::TileSource *>(self.rawSource)
+      ->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
 @end

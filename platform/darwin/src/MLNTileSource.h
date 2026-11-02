@@ -118,6 +118,18 @@ FOUNDATION_EXTERN MLN_EXPORT const MLNTileSourceOption MLNTileSourceOptionAttrib
 FOUNDATION_EXTERN MLN_EXPORT const MLNTileSourceOption MLNTileSourceOptionTileCoordinateSystem;
 
 /**
+ Which tiles `-[MLNTileSource reloadTilesWithFilter:]` asks again for.
+ */
+typedef NS_ENUM(NSUInteger, MLNTileReloadFilter) {
+  /** The tiles whose last answer was "no content". */
+  MLNTileReloadFilterEmpty = 0,
+  /** The tiles whose last answer was an error. */
+  MLNTileReloadFilterFailed,
+  /** The tiles whose last answer was either. */
+  MLNTileReloadFilterEmptyAndFailed,
+};
+
+/**
  Tile coordinate systems that determine how tile coordinates in tile URLs are
  interpreted.
  */
@@ -208,13 +220,28 @@ MLN_EXPORT
 // MARK: Reloading Tiles
 
 /**
+ Asks again for each tile of this source whose last answer matches `filter`,
+ and that the map needs now. The answer comes from the network, or from the
+ scheme's ``MLNResourceProvider``.
+
+ Each tile keeps what it draws until its new answer lands. Tiles that have data
+ are not asked again, and none is cleared, so the tiles on screen do not flash.
+ A tile that the map does not need now asks again when the map needs it.
+
+ @param filter The tiles to ask again for. A value that is not one of
+    ``MLNTileReloadFilter`` raises an `NSInvalidArgumentException`.
+ */
+- (void)reloadTilesWithFilter:(MLNTileReloadFilter)filter;
+
+/**
  Asks the network again for each tile of this source whose last answer was
  empty (HTTP 204, or 404 for a tile) or an error, and that the map needs now.
 
  Each tile keeps what it draws until its new answer lands. Tiles that have
  data are not asked again, and none is cleared, so the tiles on screen do not
  flash. A tile that the map does not need now asks again when the map needs
- it. Core: `mln::style::TileSource::reloadTiles`.
+ it. The same as ``reloadTilesWithFilter:`` with
+ ``MLNTileReloadFilter/MLNTileReloadFilterEmptyAndFailed``.
  */
 - (void)reloadEmptyTiles;
 
