@@ -1228,7 +1228,10 @@ of north, the map will automatically snap to exact north.
  The coordinate bounds `visibleCoordinateBounds` would give with the map's
  camera at the given one: the same four corners of the view, converted on a
  copy of the map's state moved there. The map does not move, and its padding
- is kept. For the end of a glide (`-mapView:willGlideToCenter:...`).
+ is kept. For the end of a glide (`-mapView:willGlideToCenter:...`). A view
+ across the antimeridian gives bounds with one edge beyond ±180°, as
+ `visibleCoordinateBounds` does. An invalid center raises an
+ `NSInvalidArgumentException`.
  */
 - (MLNCoordinateBounds)visibleCoordinateBoundsAtCenter:(CLLocationCoordinate2D)center
                                              zoomLevel:(double)zoomLevel
