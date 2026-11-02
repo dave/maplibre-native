@@ -16,8 +16,8 @@
 // - Saddle cells (cases 5, 10) emit both segments of one fixed pairing —
 //   sufficient for typical DEM data where saddle points are sparse and
 //   visually subtle. Center-average disambiguation is a future improvement.
-// - Output in tile-local integer coordinates (default extent 4096), suitable
-//   for direct emission into vector-tile features.
+// - Output in tile-local integer coordinates, at the extent the caller sets,
+//   suitable for direct emission into vector-tile features.
 
 namespace mln {
 namespace algorithm {
@@ -26,7 +26,7 @@ namespace contour {
 struct ContourThresholds {
     // Vertical distance between contours in the same units as the grid.
     double interval = 0.0;
-    // Tile-local coordinate scale (MVT default = 4096).
+    // Tile-local coordinate scale: the coordinate of the grid's far edge.
     int extent = 4096;
 };
 
