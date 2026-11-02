@@ -43,8 +43,9 @@ struct LabelStep {
 /// source's off-thread steps and tile hops record their thread and their
 /// times. It is off by default.
 ///
-/// While the recorder is off, a step costs one relaxed atomic load and makes
-/// no string and no `LabelStep`.
+/// This is not public API: the header is not installed, and the platform
+/// bindings expose it as private API only. While the recorder is off, a step
+/// costs one relaxed atomic load and makes no string and no `LabelStep`.
 class LabelSteps {
 public:
     /// Turns the recorder on or off. Work already running when it changes may

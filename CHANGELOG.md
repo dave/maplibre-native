@@ -24,6 +24,7 @@
 
 - *...Add new stuff here...*
 - [core] While the GeoJSON step recorder (`util::LabelSteps`) is off, a step costs one relaxed atomic load and allocates nothing; before, each tile's cut copied the source ID into its task. A step sent while the recorder is off is not recorded.
+- [core] The step recorder's header moves from `include/mln/util/label_steps.hpp` to `src/mln/util/label_steps.hpp`: it is not public API. The iOS and Android bindings expose it as private API only.
 - Bump [maplibre-native-base](https://github.com/maplibre/maplibre-native-base) from 2.0.0 to 2.1.1 ([#397](https://github.com/maplibre/maplibre-native/pull/397), [#406](https://github.com/maplibre/maplibre-native/pull/406))
 - Bump [wagyu](https://github.com/mapbox/wagyu) from 0.4.3 to 0.5.0 [#398](https://github.com/maplibre/maplibre-native/pull/398)
 - Bump [eternal](https://github.com/mapbox/eternal.git) from 1.0.0 to 1.0.1
