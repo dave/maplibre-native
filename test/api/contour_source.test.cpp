@@ -5,6 +5,7 @@
 
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_options.hpp>
+#include <mln/style/sources/raster_dem_source.hpp>
 #include <mln/style/style.hpp>
 #include <mln/util/image.hpp>
 #include <mln/util/run_loop.hpp>
@@ -141,4 +142,47 @@ TEST(ContourSource, AContinuousMapFinishesLoadingWhenADEMTileFails) {
     test.loop.run();
 
     SUCCEED();
+}
+
+// Offline, a DEM tile answers with no content and its contour tile completes with no
+// lines. Back online, the app asks the raster-dem source for its empty tiles again. A
+// contour source has no tile API of its own: its lines come from the DEM tile that
+// lands, with no pan or zoom.
+TEST(ContourSource, LinesAppearWhenAnEmptyDEMTileLandsAfterAReload) {
+    ContourMap test(MapMode::Continuous);
+    const std::string cone = coneTile();
+    bool online = false;
+    int emptyAnswers = 0;
+    test.fileSource->tileResponse = [&](const Resource&) -> std::optional<Response> {
+        Response response;
+        if (online) {
+            response.data = std::make_shared<std::string>(cone);
+        } else {
+            response.noContent = true;
+            emptyAnswers++;
+        }
+        return response;
+    };
+    test.observer.didFinishLoadingMapCallback = [&] {
+        test.loop.stop();
+    };
+    test.map.getStyle().loadJSON(contourStyle());
+    test.loop.run();
+    ASSERT_GT(emptyAnswers, 0);
+    EXPECT_EQ(0u, darkPixels(test.frontend.readStillImage())) << "no DEM data, no lines";
+
+    online = true;
+    test.map.getStyle().getSource("dem")->as<style::RasterDEMSource>()->reloadEmptyTiles();
+
+    // Each frame that follows looks for the lines. The watchdog ends a run with none.
+    bool drawn = false;
+    test.observer.didFinishRenderingFrameCallback = [&](MapObserver::RenderFrameStatus) {
+        if (!drawn && darkPixels(test.frontend.readStillImage()) > 0) {
+            drawn = true;
+            test.loop.stop();
+        }
+    };
+    test.loop.run();
+
+    EXPECT_TRUE(drawn);
 }
