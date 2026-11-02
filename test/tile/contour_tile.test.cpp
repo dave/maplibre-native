@@ -12,6 +12,7 @@
 #include <mln/text/glyph_manager.hpp>
 #include <mln/tile/contour_tile.hpp>
 #include <mln/tile/raster_dem_tile.hpp>
+#include <mln/util/feature.hpp>
 #include <mln/util/run_loop.hpp>
 #include <mln/util/tileset.hpp>
 
@@ -23,6 +24,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -230,5 +232,40 @@ TEST(ContourTile, NegativeHeightsKeepTheirFraction) {
     const double expected = (firstHigh - 1 - DEMData::border + 0.5 + 0.25) * 512.0;
     for (const auto& point : features[0].geometry.get<ContourLine>()) {
         EXPECT_NEAR(expected, point.x, 1.0);
+    }
+}
+
+// A fractional interval keeps its value: `interval` is 0.5, not 1, the lines have
+// their own `ele`, and a major line is every Nth line.
+TEST(ContourTile, AFractionalIntervalKeepsItsValue) {
+    const auto snapshot = terrariumSnapshot([](int x, int) { return 100.0 + ((x - 10) * 0.2); });
+
+    const auto features = ContourTile::buildFeatures(snapshot,
+                                                     {.intervalDisplayUnits = 0.5, .majorMultiplier = 2, .unit = {}});
+
+    ASSERT_GT(features.size(), 3u);
+    std::set<double> elevations;
+    for (const auto& feature : features) {
+        const double elevation = numericValue<double>(feature.properties.at("ele")).value();
+        elevations.insert(elevation);
+        EXPECT_DOUBLE_EQ(0.5, numericValue<double>(feature.properties.at("interval")).value());
+        EXPECT_DOUBLE_EQ(0.0, std::fmod(elevation, 0.5)) << elevation;
+        EXPECT_EQ(std::fmod(elevation, 1.0) == 0.0, feature.properties.at("major").get<bool>()) << elevation;
+    }
+    EXPECT_EQ(features.size(), elevations.size()) << "each line has its own elevation";
+}
+
+// A whole interval stays whole numbers, as a filter on `ele` expects.
+TEST(ContourTile, AWholeIntervalHasWholeValues) {
+    const auto snapshot = terrariumSnapshot([](int x, int) { return 100.0 + (x - 10) * 20.0; });
+
+    const auto features = ContourTile::buildFeatures(snapshot,
+                                                     {.intervalDisplayUnits = 50.0, .majorMultiplier = 2, .unit = {}});
+
+    ASSERT_GT(features.size(), 3u);
+    for (const auto& feature : features) {
+        const auto elevation = feature.properties.at("ele").get<std::int64_t>();
+        EXPECT_EQ(50, feature.properties.at("interval").get<std::int64_t>());
+        EXPECT_EQ(elevation % 100 == 0, feature.properties.at("major").get<bool>()) << elevation;
     }
 }
