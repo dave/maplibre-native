@@ -1051,7 +1051,7 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
    *
    * @param callback The callback that's invoked
    */
-  public void addOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+  public void addOnSourceLaidOutListener(@NonNull MapView.OnSourceLaidOutListener callback) {
     mapChangeReceiver.addOnSourceLaidOutListener(callback);
   }
 
@@ -1060,7 +1060,7 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
    *
    * @param callback The callback to remove
    */
-  public void removeOnSourceLaidOutListener(MapView.OnSourceLaidOutListener callback) {
+  public void removeOnSourceLaidOutListener(@NonNull MapView.OnSourceLaidOutListener callback) {
     mapChangeReceiver.removeOnSourceLaidOutListener(callback);
   }
 
@@ -1538,7 +1538,7 @@ public class MapView extends FrameLayout implements NativeMapView.ViewCallback {
      * @param sourceId   the GeoJSON source
      * @param generation the body's data generation: what the source's setter answered
      */
-    void onSourceLaidOut(String sourceId, long generation);
+    void onSourceLaidOut(@NonNull String sourceId, long generation);
   }
 
   /**
