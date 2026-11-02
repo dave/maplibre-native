@@ -19,9 +19,18 @@ using namespace style;
 
 namespace {
 
-// Resolve the source's `majorMultiplier` schedule at a tile's canonical
-// zoom to a single positive integer. Returns 0 when the schedule is
-// empty or invalid (callers treat 0 as "never major").
+// The map zoom a tile is drawn at: the zoom its schedules are read at. It is the
+// whole zoom the tile pyramid covers, which is the map zoom rounded (a contour
+// source covers the zoom its raster-dem source covers), and is not capped at
+// the DEM's maxzoom as the canonical zoom is. A tile's zoom is that map zoom + 1
+// with 256 px tiles.
+double tileMapZoom(const OverscaledTileID& id, uint16_t tileSize) {
+    return id.overscaledZ - std::log2(util::tileSize_D / tileSize);
+}
+
+// Resolve the source's `majorMultiplier` schedule at a zoom to a single positive
+// integer. Returns 0 when the schedule is empty or invalid (callers treat 0 as
+// "never major").
 std::int64_t resolveMajorMultiplier(const algorithm::contour::IntervalSchedule& schedule, double zoom) {
     const double v = algorithm::contour::intervalForZoom(schedule, zoom);
     if (v <= 0.0) return 0;
@@ -88,7 +97,7 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
                            if (const RasterDEMTile* demTile = dem->getTile(tileID)) {
                                if (demTile->isRenderable()) {
                                    const auto& opts = impl().getOptions();
-                                   const double zoom = static_cast<double>(tileID.canonical.z);
+                                   const double zoom = tileMapZoom(tileID, dem->getTileSize());
                                    const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
                                    const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
                                    tile->populateFromDEM(*demTile, interval, major, opts.unit);
@@ -168,6 +177,12 @@ void RenderContourSource::onUpstreamTileLoaded(const RasterDEMTile& demTile) {
 void RenderContourSource::populatePending() {
     populateScheduled = false;
     const auto pending = std::exchange(pendingPopulate, {});
+    const RenderRasterDEMSource* const dem = upstream.get();
+    if (dem == nullptr) {
+        // The DEM source has gone since these arrived: the next update drops
+        // the tiles built from it.
+        return;
+    }
     for (const auto& [id, taken] : pending) {
         Tile* match = tilePyramid.getTile(id);
         if (match == nullptr) {
@@ -182,7 +197,7 @@ void RenderContourSource::populatePending() {
             continue;
         }
         const auto& opts = impl().getOptions();
-        const double zoom = static_cast<double>(id.canonical.z);
+        const double zoom = tileMapZoom(id, dem->getTileSize());
         const double interval = algorithm::contour::intervalForZoom(opts.intervals, zoom);
         const std::int64_t major = resolveMajorMultiplier(opts.majorMultiplier, zoom);
         tile.populate(*taken, interval, major, opts.unit);

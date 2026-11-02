@@ -25,6 +25,9 @@ struct ContourSourceOptions {
     // ID of the upstream `raster-dem` source to derive contours from.
     std::string sourceID;
     // Per-zoom contour interval schedule (see algorithm/contour/intervals.hpp).
+    // It is read at the map zoom each tile is drawn at, rounded to a whole zoom
+    // as a raster-dem source rounds it, so a band starts half a zoom before its
+    // stop. It keeps following the map zoom above the DEM's maxzoom.
     algorithm::contour::IntervalSchedule intervals;
     // Display unit for emitted `ele` / `interval` feature attributes. Defaults
     // to metres; the underlying DEM is always interpreted as metres.
