@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <latch>
 #include <map>
@@ -887,3 +888,24 @@ TEST(ResourceProvider, ASnapshotterReachesTheProvider) {
     EXPECT_TRUE(drewRed) << "the snapshot did not draw the provider's tile";
 }
 #endif
+
+// The schemes with a file source of their own still reach it, through the loader.
+TEST(ResourceProvider, TheLocalSchemesStillReachTheirFileSources) {
+    util::RunLoop loop;
+    MainResourceLoader fs(ResourceOptions{}.withAssetPath("test/fixtures/storage/assets").clone(), ClientOptions{});
+    const std::string fixtures = std::filesystem::current_path().string() + "/test/fixtures/storage/";
+    for (const std::string& url : std::array<std::string, 4>{
+             std::string("asset://nonempty"),
+             "file://" + fixtures + "assets/nonempty",
+             "mbtiles://" + fixtures + "mbtiles/geography-class-png.mbtiles",
+             "pmtiles://file://" + fixtures + "pmtiles/geography-class-png.pmtiles",
+         }) {
+        std::optional<Response> response;
+        auto request = fs.request({Resource::Source, url}, [&](Response res) { response = res; });
+        ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, url));
+        EXPECT_FALSE(response->error) << url << ": " << response->error->message;
+        EXPECT_TRUE(response->data) << url;
+    }
+    // A PMTiles archive on the network: its own file source takes the URL.
+    EXPECT_TRUE(fs.canRequest({Resource::Source, "pmtiles://https://example.com/a.pmtiles"}));
+}
