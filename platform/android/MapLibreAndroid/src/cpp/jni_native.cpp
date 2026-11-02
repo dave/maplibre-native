@@ -36,6 +36,7 @@
 #include "native_map_view.hpp"
 #include "native_map_options.hpp"
 #include "label_steps.hpp"
+#include "resource_provider.hpp"
 #include "rendering_stats.hpp"
 #include "util/tile_server_options.hpp"
 #ifndef MBGL_MODULE_OFFLINE_DISABLE
@@ -115,6 +116,8 @@ void registerNatives(JavaVM* vm) {
     NativeMapOptions::registerNative(env);
     RenderingStats::registerNative(env);
     LabelSteps::registerNative(env);
+    ResourceRequest::registerNative(env);
+    ResourceProviders::registerNative(env);
 
     // Http
     RegisterNativeHTTPRequest(env);
