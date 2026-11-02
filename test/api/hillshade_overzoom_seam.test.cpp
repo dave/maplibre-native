@@ -33,12 +33,17 @@
 
 #include <mln/test/util.hpp>
 #include <mln/test/stub_file_source.hpp>
+#include <mln/test/fake_file_source.hpp>
 #include <mln/test/map_adapter.hpp>
 
 #include <mln/gfx/headless_frontend.hpp>
+#include <mln/gfx/backend_scope.hpp>
+#include <mln/gfx/context.hpp>
+#include <mln/gfx/renderer_backend.hpp>
 #include <mln/map/map_observer.hpp>
 #include <mln/map/map_options.hpp>
 #include <mln/style/style.hpp>
+#include <mln/util/image.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/run_loop.hpp>
 
@@ -47,8 +52,10 @@
 #include <cstdint>
 #include <map>
 #include <regex>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace mln;
 
@@ -270,4 +277,118 @@ TEST(HillshadeRendering, NoOverzoomCornerSeam) {
                                    << ", control mean=" << ctrlH;
     EXPECT_LE(seamV, 1.25 * ctrlV) << "vertical hillshade seam at x=" << cx << ": diff=" << seamV
                                    << ", control mean=" << ctrlV;
+}
+
+namespace {
+
+/// A continuous map with one raster-dem source of four z1 tiles and a
+/// hillshade layer. It renders only when the test asks, and each tile's
+/// body arrives only when the test answers its request, so the test
+/// chooses the order of tile loads and frames.
+class TileByTileHillshadeMap {
+public:
+    class ParseObserver final : public MapObserver {
+    public:
+        void onTileAction(TileOperation op, const OverscaledTileID& id, const std::string&) override {
+            if (op == TileOperation::EndParse) parsed.insert(id.canonical);
+        }
+        std::set<CanonicalTileID> parsed;
+    };
+
+    static std::vector<CanonicalTileID> tiles() {
+        return {CanonicalTileID{1, 0, 0}, CanonicalTileID{1, 1, 0}, CanonicalTileID{1, 0, 1}, CanonicalTileID{1, 1, 1}};
+    }
+
+    util::RunLoop loop;
+    std::shared_ptr<FakeFileSource> fileSource = std::make_shared<FakeFileSource>();
+    ParseObserver observer;
+    HeadlessFrontend frontend{Size{500, 500},
+                              1.0f,
+                              gfx::HeadlessBackend::SwapBehaviour::NoFlush,
+                              gfx::ContextMode::Unique,
+                              std::nullopt,
+                              /*invalidateOnUpdate=*/false};
+    MapAdapter map{frontend,
+                   observer,
+                   fileSource,
+                   MapOptions().withMapMode(MapMode::Continuous).withSize(frontend.getSize()).withPixelRatio(1.0)};
+
+    TileByTileHillshadeMap() {
+        // 256 px tiles at zoom 0 cover the 512 px world with the four z1
+        // tiles, and the 500 px view shows no other copy of the world.
+        map.getStyle().loadJSON(R"({
+            "version": 8,
+            "center": [0, 0],
+            "zoom": 0,
+            "sources": {"dem": {"type": "raster-dem", "tiles": ["http://tiles/{z}/{x}/{y}.png"],
+                                "tileSize": 256, "minzoom": 1, "maxzoom": 1}},
+            "layers": [{"id": "hillshade", "type": "hillshade", "source": "dem"}]})");
+        // The first frame requests the tiles.
+        while (!frontend.getTransformState()) {
+            loop.runOnce();
+        }
+        frame();
+    }
+
+    void frame() { frontend.renderFrame(); }
+
+    /// Answers the tile's request and runs the loop until the tile has
+    /// parsed (and has been backfilled from, and into, its loaded neighbours).
+    void answer(const CanonicalTileID& id) {
+        const std::string url = "http://tiles/" + std::to_string(id.z) + "/" + std::to_string(id.x) + "/" +
+                                std::to_string(id.y) + ".png";
+        const auto it = std::ranges::find_if(fileSource->requests,
+                                             [&](const auto* request) { return request->resource.url == url; });
+        ASSERT_NE(it, fileSource->requests.end()) << "no request for " << url;
+        PremultipliedImage image({8, 8});
+        for (std::size_t i = 0; i < image.bytes(); i += 4) {
+            image.data[i + 0] = 1;
+            image.data[i + 1] = static_cast<uint8_t>(id.x * 64 + id.y * 32);
+            image.data[i + 2] = 0;
+            image.data[i + 3] = 255;
+        }
+        Response response;
+        response.data = std::make_shared<const std::string>(encodePNG(image));
+        // Copy the callback: calling it frees the request.
+        const auto callback = (*it)->callback;
+        callback(response);
+        while (!observer.parsed.contains(id)) {
+            loop.runOnce();
+        }
+    }
+
+    int frameBuffers() {
+        gfx::BackendScope scope{*frontend.getBackend()};
+        return frontend.getBackend()->getContext().renderingStats().numFrameBuffers;
+    }
+};
+
+} // namespace
+
+// Each hillshade tile renders its prepare pass into a render target. A
+// neighbour that loads later backfills the tile's border, and the tile
+// prepares again into a new render target. The old one must be freed:
+// before, it stayed in the layer's and the orchestrator's lists (and was
+// drawn every frame) until the layer stopped rendering.
+TEST(HillshadeRendering, APrepareAgainFreesTheOldRenderTarget) {
+    // The four tiles load in four frames: every tile but the last prepares
+    // again when its neighbours load.
+    TileByTileHillshadeMap oneByOne;
+    const int noTiles = oneByOne.frameBuffers();
+    for (const auto& id : TileByTileHillshadeMap::tiles()) {
+        oneByOne.answer(id);
+        oneByOne.frame();
+    }
+    oneByOne.frame();
+
+    // The four tiles load before one frame: each tile prepares once.
+    TileByTileHillshadeMap allAtOnce;
+    for (const auto& id : TileByTileHillshadeMap::tiles()) {
+        allAtOnce.answer(id);
+    }
+    allAtOnce.frame();
+    allAtOnce.frame();
+
+    EXPECT_EQ(noTiles + 4, allAtOnce.frameBuffers());
+    EXPECT_EQ(noTiles + 4, oneByOne.frameBuffers()) << "one render target for each tile";
 }
