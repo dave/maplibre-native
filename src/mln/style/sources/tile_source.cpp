@@ -57,7 +57,9 @@ void TileSource::loadDescription(FileSource& fileSource) {
     const auto& rawURL = urlOrTileset.get<std::string>();
     const auto& url = util::mapbox::canonicalizeSourceURL(fileSource.getResourceOptions().tileServerOptions(), rawURL);
 
-    req = fileSource.request(Resource::source(url), [this, url, &fileSource](const Response& res) {
+    Resource resource = Resource::source(url);
+    resource.sourceID = getID();
+    req = fileSource.request(resource, [this, url, &fileSource](const Response& res) {
         if (res.error) {
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error(res.error->message)));
         } else if (res.notModified) {

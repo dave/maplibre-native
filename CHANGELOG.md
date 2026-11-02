@@ -37,6 +37,7 @@
 - [core] The label lane tests leave the process-wide lane idle when a test that held it ends, and ask for each frame they wait for.
 - [core] Document what moves a GeoJSON source's generation, and that a source with no tile reports each generation at once.
 - [core] GeoJSON sources with `labelLane` share one thread for their cuts (`Scheduler::GetLabelLaneSlicer`). Before, each source made a thread, and joined it when destroyed.
+- [core] Add `Resource::sourceID`: a tile, GeoJSON or TileJSON request names the style source that asked.
 - [core] While the GeoJSON step recorder (`util::LabelSteps`) is off, a step costs one relaxed atomic load and allocates nothing; before, each tile's cut copied the source ID into its task. A step sent while the recorder is off is not recorded.
 - [core] The step recorder's header moves from `include/mln/util/label_steps.hpp` to `src/mln/util/label_steps.hpp`: it is not public API. The iOS and Android bindings expose it as private API only.
 - [core] The contour tests assert what they test: `RenderContourSource` tests check that tiles settle, and `ContourLines.LinesMeetAcrossATileBoundary` checks real tiles. The wall-clock limit `Contour.PerformanceSmokeCheckUnder30ms`, the copy of the old marching squares and the global hook `ContourTile::marchingSquares` are removed.

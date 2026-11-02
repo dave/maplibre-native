@@ -93,6 +93,10 @@ public:
     Priority priority{Priority::Regular};
     std::string url;
 
+    // The style source that asked, for a tile or a GeoJSON or TileJSON request;
+    // empty for any other request.
+    std::string sourceID;
+
     // Includes auxiliary data if this is a tile request.
     std::optional<TileData> tileData;
 
