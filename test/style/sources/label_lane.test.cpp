@@ -806,6 +806,8 @@ TEST(LabelLane, DestroyingTheMapWithLaneWorkInFlightIsSafe) {
     destroying.open();
     test.destroy();
     releaser.join();
+    // The holding task is off `held` and `release` before they go.
+    Scheduler::GetLabelLane()->waitForEmpty();
 }
 
 // A URL answered twice (a revalidation): the same bytes again are no new
@@ -1211,7 +1213,11 @@ public:
         std::unique_lock lock(mutex);
         allHeld = cv.wait_for(lock, kBound, [&] { return held == kThreads; });
     }
-    ~LaneBlock() { release(); }
+    /** The lane is idle again when it returns: the tasks are off this object, and no later test meets them. */
+    ~LaneBlock() {
+        release();
+        Scheduler::GetLabelLane()->waitForEmpty();
+    }
     void release() { gate.open(); }
     bool allHeld = false;
 
