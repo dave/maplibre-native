@@ -25,7 +25,9 @@ using Point2D = std::array<double, 2>;
 /// threshold is dropped.
 std::vector<Point2D> douglasPeucker(std::span<const Point2D> points, double epsilon);
 
-/// Chaikin's corner-cutting smoothing applied iteratively. Endpoints are
+/// Chaikin's corner-cutting smoothing applied iteratively. A closed line (first
+/// point == last point, at least 4 points) is smoothed as a ring: it has no ends,
+/// every corner is cut, and it stays closed. On an open line the endpoints are
 /// pinned exactly; interior segments contribute two new points (the 1/4 and
 /// 3/4 interpolants), with each end-segment dropping its inner cut to avoid
 /// a near-coincident duplicate of the pinned endpoint. n iterations grow

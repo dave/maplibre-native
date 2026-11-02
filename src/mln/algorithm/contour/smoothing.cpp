@@ -77,7 +77,21 @@ std::vector<Point2D> chaikin(std::span<const Point2D> points, int iterations) {
         const std::size_t n = out.size();
         if (n < 3) break;
         std::vector<Point2D> next;
-        next.reserve(2 * n - 2);
+        next.reserve(2 * n);
+
+        // A closed ring has no ends: cut every corner, the one at the join too.
+        if (n >= 4 && out.front() == out.back()) {
+            for (std::size_t i = 0; i + 1 < n; i++) {
+                const Point2D& p0 = out[i];
+                const Point2D& p1 = out[i + 1];
+                next.push_back({0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]});
+                next.push_back({0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]});
+            }
+            next.push_back(next.front());
+            out = std::move(next);
+            continue;
+        }
+
         next.push_back(out[0]); // pinned start
 
         for (std::size_t i = 0; i + 1 < n; i++) {
