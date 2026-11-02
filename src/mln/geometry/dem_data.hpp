@@ -34,6 +34,13 @@ public:
         return static_cast<int32_t>(rgba[0] * unpack[0] + rgba[1] * unpack[1] + rgba[2] * unpack[2] - unpack[3]);
     }
 
+    /// The height of one RGBA pixel with its fraction, in the encoding's full
+    /// precision (0.1 m for Mapbox, 1/256 m for Terrarium).
+    static float decodeHeight(const uint8_t* rgba, const std::array<float, 4>& unpack) {
+        return static_cast<float>(static_cast<double>(rgba[0]) * unpack[0] + static_cast<double>(rgba[1]) * unpack[1] +
+                                  static_cast<double>(rgba[2]) * unpack[2] - unpack[3]);
+    }
+
     const PremultipliedImage* getImage() const { return &*image; }
     const std::shared_ptr<PremultipliedImage>& getImagePtr() const { return image; }
 

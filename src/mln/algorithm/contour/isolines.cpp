@@ -154,7 +154,7 @@ inline void concatenate(Fragment& f, Fragment& g) {
 
 } // namespace
 
-std::vector<ContourLineString> generateContours(std::span<const std::int16_t> heights,
+std::vector<ContourLineString> generateContours(std::span<const float> heights,
                                                 int width,
                                                 int height,
                                                 const ContourThresholds& thresholds) {
@@ -194,8 +194,8 @@ std::vector<ContourLineString> generateContours(std::span<const std::int16_t> he
     // the grid edge are the caller's responsibility (e.g. by passing a
     // border-padded height grid).
     for (int r = 1; r < height; r++) {
-        const std::int16_t* above = heights.data() + static_cast<std::size_t>(r - 1) * width;
-        const std::int16_t* below = heights.data() + static_cast<std::size_t>(r) * width;
+        const float* above = heights.data() + static_cast<std::size_t>(r - 1) * width;
+        const float* below = heights.data() + static_cast<std::size_t>(r) * width;
         for (int c = 1; c < width; c++) {
             const double tl = static_cast<double>(above[c - 1]);
             const double tr = static_cast<double>(above[c]);

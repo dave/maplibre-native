@@ -30,7 +30,7 @@ constexpr ContourThresholds withInterval(double interval) {
 } // namespace
 
 TEST(Contour, EmptyGridReturnsNoLines) {
-    const std::vector<std::int16_t> heights{};
+    const std::vector<float> heights{};
     const auto lines = generateContours(heights, 0, 0, withInterval(10.0));
     EXPECT_TRUE(lines.empty());
 }
@@ -40,7 +40,7 @@ TEST(Contour, NoLevelsInDataRangeReturnsNoLines) {
     // level for interval=100 (levels are ..., -100, 0, 100, 200, ...). Note
     // that level 0 sits *below* the minimum sample value, not at it, so it
     // doesn't count as a crossing.
-    const std::vector<std::int16_t> heights{10, 20, 30, 50};
+    const std::vector<float> heights{10, 20, 30, 50};
     const auto lines = generateContours(heights, 2, 2, withInterval(100.0));
     EXPECT_TRUE(lines.empty());
 }
@@ -48,7 +48,7 @@ TEST(Contour, NoLevelsInDataRangeReturnsNoLines) {
 TEST(Contour, NoLevelsAboveDataRangeReturnsNoLines) {
     // 2×2 grid where data range (110..150) sits above level 100 and below
     // level 200 — no contour level falls inside.
-    const std::vector<std::int16_t> heights{110, 120, 130, 150};
+    const std::vector<float> heights{110, 120, 130, 150};
     const auto lines = generateContours(heights, 2, 2, withInterval(100.0));
     EXPECT_TRUE(lines.empty());
 }
@@ -84,7 +84,7 @@ TEST(Contour, SingleCellTopLeftAboveEmitsOneSegment) {
     // threshold is closer to 110 than to 300). Same fraction on the
     // TL→BL edge. With extent=4096 and a single cell spanning the full
     // extent, both cuts land at coordinate ≈ 0.526 * 4096 ≈ 2156.
-    const std::vector<std::int16_t> heights{300, 110, 110, 110};
+    const std::vector<float> heights{300, 110, 110, 110};
     const auto lines = generateContours(heights, 2, 2, withInterval(100.0));
 
     ASSERT_EQ(lines.size(), 1u);
@@ -120,7 +120,7 @@ TEST(Contour, AdjacentCellsStitchIntoSinglePolyline) {
     // and should stitch into a single polyline with 3 vertices total.
     //
     // Without stitching, we'd get 2 ContourLineStrings. With stitching, 1.
-    const std::vector<std::int16_t> heights{50, 50, 50, 150, 150, 150};
+    const std::vector<float> heights{50, 50, 50, 150, 150, 150};
     const auto lines = generateContours(heights, 3, 2, withInterval(100.0));
 
     ASSERT_EQ(lines.size(), 1u) << "expected adjacent cells' segments to stitch into one polyline";
@@ -144,7 +144,7 @@ TEST(Contour, SinglePeakProducesClosedRing) {
     // equal" samples are treated as below, i.e. all corners are below 0
     // except the centre is above; case 2/4/1/8 each emit one segment per
     // cell, and they stitch into a closed ring around the peak).
-    const std::vector<std::int16_t> heights{0, 0, 0, 0, 100, 0, 0, 0, 0};
+    const std::vector<float> heights{0, 0, 0, 0, 100, 0, 0, 0, 0};
     const auto lines = generateContours(heights, 3, 3, withInterval(50.0));
 
     // Count surviving polylines at level 50.
@@ -163,7 +163,7 @@ TEST(Contour, MultipleThresholdsEmittedInSingleCellPass) {
     // Level 300 sits exactly at the maximum (strict-`>` excludes it), so
     // 150, 200, 250 should each produce a segment. Confirms the
     // single-pass cell traversal emits all levels per cell.
-    const std::vector<std::int16_t> heights{300, 110, 110, 110};
+    const std::vector<float> heights{300, 110, 110, 110};
     const auto lines = generateContours(heights, 2, 2, withInterval(50.0));
 
     EXPECT_EQ(lines.size(), 3u);
@@ -185,7 +185,7 @@ TEST(Contour, OutputCoordsLandWithinExtent) {
     // 3×2 grid, contour at level 100 cuts horizontally through the middle.
     // The cell loop iterates [1, width) × [1, height) so output coords
     // always stay within [0, extent].
-    const std::vector<std::int16_t> heights{50, 50, 50, 150, 150, 150};
+    const std::vector<float> heights{50, 50, 50, 150, 150, 150};
     const auto thresholds = ContourThresholds{.interval = 100.0, .extent = 4096};
     const auto lines = generateContours(heights, 3, 2, thresholds);
     ASSERT_FALSE(lines.empty());
@@ -213,7 +213,7 @@ TEST(Contour, SaddleCase5EmitsTwoSegments) {
     // Both lines share the same elevation; they are emitted as two
     // distinct ContourLineString entries because their edge endpoints
     // are not connected.
-    const std::vector<std::int16_t> heights{110, 300, 300, 110};
+    const std::vector<float> heights{110, 300, 300, 110};
     const auto lines = generateContours(heights, 2, 2, withInterval(100.0));
 
     // Expect exactly 2 polylines, both at elevation=200, each with 2 vertices.
@@ -234,7 +234,7 @@ TEST(Contour, SaddleCase10EmitsTwoSegments) {
     //   110  300
     //
     // Two diagonal segments: one cutting (left, top) and one cutting (right, bottom).
-    const std::vector<std::int16_t> heights{300, 110, 110, 300};
+    const std::vector<float> heights{300, 110, 110, 300};
     const auto lines = generateContours(heights, 2, 2, withInterval(100.0));
 
     int count200 = 0;
