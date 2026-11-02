@@ -1861,11 +1861,21 @@ TEST(LabelLane, ARebuildDuringAPanDoesNotDrawAHeldBody) {
 TEST(LabelLane, ARebuildLandsABodyTheOldObjectReleasedInEveryTile) {
     LaneMap test(rebuildStyle());
     oldObjectState(test, false, false);
+    // Hold the lane until every tile has been sent the released body, so its
+    // layout, not its cut, is on the way at the rebuild. A cut still on the way
+    // is dropped: its tile then keeps the body it draws.
+    LaneBlock block;
+    ASSERT_TRUE(block.allHeld);
     test.labels().setGeoJSON(body(kOne));
     test.map->triggerRepaint();
-    ASSERT_TRUE(runOneFrame(test, "frame with the body in flight"));
+    ASSERT_TRUE(runOneFrame(test, "frame that sends the body to its tiles"));
+    test.labels().getSliceScheduler()->waitForEmpty();
+    bool cutsTaken = false;
+    Scheduler::GetCurrent()->schedule([&] { cutsTaken = true; });
+    ASSERT_TRUE(runUntil(test.loop, [&] { return cutsTaken; }, "every tile takes its cut"));
     std::size_t before = 0;
     const uint64_t n = rebuildUnderTheSameID(test, 0, kTwo, before);
+    block.release();
     ASSERT_TRUE(reportedSince(test, n, before, "reported"));
     // The old object released kOne (it had no limit), so every tile lands it,
     // also one whose layout was still on its way at the rebuild. The count
