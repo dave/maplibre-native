@@ -2060,3 +2060,60 @@ TEST(GeoJSONSource, ASourceWhoseOnlyURLBodyDoesNotParseIsLoadedAndNotReported) {
     EXPECT_FALSE(test.observer.has("labels", 1)) << "the failed body was reported laid out";
     EXPECT_TRUE(setCircleFilterAndWaitForReport(test));
 }
+
+// An older body that lands after a newer one is refused: the header promises
+// that it never takes a generation above the newer body's.
+
+TEST(GeoJSONSource, AnOlderBodyLandingAfterANewerOneDoesNotReplaceIt) {
+    util::RunLoop loop;
+    StubStyleObserver observer;
+    int changes = 0;
+    observer.sourceChanged = [&](Source&) {
+        ++changes;
+    };
+    GeoJSONSource source("source", laneOptions());
+    source.setObserver(&observer);
+    const auto make = [&] {
+        return GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source");
+    };
+    const uint64_t older = source.nextDataGeneration();
+    const uint64_t newer = source.nextDataGeneration();
+    const auto newerData = make();
+    source.setGeoJSONData(newerData, newer);
+    ASSERT_EQ(newer, source.getLandedGeneration());
+    const int changesBefore = changes;
+
+    source.setGeoJSONData(make(), older);
+
+    EXPECT_EQ(newerData, source.impl().getData().lock()) << "the older body replaced the newer one";
+    EXPECT_EQ(newer, source.getLandedGeneration());
+    EXPECT_EQ(newer, source.getLatestGeneration()) << "the older body took a new generation";
+    EXPECT_EQ(changesBefore, changes) << "the refused body was reported as a change";
+}
+
+// An older body that lands while a newer URL is loading keeps its lower
+// generation and leaves the URL's request alone. Before, it cancelled the
+// request, and the URL's generation stayed pending for ever.
+TEST(GeoJSONSource, AnOlderBodyDoesNotCancelANewerURL) {
+    util::RunLoop loop;
+    FakeFileSource fileSource;
+    StubStyleObserver observer;
+    int loads = 0;
+    observer.sourceLoaded = [&](Source&) {
+        ++loads;
+    };
+    GeoJSONSource source("source", laneOptions());
+    source.setObserver(&observer);
+    const uint64_t older = source.nextDataGeneration();
+    const uint64_t urlBody = source.setURL("http://body");
+    source.loadDescription(fileSource);
+
+    source.setGeoJSONData(GeoJSONData::create(points(), source.getSliceScheduler(), laneOptions(), "source"), older);
+    EXPECT_EQ(older, source.getLandedGeneration());
+
+    Response response;
+    response.data = std::make_shared<std::string>(kPoints);
+    ASSERT_TRUE(fileSource.respond(Resource::Kind::Source, response)) << "the older body cancelled the URL's request";
+    ASSERT_TRUE(runUntil(loop, [&] { return loads == 1; }, "the URL's body"));
+    EXPECT_EQ(urlBody, source.getLandedGeneration());
+}

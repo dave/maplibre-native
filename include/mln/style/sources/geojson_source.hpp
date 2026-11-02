@@ -108,7 +108,10 @@ public:
     uint64_t setGeoJSON(const GeoJSON&);
     uint64_t setGeoJSONData(std::shared_ptr<GeoJSONData>);
     /// For a body made off the calling thread: `generation` is one that
-    /// `nextDataGeneration()` gave when the body was asked for.
+    /// `nextDataGeneration()` gave when the body was asked for. A body older
+    /// than one that has landed is refused: the source does not change. A
+    /// body older than a pending one keeps its own generation and leaves the
+    /// pending one's URL request alone.
     void setGeoJSONData(std::shared_ptr<GeoJSONData>, uint64_t generation);
     /// Takes the next data generation for a body that is still being made.
     uint64_t nextDataGeneration();
@@ -178,6 +181,8 @@ private:
     uint64_t dataGeneration = 0;
     // The newest body asked for (`nextDataGeneration`) and not landed yet; 0 for none.
     uint64_t pendingBody = 0;
+    // The generation the newest landed body was asked for with: an older body is refused.
+    uint64_t newestBody = 0;
     std::unique_ptr<AsyncRequest> req;
     std::atomic<uint64_t> requestGeneration{0};
     std::shared_ptr<Scheduler> parseScheduler;
