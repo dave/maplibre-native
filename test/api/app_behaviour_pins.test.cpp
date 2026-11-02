@@ -455,7 +455,7 @@ std::string hiddenStyle() {
 
 } // namespace
 
-// What the fork does today (the spec's F5 said the opposite): a source with
+// What the fork does: a source with
 // no tile to lay out reports its body laid out, as `idealTilesLaidOut` is
 // true over no ideal tiles. So a source whose layers are all hidden, all out
 // of their zoom range, or which has no layer, reports each body laid out in

@@ -1026,7 +1026,7 @@ TEST(LabelLane, ABodyThatLandsAfterALayerChangeTakesANewGeneration) {
     EXPECT_EQ(layers, source.getLandedGeneration());
 }
 
-// ios-names' case: a layer change while a body is pending (a URL load, a
+// A layer change while a body is pending (a URL load, a
 // body converting) is not reported as that body: the tiles hold the old one.
 // The old body with the new layers reports nothing; the body, when it lands,
 // is reported at the layer change's generation.
@@ -1331,7 +1331,7 @@ TEST(LabelLane, AFilterChangeIsLaidOutWithTheNewestBodyTheTilesHold) {
     EXPECT_EQ(1u, drawnCircles(test)) << "a frame drew a layout older than the inline one";
 }
 
-// ios-names' repro (PlacementLabelLaneThreadTests, 2026-10-16), as the iOS
+// The case of the iOS app's PlacementLabelLaneThreadTests, as the iOS
 // test builds it: a lane source made with no body and then given a URL, two
 // points near (46, 7) at zoom 12, a synchronous overlay source with a text
 // layer and a circle layer, both filters set in one turn, and the drawn
@@ -1472,7 +1472,7 @@ TEST(LabelLane, ABodyAboveTheLimitIsLaidOutButDrawnOnlyInTheFrameThatRaisesIt) {
     EXPECT_EQ(1u, drawnCircles(test)) << "the released body was not drawn in the frame that took the release";
 }
 
-// A fast stream (audit C2): two bodies held; raising the limit to the first
+// A fast stream: two bodies held; raising the limit to the first
 // lands the first, not the newest, and the newest stays held.
 TEST(LabelLane, RaisingTheLimitLandsTheBodyAtItNotANewerOne) {
     LaneMap test(circleStyleJSON());
@@ -1499,7 +1499,7 @@ TEST(LabelLane, RaisingTheLimitLandsTheBodyAtItNotANewerOne) {
     EXPECT_EQ(2u, drawnCircles(test)) << "clearing the limit did not land the newest body";
 }
 
-// A tile made during a hold (a pan; audit I1) draws the landed body, not
+// A tile made during a hold (a pan) draws the landed body, not
 // nothing: the pan goes where no tile was ever loaded, so no parent tile can
 // stand in for it.
 TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
@@ -1557,7 +1557,7 @@ TEST(LabelLane, ATileMadeDuringAHoldDrawsTheLandedBody) {
     EXPECT_EQ(1u, drawnCircles(test)) << "the new tiles' held body did not land with the release";
 }
 
-// A limit below the landed body (R1, issue #166): a tile made then lays out
+// A limit below the landed body: a tile made then lays out
 // the landed body, which the limit keeps aside. That layout must not block
 // the newest body: the tile lays it out too, the source is reported laid out
 // at its generation, and clearing the limit draws it.
@@ -1701,8 +1701,7 @@ TEST(LabelLane, ANewSourceUnderTheSameIDLandsItsBodyInTheTilesTheOldOneLeft) {
 }
 
 // The old object holds a body above its limit, then a rebuild makes a new
-// object under the same id, held from its first body (audit of
-// 0be25ff3a7b2). The old object's held body was never released: it must not
+// object under the same id, held from its first body. The old object's held body was never released: it must not
 // be drawn during the new object's hold, and the release draws the new body.
 TEST(LabelLane, ARebuildDoesNotDrawTheOldObjectsHeldBody) {
     std::string style = circleStyleJSON();
@@ -1764,7 +1763,7 @@ TEST(LabelLane, ARebuildDoesNotDrawTheOldObjectsHeldBody) {
     EXPECT_EQ(2u, drawnCircles(test));
 }
 
-// Rebuilds under the same id (audits of 0be25ff3a7b2 and 251b26064057): the
+// Rebuilds under the same id: the
 // drawn body and any body the old object released carry over; a body it
 // held never lands.
 namespace {
@@ -1974,7 +1973,7 @@ TEST(LabelLane, ARebuildLandsABodyTheOldObjectReleasedInEveryTile) {
 // placement runs at most once a period (the probe measured 22 frames), so the
 // app's one-frame labels depend on its no-fade setting. A test of the
 // transitions-on case cannot pin a frame count: the period is time, not
-// frames (audit N1).
+// frames.
 TEST(LabelLane, AReleasedBodysSymbolsArePlacedInTheReleaseFrameWithPlacementTransitionsOff) {
     LaneMap test;
     placementTransitionsOff(test);

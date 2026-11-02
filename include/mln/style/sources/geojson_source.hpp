@@ -102,6 +102,14 @@ public:
     // source error: its own generation is never reported, and layer changes
     // given out while it was pending are. `MapObserver::onSourceBodyFailed`
     // names that generation.
+    //
+    // Only a body, a filter change and a layout property change move the
+    // generation. Showing or hiding a layer, adding or removing one and a paint
+    // change do not, so the report says nothing about them.
+    //
+    // A source with no tile to lay out (no body, every layer hidden or out of
+    // its zoom range, no layer) reports each generation in its next frame. So a
+    // report means laid out, not drawn.
 
     /// The generation for a URL body: it is that body's once it has loaded.
     /// A second, different answer for the URL takes a new generation; the

@@ -42,7 +42,10 @@ private:
     uint64_t reportedInstance = 0;
     std::optional<uint64_t> laidOutGeneration;
     // The newest body at or below the landing limit, and its generation: a
-    // tile made while held lays it out first.
+    // tile made while held lays it out first. Strong, also while no limit is
+    // set: a hold can come in the same update as a new body, when the style
+    // source has already let go of the body the tiles draw. So a body can
+    // outlive its source impl here, until the next body or this object goes.
     std::shared_ptr<style::GeoJSONData> landedData;
     uint64_t landedDataGeneration = 0;
     // The bodies above the limit, by generation: a raise lands one of them.
