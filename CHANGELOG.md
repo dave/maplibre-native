@@ -34,6 +34,7 @@
 - [core] The GeoJSON label lane's real-data test asserts that bodies land and where their steps run; its timings move to a disabled test. A rebuild test no longer depends on a race.
 - [core] Test `Map::setNoFadeInSources` in `MapMode::Tile` and document that it leaves `PlacedSymbolData::intersectsTileBorder` alone.
 - [core] `LabelLane.ALaneTileFreesItsBuffersOnTheRenderThread` asserts in every build type.
+- [core] The label lane tests leave the process-wide lane idle when a test that held it ends.
 - [core] While the GeoJSON step recorder (`util::LabelSteps`) is off, a step costs one relaxed atomic load and allocates nothing; before, each tile's cut copied the source ID into its task. A step sent while the recorder is off is not recorded.
 - [core] The step recorder's header moves from `include/mln/util/label_steps.hpp` to `src/mln/util/label_steps.hpp`: it is not public API. The iOS and Android bindings expose it as private API only.
 - [core] `HillshadeRendering.NoOverzoomCornerSeam` now fails when its terrain fixtures are missing or the hillshade is not drawn. Before, a missing fixture became an empty tile, and a blank image passed the seam check.
