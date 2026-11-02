@@ -192,7 +192,7 @@ public:
     Immutable<LayerProperties> layerProperties = makeMutable<CircleLayerProperties>(
         staticImmutableCast<CircleLayer::Impl>(layer.baseImpl));
 
-    TileParameters parameters(bool lane) {
+    TileParameters parameters(bool lane, std::shared_ptr<Scheduler> renderer = nullptr) {
         return {.pixelRatio = 1.0,
                 .debugOptions = MapDebugOptions(),
                 .transformState = transformState,
@@ -202,7 +202,7 @@ public:
                 .imageManager = imageManager,
                 .glyphManager = glyphManager,
                 .prefetchZoomDelta = 0,
-                .threadPool = {Scheduler::GetBackground(), uniqueID},
+                .threadPool = {renderer ? std::move(renderer) : Scheduler::GetBackground(), uniqueID},
                 .dynamicTextureAtlas = nullptr,
                 .labelLane = lane ? Scheduler::GetLabelLane() : nullptr};
     }
@@ -705,11 +705,60 @@ TEST(LabelLane, EveryStepOfALaneSourceRunsOnTheLane) {
     EXPECT_EQ((std::set<std::string>{"parse-url", "index", "slice", "tile-parse", "tile-layout"}), plainSteps);
 }
 
-// The teardown test: a lane tile's release frees its buckets and textures on
-// the render thread. With its render-thread jobs on any queue but the one the
-// context drains, the context's debug assert (`~Context`: every buffer and
-// texture freed) fails when the map is destroyed.
+namespace {
+
+/** The renderer's scheduler for a tile made by hand: it keeps the render-thread jobs it is given. */
+class RenderJobs final : public Scheduler {
+public:
+    void schedule(std::function<void()>&& fn) override { pool->schedule(std::move(fn)); }
+    void schedule(const util::SimpleIdentity tag, std::function<void()>&& fn) override {
+        pool->schedule(tag, std::move(fn));
+    }
+    mapbox::base::WeakPtr<Scheduler> makeWeakPtr() override { return pool->makeWeakPtr(); }
+    void runOnRenderThread(const util::SimpleIdentity, std::function<void()>&& fn) override {
+        const std::scoped_lock lock(mutex);
+        jobs.push_back(std::move(fn));
+    }
+    void waitForEmpty(const util::SimpleIdentity tag) override { pool->waitForEmpty(tag); }
+    std::size_t count() {
+        const std::scoped_lock lock(mutex);
+        return jobs.size();
+    }
+
+private:
+    const std::shared_ptr<Scheduler> pool = Scheduler::GetBackground();
+    std::mutex mutex;
+    std::vector<std::function<void()>> jobs;
+};
+
+} // namespace
+
+// A lane tile's worker runs on the lane, but its release is a render-thread job
+// on the renderer's scheduler, the only one the graphics context drains. On any
+// other queue, its buckets and textures are never freed.
 TEST(LabelLane, ALaneTileFreesItsBuffersOnTheRenderThread) {
+    const auto jobsOfATile = [](bool lane) {
+        TileWorld world;
+        GeoJSONSource source("source", lane ? laneOptions() : GeoJSONOptions::defaultOptions());
+        EXPECT_TRUE(world.parseAndSet(source));
+        auto renderer = std::make_shared<RenderJobs>();
+        {
+            GeoJSONTile tile(
+                OverscaledTileID(0, 0, 0), "source", world.parameters(lane, renderer), source.impl().getData().lock());
+            tile.setLayers({world.layerProperties}, nullptr);
+            EXPECT_TRUE(runUntil(world.loop, [&] { return tile.isComplete(); }, "the tile's layout"));
+        }
+        renderer->waitForEmpty(world.parameters(lane).threadPool.tag);
+        return renderer->count();
+    };
+    const std::size_t plain = jobsOfATile(false);
+    EXPECT_GT(plain, 0u) << "the control: a plain tile's release is a render-thread job";
+    EXPECT_EQ(plain, jobsOfATile(true)) << "a lane tile's release did not reach the renderer's scheduler";
+}
+
+// The teardown on a real map: with a debug build, the context's assert
+// (`~Context`: every buffer and texture freed) checks the release.
+TEST(LabelLane, RemovingALaneSourceThenDestroyingTheMapIsSafe) {
     LaneMap test;
     ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
 
