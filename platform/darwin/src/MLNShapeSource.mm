@@ -13,6 +13,8 @@
 #import "NSPredicate+MLNPrivateAdditions.h"
 #import "NSURL+MLNAdditions.h"
 
+#include <cmath>
+
 #include <mln/map/map.hpp>
 #include <mln/renderer/renderer.hpp>
 #include <mln/style/sources/geojson_source.hpp>
@@ -303,6 +305,12 @@ static std::unique_ptr<mln::style::GeoJSONSource> MLNMakeGeoJSONSource(
 
 - (void)setLandingLimit:(NSNumber *)landingLimit {
   MLNAssertStyleSourceIsValid();
+  if (landingLimit && ([landingLimit compare:@0] == NSOrderedAscending ||
+                       landingLimit.doubleValue != std::floor(landingLimit.doubleValue))) {
+    [NSException raise:NSInvalidArgumentException
+                format:@"landingLimit %@ is not a data generation (a whole number, 0 or more).",
+                       landingLimit];
+  }
   self.rawSource->setLandingLimit(
       landingLimit ? std::optional<uint64_t>(landingLimit.unsignedLongLongValue) : std::nullopt);
 }

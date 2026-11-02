@@ -393,7 +393,8 @@ MLN_EXPORT
  in the frame that takes the change, the newest body at or below the new
  value; `nil` lands the newest. A tile made while a body is held draws the
  landed body. With the style's placement transitions off, the landed symbols
- are placed in that frame too. Core: `GeoJSONSource::setLandingLimit`.
+ are placed in that frame too. A value that is negative or not a whole number
+ raises an `NSInvalidArgumentException`.
  */
 @property (nonatomic, copy, nullable) NSNumber *landingLimit;
 
