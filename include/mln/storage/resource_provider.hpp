@@ -2,6 +2,7 @@
 
 #include <mln/storage/resource.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -79,5 +80,14 @@ public:
 void registerResourceProvider(const std::string& scheme, std::shared_ptr<ResourceProvider>);
 /// Removes the provider of a URL scheme. Requests already started stay with it.
 void unregisterResourceProvider(const std::string& scheme);
+
+/// The provider's requests from start until answer or cancel. Nothing limits them.
+struct ResourceProviderCounts {
+    std::size_t inFlight = 0;
+    /// The most in flight at once since the provider was registered.
+    std::size_t peakInFlight = 0;
+};
+/// For the provider now registered for a URL scheme; none if there is none.
+std::optional<ResourceProviderCounts> getResourceProviderCounts(const std::string& scheme);
 
 } // namespace mln
