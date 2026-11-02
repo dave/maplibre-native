@@ -383,6 +383,7 @@ public:
     // Tile requests
     void onTileAction(mln::TileOperation, const mln::OverscaledTileID&, const std::string&) override;
     void onSourceLaidOut(const std::string& sourceID, uint64_t generation) override;
+    void onSourceBodyFailed(const std::string& sourceID, uint64_t generation, const std::string& message) override;
 
     // Sprite requests
     void onSpriteLoaded(const std::optional<mln::style::Sprite>&) override;

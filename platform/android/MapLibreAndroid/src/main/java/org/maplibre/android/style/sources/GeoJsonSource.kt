@@ -290,7 +290,8 @@ class GeoJsonSource : Source {
      * The update is performed synchronously or asynchronously, based on the source synchronous update flag.
      * In the case of asynchronous updates, the data won't be immediately visible or available to query when this method returns.
      *
-     * A body that does not parse is reported as a source error; later bodies still land.
+     * A body that does not parse is reported, with its generation, to
+     * [org.maplibre.android.maps.MapView.OnSourceBodyFailedListener]; later bodies still land.
      *
      * @param json the raw GeoJson FeatureCollection string
      * @return the body's data generation, as [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports it;
@@ -589,7 +590,9 @@ class GeoJsonSource : Source {
      * such a change and wait for it, or a later one:
      * [org.maplibre.android.maps.MapView.OnSourceLaidOutListener] reports a generation only
      * once every tile in view holds every body and layer change given out up to it. While a
-     * body is still converting, a layer change is not reported until that body lands.
+     * body is still converting, a layer change is not reported until that body lands. A body that
+     * will not land is reported to [org.maplibre.android.maps.MapView.OnSourceBodyFailedListener]
+     * instead, so a wait for its generation ends there.
      */
     val dataGeneration: Long
         get() {

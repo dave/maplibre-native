@@ -246,6 +246,19 @@ void NativeMapView::onSourceLaidOut(const std::string& sourceID, uint64_t genera
     });
 }
 
+void NativeMapView::onSourceBodyFailed(const std::string& sourceID, uint64_t generation, const std::string& message) {
+    assert(vm != nullptr);
+    withNativePeer(javaPeer, [&](auto& env, const jni::Class<NativeMapView>& cls, const auto& peer) {
+        static const auto onSourceBodyFailed = cls.GetMethod<void(jni::String, jni::jlong, jni::String)>(
+            env, "onSourceBodyFailed");
+        peer.Call(env,
+                  onSourceBodyFailed,
+                  jni::Make<jni::String>(env, sourceID),
+                  static_cast<jni::jlong>(generation),
+                  jni::Make<jni::String>(env, message));
+    });
+}
+
 void NativeMapView::onStyleImageMissing(const std::string& imageId) {
     assert(vm != nullptr);
     withNativePeer(javaPeer, [&](auto& env, const jni::Class<NativeMapView>& cls, const auto& peer) {
