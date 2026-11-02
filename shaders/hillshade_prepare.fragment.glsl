@@ -20,9 +20,8 @@ float getElevation(vec2 coord, float bias) {
 
 void main() {
     vec2 epsilon = 1.0 / u_dimension;
-    // u_dimension is the DEM buffer stride (interior + 2 * 3-pixel border),
-    // so the actual interior tile size is stride - 6.
-    float tileSize = u_dimension.x - 6.0;
+    // the tile's interior width: the DEM stride less DEMData::border (2) texels on each side.
+    float tileSize = u_dimension.x - 4.0;
 
     // queried pixels (using Sobel operator kernel):
     // +-----------+

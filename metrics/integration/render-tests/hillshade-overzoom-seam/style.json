@@ -4,7 +4,7 @@
     "test": {
       "height": 256,
       "width": 256,
-      "description": "Regression test for #4281: overzoom seam at hillshade tile boundaries. Centred on the corner where the four z=12 terrain tiles (758,1608), (759,1608), (758,1609) and (759,1609) meet, rendered at z=13 with source maxzoom=12 so each tile is overzoomed by one level. Without the prepare-pass overshoot from #4282 the corner shows a visible cross of seam discontinuities; with the fix the slopes are continuous across the four tile boundaries."
+      "description": "Regression test for #4281: overzoom seam at hillshade tile boundaries. Centred on the corner where the four z=12 terrain tiles (758,1608), (759,1608), (758,1609) and (759,1609) meet, rendered at z=13 with source maxzoom=12 so each tile is overzoomed by one level. Without the ghost texels beyond the tile interior in the prepare pass, the corner shows a visible cross of seam discontinuities; with the fix the slopes are continuous across the four tile boundaries."
     }
   },
   "center": [-113.291016, 35.960223],
