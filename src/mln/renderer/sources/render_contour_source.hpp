@@ -31,9 +31,8 @@ private:
     const style::ContourSource::Impl& impl() const;
 
     // Re-resolve `upstream` from the current frame's TileParameters. Handles
-    // upstream source being added, removed, or swapped between updates.
-    // Drops a stale listener handle without dereferencing the previous
-    // upstream (its listener_set was destroyed with it).
+    // upstream source being added, removed, or swapped between updates. Tiles
+    // built from the previous upstream go.
     void rebindUpstream(const TileParameters& parameters);
 
     // Listener body: when an upstream DEM tile settles, queue the matching
@@ -50,11 +49,10 @@ private:
     std::map<OverscaledTileID, std::optional<ContourTile::DEMSnapshot>> pendingPopulate;
     bool populateScheduled = false;
 
-    // Cached upstream pointer for use within a single update() call. Cleared
-    // in rebindUpstream when the resolved upstream changes (so we never
-    // dereference a dangling pointer). Not used in the destructor — see the
-    // dtor body for why.
-    RenderRasterDEMSource* upstream = nullptr;
+    // The DEM source this source listens to. A weak pointer, not its address:
+    // a new source can get the address of a destroyed one, and must still be
+    // seen as new.
+    mapbox::base::WeakPtr<RenderRasterDEMSource> upstream;
     std::optional<RenderRasterDEMSource::ListenerHandle> listenerHandle;
 
     mapbox::base::WeakPtrFactory<RenderContourSource> weakFactory{this};

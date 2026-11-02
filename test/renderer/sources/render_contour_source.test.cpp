@@ -22,6 +22,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <new>
 #include <optional>
 
 using namespace mln;
@@ -127,16 +129,10 @@ TEST(RenderContourSource, UpdateWithEmptyGetRenderSourceCallbackIsSafe) {
 }
 
 TEST(RenderContourSource, DestructorIsSafeAfterUpstreamDestroyedFirst) {
-    // The C1 lifetime contract: RenderOrchestrator destroys sources via
-    // std::unordered_map::erase, which gives no guarantee about destruction
-    // order between siblings. If the upstream raster-dem source is destroyed
-    // BEFORE the contour source, the contour's cached `upstream` pointer is
-    // dangling. The destructor must not dereference it.
-    //
-    // Earlier versions of this code called `upstream->removeTileLoadListener`
-    // from the destructor — a use-after-free in this scenario. The current
-    // destructor is a no-op; cleanup happens automatically because the
-    // listener_set is owned by upstream and dies with it.
+    // RenderOrchestrator destroys sources via std::unordered_map::erase, which
+    // gives no guarantee about destruction order between siblings. If the
+    // upstream raster-dem source is destroyed first, the contour source's
+    // destructor must not touch it.
     RenderContourSourceTest test;
     auto demImpl = test.makeRasterDEMImpl("dem");
     auto upstream = std::make_unique<RenderRasterDEMSource>(demImpl, test.threadPool);
@@ -429,4 +425,49 @@ TEST(RenderContourSource, ContourSourcePrefetchesWhatTheDEMSourcePrefetches) {
     stack.respond(response);
 
     EXPECT_TRUE(stack.contourFinishes());
+}
+
+// RenderOrchestrator can destroy a DEM source and make a new one in one update
+// (one style change replaces it), and the heap often gives the new one the old
+// address. The new source must get a listener as any other new source does, or
+// the contour source never hears of its tiles. The new source is built on the
+// old one's storage, so the address is the same every time.
+TEST(RenderContourSource, ANewDEMSourceAtTheOldAddressIsListenedTo) {
+    RenderContourSourceTest test;
+    auto demImpl = test.makeRasterDEMImpl("dem");
+    auto contourImpl = test.makeContourImpl("contours", "dem");
+    RenderContourSource contour(contourImpl, test.threadPool);
+
+    alignas(RenderRasterDEMSource) std::byte storage[sizeof(RenderRasterDEMSource)];
+    auto* dem = new (storage) RenderRasterDEMSource(demImpl, test.threadPool);
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? dem : nullptr; });
+    auto update = [&] {
+        static_cast<RenderSource*>(dem)->update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+        contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    };
+    update();
+    ASSERT_FALSE(contour.isLoaded());
+
+    dem->~RenderRasterDEMSource();
+    auto* replacement = new (storage) RenderRasterDEMSource(demImpl, test.threadPool);
+    ASSERT_EQ(dem, replacement);
+    update();
+    ASSERT_FALSE(contour.isLoaded());
+
+    Response response;
+    response.data = flatDEMTile();
+    auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+    while (fileSource.respond(Resource::Tile, response)) {
+    }
+
+    util::Timer watchdog;
+    bool timedOut = false;
+    watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+    while (!contour.isLoaded() && !timedOut) {
+        test.loop.runOnce();
+    }
+    EXPECT_TRUE(contour.isLoaded());
+
+    dem->~RenderRasterDEMSource();
 }
