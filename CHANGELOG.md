@@ -61,6 +61,7 @@
 - [core] A fractional contour interval keeps its value: with `intervals: [0.5]`, `interval` is 0.5 and not 1, each line has its own `ele`, and `major` follows the real multiple. A whole interval still has whole numbers.
 - [core] `style::ContourSource` throws `std::invalid_argument` for an invalid `intervals` or `majorMultiplier` schedule. The style parser already rejected them; from the C++ API, the source silently drew no lines or no major lines.
 - [core] A contour source whose `source` is not in the style, or is not a `raster-dem` source, logs one error. Before, the first case logged nothing and the second logged a warning on every frame.
+- [core] The contour simplify tolerance is half a pixel of a tile at its own zoom, whatever the tile size. Before, it was fixed for a 512 px tile, so a 256 px DEM kept twice the detail it needed. It does not shrink with overscaling, which would keep the DEM's staircase at up to four times the vertices.
 - [core] A closed contour line has no corner where its ring is joined. Before, smoothing pinned that point as if it were the end of a line, so every hilltop and depression showed a cusp.
 - [core] Contour lines are built from heights with their fraction. Before, heights were truncated to whole metres, which moved each line by up to a metre of height and made short intervals (such as 10 ft) alias.
 - [core] Remove the contour source's `overzoom` property and `ContourSource::getOverzoom`. It was parsed and validated, but nothing read it. A style that sets it now has it ignored, like any unknown key.
