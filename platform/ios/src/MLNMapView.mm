@@ -87,6 +87,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <map>
+#include <optional>
 #include <unordered_set>
 #if TARGET_IPHONE_SIMULATOR & (TARGET_CPU_X86 | TARGET_CPU_X86_64)
 #include <sys/sysctl.h>
@@ -468,6 +469,13 @@ public:
   std::unique_ptr<MLNRenderFrontend> _rendererFrontend;
 
   BOOL _opaque;
+
+  /// The flings started at this lift: the gesture handlers of one touch event
+  /// run in one main-loop turn, and each glide cuts the one before it short.
+  NSUInteger _liftGlideCount;
+  /// The end of the fling that is still running, if it is one we can report.
+  std::optional<mln::CameraOptions> _liftGlideEnd;
+  NSTimeInterval _liftGlideDuration;
 
   MLNAnnotationTagContextMap _annotationContextsByAnnotationTag;
   MLNAnnotationObjectTagMap _annotationTagsByAnnotation;
@@ -1597,6 +1605,8 @@ public:
 
   MLNAssertIsMainThread();
 
+  [self reportLiftGlide];
+
   // Not "visible" - this isn't a full definition of visibility, but if
   // the map view doesn't have a window then it *cannot* be visible.
   if (!self.window && !self.rendersOffWindow) {
@@ -2319,9 +2329,9 @@ public:
         }
         mln::AnimationOptions animation(MLNDurationFromTimeInterval(self.decelerationRate));
         // Where the fling stops, from the same moveBy on a copy of the state.
-        [self reportGlideToCamera:self.mbglMap.cameraForMoveBy(glide, animation)
-                         duration:self.decelerationRate];
+        const mln::CameraOptions end = self.mbglMap.cameraForMoveBy(glide, animation);
         self.mbglMap.moveBy(glide, animation);
+        [self flingDidStartWithEnd:end duration:self.decelerationRate];
       }
     }
 
@@ -2412,9 +2422,10 @@ public:
       if (drift) {
         mln::ScreenCoordinate anchor{centerPoint.x, centerPoint.y};
         // Where the zoom fling stops, from the same zoom on a copy of the state.
-        [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoom, anchor) duration:duration];
+        const mln::CameraOptions end = self.mbglMap.cameraForZoomAround(zoom, anchor);
         self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoom).withAnchor(anchor),
                             MLNDurationFromTimeInterval(duration));
+        [self flingDidStartWithEnd:end duration:duration];
       }
     }
 
@@ -2522,6 +2533,8 @@ public:
                                 .withBearing(newDegrees)
                                 .withAnchor(mln::ScreenCoordinate{centerPoint.x, centerPoint.y}),
                             MLNDurationFromTimeInterval(decelerationRate));
+        // Not reported, but it cuts short a fling of the same lift.
+        [self flingDidStartWithEnd:std::nullopt duration:decelerationRate];
 
         [self notifyGestureDidEndWithDrift:YES];
         __weak MLNMapView *weakSelf = self;
@@ -2640,8 +2653,11 @@ public:
 
   if ([self _shouldChangeFromCamera:oldCamera toCamera:toCamera]) {
     mln::ScreenCoordinate center(gesturePoint.x, gesturePoint.y);
+    // Where the zoom stops, from the same zoom on a copy of the state.
+    const mln::CameraOptions end = self.mbglMap.cameraForZoomAround(newZoom, center);
     self.mbglMap.easeTo(mln::CameraOptions().withZoom(newZoom).withAnchor(center),
                         MLNDurationFromTimeInterval(MLNAnimationDuration));
+    [self reportGlideToCamera:end duration:MLNAnimationDuration];
 
     __weak MLNMapView *weakSelf = self;
 
@@ -2675,8 +2691,11 @@ public:
 
   if ([self _shouldChangeFromCamera:oldCamera toCamera:toCamera]) {
     mln::ScreenCoordinate center(gesturePoint.x, gesturePoint.y);
+    // Where the zoom stops, from the same zoom on a copy of the state.
+    const mln::CameraOptions end = self.mbglMap.cameraForZoomAround(newZoom, center);
     self.mbglMap.easeTo(mln::CameraOptions().withZoom(newZoom).withAnchor(center),
                         MLNDurationFromTimeInterval(MLNAnimationDuration));
+    [self reportGlideToCamera:end duration:MLNAnimationDuration];
 
     __weak MLNMapView *weakSelf = self;
 
@@ -4041,15 +4060,18 @@ static void *windowScreenContext = &windowScreenContext;
   // eased time and the anchor's coordinate is put back under it each frame.
   mln::ScreenCoordinate anchor(anchorPoint.x, anchorPoint.y);
   mln::AnimationOptions animationOptions;
-  if (duration > 0) {
-    animationOptions.duration.emplace(MLNDurationFromTimeInterval(duration));
-    animationOptions.easing.emplace(MLNUnitBezierForMediaTimingFunction(function));
-    // Where the zoom stops, from the same zoom on a copy of the state.
-    [self reportGlideToCamera:self.mbglMap.cameraForZoomAround(zoomLevel, anchor)
-                     duration:duration];
+  if (duration <= 0) {
+    self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
+                        animationOptions);
+    return;
   }
+  animationOptions.duration.emplace(MLNDurationFromTimeInterval(duration));
+  animationOptions.easing.emplace(MLNUnitBezierForMediaTimingFunction(function));
+  // Where the zoom stops, from the same zoom on a copy of the state.
+  const mln::CameraOptions end = self.mbglMap.cameraForZoomAround(zoomLevel, anchor);
   self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
                       animationOptions);
+  [self reportGlideToCamera:end duration:duration];
 }
 
 - (void)setMinimumZoomLevel:(double)minimumZoomLevel {
@@ -4139,20 +4161,56 @@ static void *windowScreenContext = &windowScreenContext;
   return MLNCoordinateBoundsFromLatLngBounds(bounds);
 }
 
-/// Tells the delegate where a glide that starts now ends
-/// (`-mapView:willGlideToCenter:...`).
+/// A pan, zoom or rotation fling has started. Its report waits for the other
+/// gestures of this lift, whose handlers run in this main-loop turn: two
+/// flings at one lift cut each other short, so neither is reported. It goes
+/// out in the next turn, or at the next display link tick if that comes
+/// first, so always before the glide's first frame.
+- (void)flingDidStartWithEnd:(const std::optional<mln::CameraOptions> &)end
+                    duration:(NSTimeInterval)duration {
+  if (_liftGlideCount++ == 0) {
+    __weak MLNMapView *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [weakSelf reportLiftGlide];
+    });
+  }
+  _liftGlideEnd = end;
+  _liftGlideDuration = duration;
+}
+
+/// Reports the fling of the lift that has just ended, if it was the only one
+/// and nothing has cancelled it.
+- (void)reportLiftGlide {
+  if (_liftGlideCount == 0) {
+    return;
+  }
+  const BOOL alone = _liftGlideCount == 1;
+  const std::optional<mln::CameraOptions> end = std::move(_liftGlideEnd);
+  _liftGlideCount = 0;
+  _liftGlideEnd.reset();
+  if (alone && end) {
+    [self reportGlideToCamera:*end duration:_liftGlideDuration];
+  }
+}
+
+/// Tells the delegate where the glide that has just started ends
+/// (`-mapView:willGlideToCenter:...`). Called after the move starts, so a
+/// delegate that changes the camera here cuts the glide short.
 - (void)reportGlideToCamera:(const mln::CameraOptions &)end duration:(NSTimeInterval)duration {
   if (![self.delegate respondsToSelector:@selector
                       (mapView:willGlideToCenter:zoomLevel:direction:pitch:duration:)]) {
     return;
   }
+  // Map::cameraForMoveBy and cameraForZoomAround set all four fields.
+  MLNAssert(end.center && end.zoom && end.bearing && end.pitch,
+            @"a glide's end camera is missing a field");
   [self.delegate mapView:self
-       willGlideToCenter:MLNLocationCoordinate2DFromLatLng(end.center.value_or(mln::LatLng()))
-               zoomLevel:end.zoom.value_or(0)
+       willGlideToCenter:MLNLocationCoordinate2DFromLatLng(end.center.value())
+               zoomLevel:end.zoom.value()
                // Wrapped to [0, 360) as the `direction` getter does: the
                // camera holds it in [-180, 180).
-               direction:mln::util::wrap(end.bearing.value_or(0), 0., 360.)
-                   pitch:end.pitch.value_or(0)
+               direction:mln::util::wrap(end.bearing.value(), 0., 360.)
+                   pitch:end.pitch.value()
                 duration:duration];
 }
 
@@ -4610,6 +4668,8 @@ static void *windowScreenContext = &windowScreenContext;
   self.cameraChangeReasonBitmask |= MLNCameraChangeReasonTransitionCancelled;
   self.mbglMap.cancelTransitions();
   self.cameraChangeReasonBitmask &= ~MLNCameraChangeReasonTransitionCancelled;
+  // A fling whose report is waiting has just been cut short.
+  _liftGlideEnd.reset();
 }
 
 - (MLNMapCamera *)cameraThatFitsCoordinateBounds:(MLNCoordinateBounds)bounds {
