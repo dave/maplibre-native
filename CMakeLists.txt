@@ -314,6 +314,7 @@ list(APPEND INCLUDE_FILES
     ${PROJECT_SOURCE_DIR}/include/mln/storage/offline.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/storage/online_file_source.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/storage/resource_options.hpp
+    ${PROJECT_SOURCE_DIR}/include/mln/storage/resource_provider.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/storage/resource_transform.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/storage/resource.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/storage/response.hpp
@@ -714,6 +715,8 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/storage/network_status.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/storage/resource.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/storage/resource_options.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/storage/resource_provider_file_source.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/storage/resource_provider_file_source.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/storage/resource_transform.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/storage/response.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/style/collection.hpp

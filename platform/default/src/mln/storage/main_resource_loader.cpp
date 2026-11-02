@@ -17,13 +17,15 @@ namespace mln {
 
 class MainResourceLoaderThread {
 public:
-    MainResourceLoaderThread(std::shared_ptr<FileSource> assetFileSource_,
+    MainResourceLoaderThread(std::shared_ptr<FileSource> providerFileSource_,
+                             std::shared_ptr<FileSource> assetFileSource_,
                              std::shared_ptr<FileSource> databaseFileSource_,
                              std::shared_ptr<FileSource> localFileSource_,
                              std::shared_ptr<FileSource> onlineFileSource_,
                              std::shared_ptr<FileSource> mbtilesFileSource_,
                              std::shared_ptr<FileSource> pmtilesFileSource_)
-        : assetFileSource(std::move(assetFileSource_)),
+        : providerFileSource(std::move(providerFileSource_)),
+          assetFileSource(std::move(assetFileSource_)),
           databaseFileSource(std::move(databaseFileSource_)),
           localFileSource(std::move(localFileSource_)),
           onlineFileSource(std::move(onlineFileSource_)),
@@ -66,7 +68,10 @@ public:
         const std::size_t tasksSize = tasks.size();
 
         // Waterfall resource request processing and return early once resource was requested.
-        if (assetFileSource && assetFileSource->canRequest(resource)) {
+        if (providerFileSource && providerFileSource->canRequest(resource)) {
+            // A registered scheme goes to its provider, and to nothing else.
+            tasks[req] = providerFileSource->request(resource, callback);
+        } else if (assetFileSource && assetFileSource->canRequest(resource)) {
             // Asset request
             tasks[req] = assetFileSource->request(resource, callback);
         } else if (mbtilesFileSource && mbtilesFileSource->canRequest(resource)) {
@@ -131,6 +136,7 @@ public:
     }
 
 private:
+    const std::shared_ptr<FileSource> providerFileSource;
     const std::shared_ptr<FileSource> assetFileSource;
     const std::shared_ptr<FileSource> databaseFileSource;
     const std::shared_ptr<FileSource> localFileSource;
@@ -144,13 +150,15 @@ class MainResourceLoader::Impl {
 public:
     Impl(const ResourceOptions& resourceOptions_,
          const ClientOptions& clientOptions_,
+         std::shared_ptr<FileSource> providerFileSource_,
          std::shared_ptr<FileSource> assetFileSource_,
          std::shared_ptr<FileSource> databaseFileSource_,
          std::shared_ptr<FileSource> localFileSource_,
          std::shared_ptr<FileSource> onlineFileSource_,
          std::shared_ptr<FileSource> mbtilesFileSource_,
          std::shared_ptr<FileSource> pmtilesFileSource_)
-        : assetFileSource(std::move(assetFileSource_)),
+        : providerFileSource(std::move(providerFileSource_)),
+          assetFileSource(std::move(assetFileSource_)),
           databaseFileSource(std::move(databaseFileSource_)),
           localFileSource(std::move(localFileSource_)),
           onlineFileSource(std::move(onlineFileSource_)),
@@ -160,6 +168,7 @@ public:
           thread(std::make_unique<util::Thread<MainResourceLoaderThread>>(
               util::makeThreadPrioritySetter(platform::EXPERIMENTAL_THREAD_PRIORITY_WORKER),
               "ResourceLoaderThread",
+              providerFileSource,
               assetFileSource,
               databaseFileSource,
               localFileSource,
@@ -179,7 +188,8 @@ public:
     }
 
     bool canRequest(const Resource& resource) const {
-        return (assetFileSource && assetFileSource->canRequest(resource)) ||
+        return (providerFileSource && providerFileSource->canRequest(resource)) ||
+               (assetFileSource && assetFileSource->canRequest(resource)) ||
                (localFileSource && localFileSource->canRequest(resource)) ||
                (databaseFileSource && databaseFileSource->canRequest(resource)) ||
                (onlineFileSource && onlineFileSource->canRequest(resource)) ||
@@ -196,6 +206,7 @@ public:
     void setResourceOptions(ResourceOptions options) {
         std::scoped_lock lock(resourceOptionsMutex);
         resourceOptions = options;
+        providerFileSource->setResourceOptions(options.clone());
         assetFileSource->setResourceOptions(options.clone());
         databaseFileSource->setResourceOptions(options.clone());
         localFileSource->setResourceOptions(options.clone());
@@ -212,6 +223,7 @@ public:
     void setClientOptions(ClientOptions options) {
         std::scoped_lock lock(clientOptionsMutex);
         clientOptions = options;
+        providerFileSource->setClientOptions(options.clone());
         assetFileSource->setClientOptions(options.clone());
         databaseFileSource->setClientOptions(options.clone());
         localFileSource->setClientOptions(options.clone());
@@ -226,6 +238,7 @@ public:
     }
 
 private:
+    const std::shared_ptr<FileSource> providerFileSource;
     const std::shared_ptr<FileSource> assetFileSource;
     const std::shared_ptr<FileSource> databaseFileSource;
     const std::shared_ptr<FileSource> localFileSource;
@@ -244,6 +257,7 @@ MainResourceLoader::MainResourceLoader(const ResourceOptions& resourceOptions, c
     : impl(std::make_unique<Impl>(
           resourceOptions.clone(),
           clientOptions.clone(),
+          FileSourceManager::get()->getFileSource(FileSourceType::Provider, resourceOptions, clientOptions),
           FileSourceManager::get()->getFileSource(FileSourceType::Asset, resourceOptions, clientOptions),
           FileSourceManager::get()->getFileSource(FileSourceType::Database, resourceOptions, clientOptions),
           FileSourceManager::get()->getFileSource(FileSourceType::FileSystem, resourceOptions, clientOptions),
