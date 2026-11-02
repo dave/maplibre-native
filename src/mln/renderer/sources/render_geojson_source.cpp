@@ -92,6 +92,7 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
         // Its landed body too: the old object's body is not the new one's.
         landedData = nullptr;
         landedDataGeneration = 0;
+        heldBodies.clear();
         for (const auto& pair : tilePyramid.getTiles()) {
             static_cast<GeoJSONTile*>(pair.second.get())->startGenerationsOver();
         }
@@ -112,6 +113,24 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
     if (!landingLimit || dataGeneration <= *landingLimit || !landedData) {
         landedData = data_;
         landedDataGeneration = dataGeneration;
+        heldBodies.clear();
+    } else {
+        if (data_ && data_ != landedData && (heldBodies.empty() || heldBodies.rbegin()->second != data_)) {
+            heldBodies.emplace(dataGeneration, data_);
+            // As in a tile: an older body beyond the bound is freed.
+            if (heldBodies.size() > GeometryTile::maxKeptLayouts) {
+                heldBodies.erase(heldBodies.begin());
+            }
+        }
+        // A raise that stops below the current body: the newest held body at
+        // or below it lands, in the tiles and so here.
+        const auto end = heldBodies.upper_bound(*landingLimit);
+        if (end != heldBodies.begin()) {
+            const auto newest = std::prev(end);
+            landedData = newest->second;
+            landedDataGeneration = newest->first;
+            heldBodies.erase(heldBodies.begin(), end);
+        }
     }
     if (data.lock() != data_) {
         data = data_;

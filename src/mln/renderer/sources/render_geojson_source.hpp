@@ -3,6 +3,8 @@
 #include <mln/renderer/sources/render_tile_source.hpp>
 #include <mln/style/sources/geojson_source_impl.hpp>
 
+#include <map>
+
 namespace mln {
 
 namespace style {
@@ -43,6 +45,8 @@ private:
     // tile made while held lays it out first.
     std::shared_ptr<style::GeoJSONData> landedData;
     uint64_t landedDataGeneration = 0;
+    // The bodies above the limit, by generation: a raise lands one of them.
+    std::map<uint64_t, std::shared_ptr<style::GeoJSONData>> heldBodies;
 };
 
 } // namespace mln
