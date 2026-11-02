@@ -27,6 +27,21 @@ struct ProviderRequest {
 
 /// Answers one request. Every call is safe on any thread. The first call wins.
 /// A call after the request was dropped is ignored, and a second answer is logged.
+///
+/// A tile asks in two steps: `localOnly`, then a fetch unless the first step gave
+/// data or "empty". Any other resource asks once, with `localOnly` false.
+///
+/// | Answer      | `localOnly` step   | Fetch step, tile   | Fetch step, other  |
+/// |-------------|--------------------|--------------------|--------------------|
+/// | data        | data               | data               | data               |
+/// | empty       | no content         | no content         | no content         |
+/// | unavailable | not stored         | connection error   | connection error   |
+/// | notFound    | not stored         | no content         | not-found error    |
+/// | error       | not stored         | other error        | other error        |
+///
+/// A tile whose answer was data or "empty" is not asked for again, even when it is
+/// taken back from the tile cache: a URL names its data, so a new URL is the way to
+/// new data. See also `TileSource::reloadTiles`.
 class ProviderResponder {
 public:
     virtual ~ProviderResponder() = default;

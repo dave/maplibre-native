@@ -2,22 +2,31 @@
 // app has it. Each wait ends on an event, and its bound only turns a missing
 // event into a failure.
 
+#include <mln/gfx/headless_frontend.hpp>
+#include <mln/map/map_observer.hpp>
+#include <mln/map/map_options.hpp>
 #include <mln/storage/main_resource_loader.hpp>
 #include <mln/storage/resource.hpp>
 #include <mln/storage/resource_options.hpp>
 #include <mln/storage/resource_provider.hpp>
 #include <mln/storage/resource_provider_file_source.hpp>
+#include <mln/style/style.hpp>
 #include <mln/test/fixture_log_observer.hpp>
+#include <mln/test/map_adapter.hpp>
 #include <mln/test/util.hpp>
 #include <mln/util/async_request.hpp>
 #include <mln/util/client_options.hpp>
+#include <mln/util/io.hpp>
+#include <mln/util/label_steps.hpp>
 #include <mln/util/run_loop.hpp>
 #include <mln/util/timer.hpp>
 
 #include <atomic>
 #include <functional>
 #include <latch>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <thread>
 #include <vector>
@@ -275,4 +284,336 @@ TEST(ResourceProvider, ASecondAnswerIsIgnoredAndLogged) {
     auto other = fs.request({Resource::Unknown, "provider-test://last"}, [&](Response) { last = true; });
     ASSERT_TRUE(runUntil(loop, [&] { return last; }, "the next request"));
     EXPECT_EQ(1, answers);
+}
+
+// How each answer reaches MapLibre, in each step. A tile asks twice: first with
+// `localOnly`, then a fetch. Other resources ask once.
+
+namespace {
+
+enum class Outcome {
+    Data,
+    Empty,
+    Unavailable,
+    NotFound,
+    Error
+};
+
+void give(ProviderResponder& responder, Outcome outcome) {
+    switch (outcome) {
+        case Outcome::Data:
+            return responder.data(bytes("the bytes"));
+        case Outcome::Empty:
+            return responder.empty();
+        case Outcome::Unavailable:
+            return responder.unavailable("the reason");
+        case Outcome::NotFound:
+            return responder.notFound("the reason");
+        case Outcome::Error:
+            return responder.error("the reason");
+    }
+}
+
+Response answerTo(Resource resource, Outcome outcome) {
+    util::RunLoop loop;
+    Registered registered("provider-test");
+    registered.provider->onStart = [&](const ProviderRequest&, ProviderResponder& responder) {
+        give(responder, outcome);
+    };
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    std::optional<Response> response;
+    auto request = fs.request(resource, [&](Response res) { response = res; });
+    EXPECT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
+    EXPECT_EQ(1u, registered.provider->started());
+    return response ? *response : Response{};
+}
+
+Resource tileResource(Resource::LoadingMethod method) {
+    return Resource::tile("provider-test://tiles/{z}/{x}/{y}", 1.0f, 0, 0, 0, Tileset::Scheme::XYZ, method);
+}
+
+void expectError(const Response& response, Response::Error::Reason reason, const std::string& message) {
+    ASSERT_TRUE(response.error);
+    EXPECT_EQ(reason, response.error->reason);
+    EXPECT_EQ(message, response.error->message);
+    EXPECT_FALSE(response.data);
+    EXPECT_FALSE(response.notModified);
+}
+
+void expectStoredForTheFork(const Response& response) {
+    EXPECT_FALSE(response.error);
+    EXPECT_TRUE(response.etag) << "the fetch step would call the provider again";
+}
+
+using Method = Resource::LoadingMethod;
+using Reason = Response::Error::Reason;
+
+} // namespace
+
+TEST(ResourceProvider, ALocalOnlyStepAnswers) {
+    const auto local = tileResource(Method::CacheOnly);
+
+    const Response data = answerTo(local, Outcome::Data);
+    expectStoredForTheFork(data);
+    ASSERT_TRUE(data.data);
+    EXPECT_EQ("the bytes", *data.data);
+
+    const Response empty = answerTo(local, Outcome::Empty);
+    expectStoredForTheFork(empty);
+    EXPECT_TRUE(empty.noContent);
+
+    // "Not stored", for whichever reason: the fetch step reports any error, once.
+    for (const auto outcome : {Outcome::Unavailable, Outcome::NotFound, Outcome::Error}) {
+        const Response response = answerTo(local, outcome);
+        ASSERT_TRUE(response.error);
+        EXPECT_EQ(Reason::NotFound, response.error->reason);
+        EXPECT_FALSE(response.etag);
+    }
+}
+
+TEST(ResourceProvider, ATileFetchStepAnswers) {
+    const auto fetch = tileResource(Method::NetworkOnly);
+
+    const Response data = answerTo(fetch, Outcome::Data);
+    expectStoredForTheFork(data);
+    ASSERT_TRUE(data.data);
+
+    const Response empty = answerTo(fetch, Outcome::Empty);
+    expectStoredForTheFork(empty);
+    EXPECT_TRUE(empty.noContent);
+
+    // A tile that is not there is an empty tile, not a failure.
+    const Response notFound = answerTo(fetch, Outcome::NotFound);
+    expectStoredForTheFork(notFound);
+    EXPECT_TRUE(notFound.noContent);
+
+    expectError(answerTo(fetch, Outcome::Unavailable), Reason::Connection, "the reason");
+    expectError(answerTo(fetch, Outcome::Error), Reason::Other, "the reason");
+}
+
+TEST(ResourceProvider, ANonTileRequestAnswers) {
+    for (const auto& resource :
+         {Resource::source("provider-test://body"),
+          Resource::glyphs("provider-test://glyphs/{fontstack}/{range}.pbf", {"Font"}, {0, 255})}) {
+        const Response data = answerTo(resource, Outcome::Data);
+        ASSERT_TRUE(data.data);
+        EXPECT_EQ("the bytes", *data.data);
+        EXPECT_FALSE(data.error);
+
+        EXPECT_TRUE(answerTo(resource, Outcome::Empty).noContent);
+        expectError(answerTo(resource, Outcome::Unavailable), Reason::Connection, "the reason");
+        // Only a tile treats "not there" as empty.
+        expectError(answerTo(resource, Outcome::NotFound), Reason::NotFound, "the reason");
+        expectError(answerTo(resource, Outcome::Error), Reason::Other, "the reason");
+    }
+}
+
+TEST(ResourceProvider, NoBytesIsAnError) {
+    util::RunLoop loop;
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest&, ProviderResponder& responder) {
+        responder.data(nullptr);
+    };
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    std::optional<Response> response;
+    auto request = fs.request(tileResource(Method::NetworkOnly), [&](Response res) { response = res; });
+    ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
+    ASSERT_TRUE(response->error);
+    EXPECT_EQ(Reason::Other, response->error->reason);
+}
+
+// A fetch step with the etag of the fork's own answer: the data has not changed
+// (the URL names the data), so the provider is not called again, and the tile is
+// not parsed again.
+TEST(ResourceProvider, AFetchWithTheForksEtagIsNotModifiedAndCallsNoProvider) {
+    const Response first = answerTo(tileResource(Method::CacheOnly), Outcome::Data);
+    ASSERT_TRUE(first.etag);
+
+    util::RunLoop loop;
+    Registered registered("provider-test");
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    Resource fetch = tileResource(Method::NetworkOnly);
+    fetch.priorEtag = first.etag;
+    std::optional<Response> response;
+    auto request = fs.request(fetch, [&](Response res) { response = res; });
+    ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
+    EXPECT_TRUE(response->notModified);
+    EXPECT_EQ(0u, registered.provider->started());
+
+    // Another etag is not ours.
+    Resource other = tileResource(Method::NetworkOnly);
+    other.priorEtag = "another";
+    response.reset();
+    auto otherRequest = fs.request(other, [&](Response res) { response = res; });
+    ASSERT_TRUE(runUntil(loop, [&] { return registered.provider->started() == 1; }, "the provider's call"));
+}
+
+// On a real map: each tile lands once, on first load and on a pan-back.
+
+namespace {
+
+class FrameCount final : public MapObserver {
+public:
+    void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
+        ++frames;
+        lastFrameFull = status.mode == RenderMode::Full;
+    }
+    int frames = 0;
+    bool lastFrameFull = false;
+};
+
+class ProviderMap {
+public:
+    util::RunLoop loop;
+    FrameCount observer;
+    HeadlessFrontend frontend{Size{256, 256}, 1.0f};
+    std::shared_ptr<FileSource> fileSource = std::make_shared<MainResourceLoader>(ResourceOptions{}, ClientOptions{});
+    MapAdapter map{frontend, observer, fileSource, MapOptions().withMapMode(MapMode::Continuous).withSize({256, 256})};
+
+    ProviderMap() {
+        map.setPrefetchZoomDelta(0);
+        map.jumpTo(CameraOptions().withCenter(LatLng{0.5, 0.5}).withZoom(3));
+        map.getStyle().loadJSON(R"({"version": 8,
+            "sources": {"tiles": {"type": "vector", "tiles": ["provider-test://tiles/{z}/{x}/{y}"]}},
+            "layers": [{"id": "water", "type": "fill", "source": "tiles", "source-layer": "water"}]})");
+    }
+
+    bool settled(const std::string& what) {
+        return runUntil(loop, [&] { return observer.lastFrameFull && observer.frames > 0; }, what);
+    }
+    /** One more frame after the map has settled, for anything still on its way to land. */
+    bool oneMoreFrame() {
+        const int before = observer.frames;
+        map.triggerRepaint();
+        return runUntil(loop, [&] { return observer.frames > before; }, "one more frame");
+    }
+};
+
+const std::shared_ptr<const std::string>& mvt() {
+    static const auto tile = std::make_shared<const std::string>(
+        util::read_file("metrics/integration/tiles/14-8803-5375.mvt"));
+    return tile;
+}
+
+/** The bytes that reached a tile, each one a landing; and the provider's calls by URL. */
+class Landings {
+public:
+    Landings() {
+        (void)util::LabelSteps::take();
+        util::LabelSteps::setRecording(true);
+    }
+    ~Landings() {
+        util::LabelSteps::setRecording(false);
+        (void)util::LabelSteps::take();
+    }
+    std::size_t count() {
+        for (const auto& step : util::LabelSteps::take()) {
+            landings += step.sourceID == "tiles" && step.name == "hop-data";
+        }
+        return landings;
+    }
+
+private:
+    std::size_t landings = 0;
+};
+
+std::map<std::string, std::size_t> callsByURL(TestProvider& provider, bool localOnly) {
+    const std::scoped_lock lock(provider.mutex);
+    std::map<std::string, std::size_t> calls;
+    for (const auto& request : provider.requests) {
+        if (request.localOnly == localOnly) ++calls[request.url];
+    }
+    return calls;
+}
+
+void expectEachCalledOnce(const std::map<std::string, std::size_t>& calls, const std::string& step) {
+    for (const auto& [url, count] : calls) {
+        EXPECT_EQ(1u, count) << url << " in the " << step << " step";
+    }
+}
+
+} // namespace
+
+// A stored tile: answered in its `localOnly` step, and not asked for again.
+TEST(ResourceProvider, AStoredTileLandsOnceAndIsAskedForOnce) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest&, ProviderResponder& responder) {
+        responder.data(mvt());
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    const auto local = callsByURL(*registered.provider, true);
+    EXPECT_FALSE(local.empty());
+    expectEachCalledOnce(local, "local");
+    EXPECT_TRUE(callsByURL(*registered.provider, false).empty()) << "a stored tile was fetched";
+    EXPECT_EQ(local.size(), landings.count()) << "a tile did not land exactly once";
+}
+
+// An item tile: nothing stored, so it comes in the fetch step.
+TEST(ResourceProvider, AFetchedTileLandsOnce) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest& request, ProviderResponder& responder) {
+        if (request.localOnly) {
+            responder.notFound("not stored");
+        } else {
+            responder.data(mvt());
+        }
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    const auto fetched = callsByURL(*registered.provider, false);
+    EXPECT_FALSE(fetched.empty());
+    expectEachCalledOnce(fetched, "fetch");
+    EXPECT_EQ(fetched.size(), landings.count()) << "a tile did not land exactly once";
+}
+
+TEST(ResourceProvider, AnEmptyTileLandsOnce) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest&, ProviderResponder& responder) {
+        responder.empty();
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    const auto local = callsByURL(*registered.provider, true);
+    EXPECT_FALSE(local.empty());
+    expectEachCalledOnce(local, "local");
+    EXPECT_TRUE(callsByURL(*registered.provider, false).empty()) << "an empty tile was fetched";
+    EXPECT_EQ(local.size(), landings.count()) << "an empty tile did not land exactly once";
+}
+
+// A tile taken back from the pyramid's cache asks for no bytes and parses nothing.
+TEST(ResourceProvider, APanBackCallsNoProviderAndParsesNothing) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest& request, ProviderResponder& responder) {
+        if (request.localOnly) {
+            responder.notFound("not stored");
+        } else {
+            responder.data(mvt());
+        }
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+
+    test.observer.lastFrameFull = false;
+    test.map.jumpTo(CameraOptions().withCenter(LatLng{40, 100}));
+    ASSERT_TRUE(test.settled("the tiles away"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    const std::size_t startedAway = registered.provider->started();
+    const std::size_t landingsAway = landings.count();
+
+    test.observer.lastFrameFull = false;
+    test.map.jumpTo(CameraOptions().withCenter(LatLng{0.5, 0.5}));
+    ASSERT_TRUE(test.settled("the tiles back"));
+    ASSERT_TRUE(test.oneMoreFrame());
+
+    EXPECT_EQ(startedAway, registered.provider->started()) << "a tile taken from the cache called the provider";
+    EXPECT_EQ(landingsAway, landings.count()) << "a tile taken from the cache landed again";
 }
