@@ -621,3 +621,47 @@ TEST(RenderContourSource, ADEMSourceThatLeavesIsANewError) {
                          -1,
                          "contour source `contours` names source `dem`, which is not in the style"}));
 }
+
+// A new source object under the same ID can change the settings. Lines built with
+// the old ones must go, as the DEM tiles they came from stay.
+TEST(RenderContourSource, NewSettingsRebuildTheTiles) {
+    RenderContourSourceTest test;
+    test.tileset.rasterEncoding = Tileset::RasterEncoding::Terrarium;
+    Immutable<style::TileSource::Impl> demImpl = makeMutable<style::TileSource::Impl>(
+        *makeMutable<style::TileSource::Impl>(style::SourceType::RasterDEM, "dem", util::tileSize_I), test.tileset);
+    RenderRasterDEMSource dem(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem", {100.0});
+    RenderContourSource contour(contourImpl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? &dem : nullptr; });
+    auto update = [&] {
+        static_cast<RenderSource&>(dem).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+        contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    };
+    auto finish = [&] {
+        util::Timer watchdog;
+        bool timedOut = false;
+        watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+        update();
+        while (!contour.isLoaded() && !timedOut) {
+            test.loop.runOnce();
+            update();
+        }
+        update();
+        SourceQueryOptions options;
+        options.sourceLayers = std::vector<std::string>{""};
+        return static_cast<RenderSource&>(contour).querySourceFeatures(options, nullptr);
+    };
+
+    update();
+    Response response;
+    response.data = coneDEMTile();
+    auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+    while (fileSource.respond(Resource::Tile, response)) {
+    }
+    EXPECT_DOUBLE_EQ(100.0, intervalOf(finish()));
+
+    contourImpl = test.makeContourImpl("contours", "dem", {50.0});
+    EXPECT_DOUBLE_EQ(50.0, intervalOf(finish()));
+}

@@ -21,6 +21,8 @@ struct UnitConfig {
     // Used only when `unit == Custom`. Interpreted as
     // (display unit) = (metres) * customMultiplier.
     double customMultiplier = 1.0;
+
+    bool operator==(const UnitConfig&) const = default;
 };
 
 /// Convert a value in metres (the algorithm's source unit) to the configured
