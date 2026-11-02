@@ -113,7 +113,7 @@ stroke_width = unpack_mix_vec2(a_stroke_width, u_stroke_width_t);
 mediump float stroke_width = u_stroke_width;
 #endif
     #ifndef HAS_UNIFORM_u_stroke_opacity
-stroke_opacity = unpack_mix_vec2(a_stroke_opacity, u_stroke_opacity_t);
+stroke_opacity = clamp(unpack_mix_vec2(a_stroke_opacity, u_stroke_opacity_t), 0.0, 1.0);
 #else
 lowp float stroke_opacity = u_stroke_opacity;
 #endif
