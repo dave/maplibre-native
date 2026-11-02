@@ -51,6 +51,9 @@ public:
   // Called when UIView's layout has changed.
   virtual void layoutChanged() {};
 
+  // Whether the view can draw while it has no window (keepsRenderingOffWindow).
+  virtual bool canRenderOffWindow() const { return false; }
+
   // Called by the view delegate when it's time to render.
   void render();
 
