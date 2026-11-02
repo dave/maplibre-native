@@ -2,9 +2,8 @@
 #import <XCTest/XCTest.h>
 
 /// A source added to a style keeps its Objective-C object for as long as it is
-/// in the style (Viatrail fork, 2026-10-16): a lookup returns the same object,
-/// and state kept on it (`MLNShapeSource.shape`) survives every other
-/// reference being dropped. With only the weak core-to-object link, an
+/// in the style: a lookup returns the same object, and state kept on it
+/// (`MLNShapeSource.shape`) survives every other reference being dropped. With only the weak core-to-object link, an
 /// optimised build freed the object at once and a lookup made a new one whose
 /// `shape` was nil. Removed from the style, the object is freed again.
 @interface MLNSourceLifetimeTests : XCTestCase <MLNMapViewDelegate>
@@ -66,7 +65,7 @@
     XCTAssertEqual([self.mapView.style sourceWithIdentifier:@"looked-up"], weakSource);
 }
 
-/// The source object is kept across writes (Viatrail #170 F1 pin): each new
+/// The source object is kept across writes: each new
 /// shape goes to the same object, which a lookup still returns, with the
 /// newest shape and a newer generation.
 - (void)testASourceKeepsItsObjectAcrossWrites {
