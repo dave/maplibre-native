@@ -218,7 +218,10 @@ public:
     TileLodMode getTileLodMode() const;
 
     /// Symbols of these sources appear at full opacity when first placed,
-    /// with no fade-in. Fade-out and every other source are unchanged.
+    /// with no fade-in. Fade-out and every other source are unchanged. In
+    /// `MapMode::Tile`, what a tile records for a symbol over its edge is
+    /// unchanged too: `PlacedSymbolData::intersectsTileBorder` does not depend
+    /// on this list.
     void setNoFadeInSources(std::set<std::string> sourceIDs);
     const std::set<std::string>& getNoFadeInSources() const;
 
