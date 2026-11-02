@@ -2,8 +2,8 @@ import MapLibre
 import XCTest
 
 /// A tile source's own prefetch zoom delta (`MLNTileSource.prefetchZoomDelta`),
-/// over core `Source::setPrefetchZoomDelta`. Viatrail sets 0 on its item
-/// source so a swap does not wait for a z−4 tile that covers the whole dataset.
+/// over core `Source::setPrefetchZoomDelta`. `0` turns prefetching off for one
+/// source, so it does not load a low-zoom tile that covers its whole dataset.
 class MLNTileSourcePrefetchTests: XCTestCase {
     func testThePrefetchDeltaDefaultsToTheMapsAndIsSetPerSource() {
         let source = MLNVectorTileSource(

@@ -5,7 +5,7 @@
 @property (nonatomic) CADisplayLink *displayLink;
 @end
 
-/// `setHidden:` (Viatrail #170 F1 pin): a hidden map pauses its display link
+/// `setHidden:`: a hidden map pauses its display link
 /// and draws no frame; shown again, it resumes and draws what changed. A
 /// second map, shown in the same window, is the clock: once it has laid out a
 /// body set at the same time, the hidden map has drawn nothing.
