@@ -1,5 +1,20 @@
 #import <MapLibre.h>
 #import <XCTest/XCTest.h>
+#import <objc/runtime.h>
+
+/// Fulfills its expectation when it is freed: attached to an object, it is
+/// freed with that object.
+@interface MLNDeallocSignal : NSObject
+@property (nonatomic) XCTestExpectation *expectation;
+@end
+
+@implementation MLNDeallocSignal
+- (void)dealloc {
+    [_expectation fulfill];
+}
+@end
+
+static char MLNDeallocSignalKey;
 
 /// `keepsRenderingOffWindow`: a map whose view tree leaves the window (as
 /// under a pushed navigation page) keeps its frames and its rendering
@@ -59,7 +74,7 @@
 }
 
 - (void)tearDown {
-    // The display link keeps an off-window map alive while the flag is set.
+    // Stop the maps that render off their window.
     self.flaggedMap.keepsRenderingOffWindow = NO;
     self.plainMap.keepsRenderingOffWindow = NO;
     [self.flaggedMap removeFromSuperview];
@@ -112,7 +127,7 @@
     self.waitedSource = source.identifier;
     self.waitedGeneration = source.dataGeneration;
     self.laidOutExpectation = [self expectationWithDescription:@"the source's body is laid out"];
-    [self waitForExpectationsWithTimeout:10 handler:nil];
+    [self waitForExpectations:@[ self.laidOutExpectation ] timeout:10];
 }
 
 /// The flagged map draws a change made while its view tree is off the window:
@@ -158,6 +173,37 @@
     MLNShapeSource *source = [self addSource:@"late" toMap:self.plainMap];
     [self waitForLaidOut:source onMap:self.plainMap];
     XCTAssertFalse(self.laidOutInWindow, @"the body is laid out off the window");
+}
+
+/// The display link does not keep a map alive: a flagged map that renders
+/// off its window is freed with its view tree, with the flag still set. The
+/// map is made in this test's own autorelease pool, so nothing autoreleased
+/// before the test holds it.
+- (void)testAFlaggedMapOffItsWindowIsFreedWithItsViewTree {
+    XCTestExpectation *freed = [self expectationWithDescription:@"the map is freed"];
+    @autoreleasepool {
+        NSURL *styleURL = [[NSBundle bundleForClass:[self class]] URLForResource:@"one-liner" withExtension:@"json"];
+        UIView *host = [[UIView alloc] initWithFrame:self.window.bounds];
+        MLNMapView *mapView = [[MLNMapView alloc] initWithFrame:host.bounds styleURL:styleURL];
+        mapView.delegate = self;
+        mapView.keepsRenderingOffWindow = YES;
+        [host addSubview:mapView];
+        self.stylesToLoad = 1;
+        self.styleLoadingExpectation = [self expectationWithDescription:@"the map loads its style"];
+        [self.window addSubview:host];
+        [self waitForExpectations:@[ self.styleLoadingExpectation ] timeout:10];
+
+        [host removeFromSuperview];
+        MLNShapeSource *source = [self addSource:@"freed" toMap:mapView];
+        [self waitForLaidOut:source onMap:mapView];
+        XCTAssertFalse(self.laidOutInWindow, @"the map renders off its window");
+        XCTAssertTrue(mapView.keepsRenderingOffWindow);
+
+        MLNDeallocSignal *signal = [[MLNDeallocSignal alloc] init];
+        signal.expectation = freed;
+        objc_setAssociatedObject(mapView, &MLNDeallocSignalKey, signal, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    [self waitForExpectations:@[ freed ] timeout:10];
 }
 
 /// Clearing the flag off the window stops the map at once.
