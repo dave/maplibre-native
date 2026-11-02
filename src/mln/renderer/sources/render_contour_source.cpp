@@ -59,6 +59,14 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
     std::swap(baseImpl, baseImpl_);
     enabled = needsRendering;
 
+    // A new source object under the same ID, with other settings: the lines built
+    // with the old ones must go. The DEM tiles stay, so the tiles made next settle
+    // from them at once.
+    if (impl().getOptions() != static_cast<const style::ContourSource::Impl&>(*baseImpl_).getOptions()) {
+        pendingPopulate.clear();
+        tilePyramid.clearAll();
+    }
+
     rebindUpstream(parameters);
 
     // While the DEM source or its tileset is not there, the contour source has

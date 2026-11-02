@@ -21,6 +21,8 @@ struct IntervalSchedule {
     // Example: {200, 12, 100, 14, 50, 15, 20} reads as
     //   z<12 → 200, 12≤z<14 → 100, 14≤z<15 → 50, z≥15 → 20.
     std::vector<double> stops;
+
+    bool operator==(const IntervalSchedule&) const = default;
 };
 
 /// Look up the contour interval for a given zoom. The schedule must be valid
