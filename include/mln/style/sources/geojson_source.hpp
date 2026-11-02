@@ -100,7 +100,8 @@ public:
     // pending keeps its own, lower, generation. A body that cannot be made
     // (`setGeoJSONError`), or a URL that answers an error or nothing, is a
     // source error: its own generation is never reported, and layer changes
-    // given out while it was pending are.
+    // given out while it was pending are. `MapObserver::onSourceBodyFailed`
+    // names that generation.
 
     /// The generation for a URL body: it is that body's once it has loaded.
     /// A second, different answer for the URL takes a new generation; the
@@ -125,7 +126,8 @@ public:
     /// or a layer change. The one to wait for after any setter, including
     /// one that answers nothing (a platform's URL or layer property).
     uint64_t getLatestGeneration() const;
-    /// The body of `generation` could not be made: reported as a source error.
+    /// The body of `generation` could not be made: reported as a source error,
+    /// and with its generation through `SourceObserver::onSourceBodyFailed`.
     void setGeoJSONError(uint64_t generation, const std::string& message);
     /// A layer on this source changed its filter or a layout property: the
     /// source takes the next generation, laid out once its tiles are laid out
@@ -180,6 +182,7 @@ protected:
 private:
     uint64_t landingGeneration(uint64_t generation);
     void bodyWillNotLand(uint64_t generation);
+    void urlBodyFailed(const std::string& message);
     void noteBodyLanded();
 
     std::optional<std::string> url;

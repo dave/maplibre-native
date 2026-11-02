@@ -88,6 +88,15 @@ public:
     /// See `RendererObserver::onSourceLaidOut`.
     virtual void onSourceLaidOut(const std::string& /*sourceID*/, uint64_t /*generation*/) {}
 
+    /// A body of a GeoJSON source will not land: `generation` is never reported
+    /// through `onSourceLaidOut`, and a caller that waits for it can stop. It
+    /// is called once for a generation, on the thread that runs the map, for a
+    /// body that cannot be made (`GeoJSONSource::setGeoJSONError`), a URL that
+    /// answers an error or no content, and a URL body that does not parse.
+    virtual void onSourceBodyFailed(const std::string& /*sourceID*/,
+                                    uint64_t /*generation*/,
+                                    const std::string& /*message*/) {}
+
     // Sprite requests
     virtual void onSpriteLoaded(const std::optional<style::Sprite>&) {}
     virtual void onSpriteError(const std::optional<style::Sprite>&, std::exception_ptr) {}

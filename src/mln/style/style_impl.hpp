@@ -153,6 +153,7 @@ private:
     void onSourceLoaded(Source&) override;
     void onSourceChanged(Source&) override;
     void onSourceError(Source&, std::exception_ptr) override;
+    void onSourceBodyFailed(Source&, uint64_t generation, const std::string& message) override;
     void onSourceDescriptionChanged(Source&) override;
 
     // LayerObserver implementation.

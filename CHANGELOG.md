@@ -24,6 +24,7 @@
 ### ✨ Technical Improvements
 
 - *...Add new stuff here...*
+- [core] Add `MapObserver::onSourceBodyFailed(sourceID, generation, message)`: a GeoJSON body that will not land names its generation, so a caller waiting on `onSourceLaidOut` for that generation can stop.
 - [core] **Behaviour change.** A GeoJSON source whose options do not convert (for example, `"maxzoom": "high"`) now fails to parse, with the reason. Before, it was made with the default options and the error was dropped, so a style that loaded before can now report this source as an error.
 - [core] `GeoJSONSource::setLandingLimit` to a generation whose body the bound of `maxHeldBodies` has freed is a source error; before, it landed nothing and said nothing.
 - [core] A tile made in the frame that raises a GeoJSON source's landing limit below its newest body draws the body at the limit, not the body from before the hold.

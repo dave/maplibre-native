@@ -185,8 +185,18 @@ void GeoJSONSource::bodyWillNotLand(uint64_t generation) {
     }
 }
 
+void GeoJSONSource::urlBodyFailed(const std::string& message) {
+    // A failed revalidation of a body that has landed takes nothing away.
+    if (urlGeneration != pendingBody) {
+        return;
+    }
+    bodyWillNotLand(urlGeneration);
+    observer->onSourceBodyFailed(*this, urlGeneration, message);
+}
+
 void GeoJSONSource::setGeoJSONError(uint64_t generation, const std::string& message) {
     bodyWillNotLand(generation);
+    observer->onSourceBodyFailed(*this, generation, message);
     observer->onSourceError(
         *this,
         std::make_exception_ptr(std::runtime_error("GeoJSON body " + std::to_string(generation) + ": " + message)));
@@ -220,12 +230,12 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
 
     req = fileSource.request(Resource::source(*url), [this](const Response& res) {
         if (res.error) {
-            bodyWillNotLand(urlGeneration);
+            urlBodyFailed(res.error->message);
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error(res.error->message)));
         } else if (res.notModified) {
             return;
         } else if (res.noContent) {
-            bodyWillNotLand(urlGeneration);
+            urlBodyFailed("unexpectedly empty GeoJSON");
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error("unexpectedly empty GeoJSON")));
         } else {
             assert(res.data);
@@ -264,7 +274,7 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
                             // source keeps the body it holds. With none, it
                             // has no tile for anything to wait on.
                             if (error) {
-                                bodyWillNotLand(generation);
+                                urlBodyFailed(*error);
                             } else {
                                 baseImpl = makeMutable<Impl>(impl(),
                                                              std::get<std::shared_ptr<GeoJSONData>>(std::move(parsed)),

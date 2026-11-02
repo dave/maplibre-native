@@ -446,6 +446,10 @@ void Style::Impl::onSourceError(Source& source, std::exception_ptr error) {
     observer->onResourceError(error);
 }
 
+void Style::Impl::onSourceBodyFailed(Source& source, uint64_t generation, const std::string& message) {
+    observer->onSourceBodyFailed(source, generation, message);
+}
+
 void Style::Impl::onSourceDescriptionChanged(Source& source) {
     sources.update(source);
     observer->onSourceDescriptionChanged(source);
