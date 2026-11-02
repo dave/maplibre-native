@@ -48,6 +48,7 @@ public:
 
     // StyleObserver
     void onSourceChanged(style::Source&) final;
+    void onSourceBodyFailed(style::Source&, uint64_t generation, const std::string& message) final;
     void onUpdate() final;
     void onStyleLoading() final;
     void onStyleLoaded() final;

@@ -436,6 +436,10 @@ void Map::Impl::onTileAction(TileOperation op, const OverscaledTileID& id, const
     }
 }
 
+void Map::Impl::onSourceBodyFailed(style::Source& source, uint64_t generation, const std::string& message) {
+    observer.onSourceBodyFailed(source.getID(), generation, message);
+}
+
 void Map::Impl::onSourceLaidOut(const std::string& sourceID, uint64_t generation) {
     observer.onSourceLaidOut(sourceID, generation);
 }
