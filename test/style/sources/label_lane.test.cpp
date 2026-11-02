@@ -1910,3 +1910,101 @@ TEST(LabelLane, AReleasedBodysSymbolsArePlacedInTheReleaseFrameWithPlacementTran
     ASSERT_TRUE(runOneFrame(test, "the frame that takes the release"));
     EXPECT_EQ(1u, placedLabels(test)) << "the released labels were not placed in the frame that took the release";
 }
+
+// A URL load that fails leaves no body pending: a later layer change, and one
+// made while the load was pending, is reported laid out. Before, the source
+// waited for ever for a body that was never coming.
+
+namespace {
+
+Response errorResponse() {
+    Response response;
+    response.error = std::make_unique<Response::Error>(Response::Error::Reason::Other, "no body");
+    return response;
+}
+
+Response noContentResponse() {
+    Response response;
+    response.noContent = true;
+    return response;
+}
+
+/** The next source answer is `failure`, once; `done` is set once the source has taken it. */
+void answerSourcesWith(LaneMap& test, const Response& failure, bool& done) {
+    test.fileSource->sourceResponse = [&failure, &done](const Resource&) -> std::optional<Response> {
+        if (done) return std::nullopt;
+        done = true;
+        return failure;
+    };
+}
+
+bool setCircleFilterAndWaitForReport(LaneMap& test) {
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "none"])"));
+    const uint64_t latest = test.labels().getLatestGeneration();
+    return runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the layer change reported");
+}
+
+void expectLayerChangeReportedAfterFailedLoad(const Response& failure) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    bool answered = false;
+    answerSourcesWith(test, failure, answered);
+    test.labels().setURL("http://bodies/missing.json");
+    ASSERT_TRUE(runUntil(test.loop, [&] { return answered; }, "the failed load"));
+    EXPECT_TRUE(setCircleFilterAndWaitForReport(test));
+}
+
+void expectLayerChangeWhileLoadingReportedAfterFailedLoad(const Response& failure) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    bool answered = false;
+    answerSourcesWith(test, failure, answered);
+    test.labels().setURL("http://bodies/missing.json");
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "none"])"));
+    const uint64_t body = test.labels().getLatestGeneration() - 1;
+    const uint64_t latest = test.labels().getLatestGeneration();
+    ASSERT_TRUE(runUntil(test.loop, [&] { return answered; }, "the failed load"));
+    EXPECT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the layer change reported"));
+    EXPECT_FALSE(test.observer.has("labels", body)) << "the failed body was reported laid out";
+}
+
+} // namespace
+
+TEST(GeoJSONSource, AFailedURLLoadStillReportsLaterLayerChanges) {
+    expectLayerChangeReportedAfterFailedLoad(errorResponse());
+}
+
+TEST(GeoJSONSource, AnEmptyURLAnswerStillReportsLaterLayerChanges) {
+    expectLayerChangeReportedAfterFailedLoad(noContentResponse());
+}
+
+TEST(GeoJSONSource, AFailedURLLoadReportsTheLayerChangesMadeWhileItWasPending) {
+    expectLayerChangeWhileLoadingReportedAfterFailedLoad(errorResponse());
+}
+
+TEST(GeoJSONSource, AnEmptyURLAnswerReportsTheLayerChangesMadeWhileItWasPending) {
+    expectLayerChangeWhileLoadingReportedAfterFailedLoad(noContentResponse());
+}
+
+// The source's first and only URL fails, so it has no data at all and no tile
+// to lay out: a layer change is reported, as for any source with no tile.
+TEST(GeoJSONSource, ASourceWhoseOnlyURLFailedStillReportsLayerChanges) {
+    LaneMap test(circleStyleJSON());
+    const Response failure = errorResponse();
+    bool answered = false;
+    answerSourcesWith(test, failure, answered);
+    ASSERT_TRUE(runUntil(test.loop, [&] { return answered; }, "the failed load"));
+    EXPECT_TRUE(setCircleFilterAndWaitForReport(test));
+    EXPECT_FALSE(test.observer.has("labels", 1)) << "the failed body was reported laid out";
+}
+
+TEST(GeoJSONSource, ABodyThatCannotBeMadeReportsTheLayerChangesMadeWhileItWasPending) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const uint64_t failed = test.labels().nextDataGeneration();
+    test.map->getStyle().getLayer("circles")->setFilter(*filterFrom(R"(["==", ["get", "kind"], "none"])"));
+    const uint64_t latest = test.labels().getLatestGeneration();
+    test.labels().setGeoJSONError(failed, "no body");
+    EXPECT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the layer change reported"));
+    EXPECT_FALSE(test.observer.has("labels", failed)) << "the failed body was reported laid out";
+}

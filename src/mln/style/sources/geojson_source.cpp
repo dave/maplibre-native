@@ -146,12 +146,22 @@ uint64_t GeoJSONSource::getLatestGeneration() const {
     return dataGeneration;
 }
 
-void GeoJSONSource::setGeoJSONError(uint64_t generation, const std::string& message) {
-    if (generation == pendingBody) {
-        // The newest body will not land: later layer changes move the
-        // generation again. The source keeps the body it holds.
-        pendingBody = 0;
+void GeoJSONSource::bodyWillNotLand(uint64_t generation) {
+    if (generation != pendingBody) {
+        return;
     }
+    // The newest body will not land: later layer changes move the generation
+    // again, and the source keeps the body it holds. Layer changes made while
+    // it was pending were waiting for it: they are reported now.
+    pendingBody = 0;
+    if (dataGeneration > generation) {
+        baseImpl = makeMutable<Impl>(impl(), impl().getData().lock(), dataGeneration);
+        observer->onSourceChanged(*this);
+    }
+}
+
+void GeoJSONSource::setGeoJSONError(uint64_t generation, const std::string& message) {
+    bodyWillNotLand(generation);
     observer->onSourceError(
         *this,
         std::make_exception_ptr(std::runtime_error("GeoJSON body " + std::to_string(generation) + ": " + message)));
@@ -185,10 +195,12 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
 
     req = fileSource.request(Resource::source(*url), [this](const Response& res) {
         if (res.error) {
+            bodyWillNotLand(urlGeneration);
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error(res.error->message)));
         } else if (res.notModified) {
             return;
         } else if (res.noContent) {
+            bodyWillNotLand(urlGeneration);
             observer->onSourceError(*this, std::make_exception_ptr(std::runtime_error("unexpectedly empty GeoJSON")));
         } else {
             assert(res.data);
