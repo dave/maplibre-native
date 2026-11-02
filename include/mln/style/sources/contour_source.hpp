@@ -47,6 +47,8 @@ struct ContourSourceOptions {
 // integration lives in `RenderContourSource`.
 class ContourSource final : public Source {
 public:
+    /// @throws std::invalid_argument if `intervals` or `majorMultiplier` is not a
+    /// valid schedule, as the style parser reports it for a style.
     ContourSource(std::string id, ContourSourceOptions options);
     ~ContourSource() override;
 

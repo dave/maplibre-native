@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+
 #include <mln/style/conversion/json.hpp>
 #include <mln/style/conversion/source.hpp>
 #include <mln/style/sources/contour_source.hpp>
@@ -362,4 +364,24 @@ TEST(ContourSourceParse, RoundTripsCustomUnit) {
     EXPECT_EQ(second->getUnit().unit, algorithm::contour::ContourUnit::Custom);
     EXPECT_DOUBLE_EQ(first->getUnit().customMultiplier, 0.5);
     EXPECT_DOUBLE_EQ(second->getUnit().customMultiplier, 0.5);
+}
+
+// The parser checks a schedule, and so does the C++ API: a bad one is an error,
+// not a source that draws no lines or no major lines.
+TEST(ContourSource, ABadScheduleIsAnError) {
+    ContourSourceOptions noIntervals = fullConfig();
+    noIntervals.intervals.stops = {};
+    EXPECT_THROW(ContourSource("contours", noIntervals), std::invalid_argument);
+
+    ContourSourceOptions evenLength = fullConfig();
+    evenLength.intervals.stops = {100.0, 12.0};
+    EXPECT_THROW(ContourSource("contours", evenLength), std::invalid_argument);
+
+    ContourSourceOptions badMajor = fullConfig();
+    badMajor.majorMultiplier.stops = {};
+    EXPECT_THROW(ContourSource("contours", badMajor), std::invalid_argument);
+
+    ContourSourceOptions fractionalMajor = fullConfig();
+    fractionalMajor.majorMultiplier.stops = {2.5};
+    EXPECT_THROW(ContourSource("contours", fractionalMajor), std::invalid_argument);
 }

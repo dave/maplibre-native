@@ -1,5 +1,6 @@
 #include <mln/algorithm/contour/intervals.hpp>
 
+#include <cassert>
 #include <cstddef>
 
 namespace mln {
@@ -7,10 +8,8 @@ namespace algorithm {
 namespace contour {
 
 double intervalForZoom(const IntervalSchedule& schedule, double zoom) {
+    assert(isValid(schedule));
     const auto& s = schedule.stops;
-    if (s.empty() || (s.size() % 2) == 0) {
-        return 0.0;
-    }
     // Walk the stops left-to-right. Output indices are 0, 2, 4, …; stop
     // indices are 1, 3, 5, …. The final entry is the output above the last
     // stop. Linear scan is fine — schedules in real configs have ≤ ~6 stops.
