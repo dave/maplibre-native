@@ -528,7 +528,7 @@ void expectTranslateInTheNextFrame(const std::string& layer, const std::string& 
     ASSERT_EQ(1u, test.count(layer, around(centre))) << layer << " not drawn at the centre";
     ASSERT_EQ(0u, test.count(layer, around(moved))) << layer << " already drawn 60 px down";
 
-    const uint64_t generation = test.source(source).getDataGeneration();
+    const uint64_t generation = test.source(source).getLandedGeneration();
     const std::size_t actions = test.observer.tileActions.size();
     const std::size_t reports = test.observer.laidOut.size();
     setProperty(test.layer(layer), property, "[0, 60]");
@@ -536,7 +536,7 @@ void expectTranslateInTheNextFrame(const std::string& layer, const std::string& 
     EXPECT_EQ(0u, test.count(layer, around(centre))) << layer << ": the old position still drawn";
     EXPECT_EQ(1u, test.count(layer, around(moved))) << layer << ": the translate not drawn in the next frame";
     EXPECT_EQ(0u, test.observer.count(TileOperation::StartParse, source, actions)) << "a translate started a parse";
-    EXPECT_EQ(generation, test.source(source).getDataGeneration()) << "a translate moved the source's generation";
+    EXPECT_EQ(generation, test.source(source).getLandedGeneration()) << "a translate moved the source's generation";
     EXPECT_EQ(reports, test.observer.laidOut.size()) << "a translate was reported laid out";
 }
 
@@ -844,5 +844,5 @@ TEST(AppBehaviourPins, TheSourceObjectIsKeptAcrossWrites) {
     ASSERT_TRUE(test.frame("a frame after the writes"));
     EXPECT_EQ(before, test.map->getStyle().getSource("a"));
     EXPECT_EQ(layerBefore, test.map->getStyle().getLayer("a"));
-    EXPECT_GT(test.source("a").getDataGeneration(), body);
+    EXPECT_GT(test.source("a").getLandedGeneration(), body);
 }

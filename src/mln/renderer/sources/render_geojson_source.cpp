@@ -106,7 +106,7 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
     }
 
     auto data_ = impl().getData().lock();
-    const uint64_t dataGeneration = impl().getDataGeneration();
+    const uint64_t dataGeneration = impl().getLandedGeneration();
     // The landed body: the newest at or below the limit. A tile made while
     // held lays it out first, so a pan or zoom during a hold draws labels.
     if (!landingLimit || dataGeneration <= *landingLimit || !landedData) {
@@ -157,7 +157,7 @@ void RenderGeoJSONSource::update(Immutable<style::Source::Impl> baseImpl_,
                            return tile;
                        });
 
-    const uint64_t generation = impl().getDataGeneration();
+    const uint64_t generation = impl().getLandedGeneration();
     if (generation > reportedGeneration && idealTilesLaidOut(data_)) {
         reportedGeneration = generation;
         laidOutGeneration = generation;

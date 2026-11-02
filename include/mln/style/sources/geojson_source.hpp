@@ -109,10 +109,11 @@ public:
     void setGeoJSONData(std::shared_ptr<GeoJSONData>, uint64_t generation);
     /// Takes the next data generation for a body that is still being made.
     uint64_t nextDataGeneration();
-    /// The generation the source holds now, the one its tiles will be
-    /// reported laid out at; 0 before the first. A body still pending is not
-    /// counted until it lands.
-    uint64_t getDataGeneration() const;
+    /// The generation that has landed in the source: the one its tiles will
+    /// be reported laid out at; 0 before the first. A body still pending is
+    /// not counted until it lands. A landing limit does not hold it back: the
+    /// limit holds what the tiles draw, not what the source holds.
+    uint64_t getLandedGeneration() const;
     /// The latest generation given out: by a setter, `nextDataGeneration`
     /// or a layer change. The one to wait for after any setter, including
     /// one that answers nothing (a platform's URL or layer property).

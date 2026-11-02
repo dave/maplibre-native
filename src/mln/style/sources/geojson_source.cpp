@@ -138,8 +138,8 @@ uint64_t GeoJSONSource::nextDataGeneration() {
     return pendingBody;
 }
 
-uint64_t GeoJSONSource::getDataGeneration() const {
-    return impl().getDataGeneration();
+uint64_t GeoJSONSource::getLandedGeneration() const {
+    return impl().getLandedGeneration();
 }
 
 uint64_t GeoJSONSource::getLatestGeneration() const {
@@ -253,7 +253,7 @@ bool GeoJSONSource::isUpdateSynchronous() const noexcept {
 
 void GeoJSONSource::setLandingLimit(std::optional<uint64_t> limit) {
     if (limit == impl().getLandingLimit()) return;
-    auto next = makeMutable<Impl>(impl(), impl().getData().lock(), impl().getDataGeneration());
+    auto next = makeMutable<Impl>(impl(), impl().getData().lock(), impl().getLandedGeneration());
     next->setLandingLimit(limit);
     baseImpl = std::move(next);
     observer->onSourceChanged(*this);
