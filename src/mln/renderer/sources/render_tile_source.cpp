@@ -577,7 +577,8 @@ void RenderTileSource::dumpDebugLogs() const {
 
 RenderTileSetSource::RenderTileSetSource(Immutable<style::Source::Impl> impl_, const TaggedScheduler& threadPool_)
     : RenderTileSource(std::move(impl_), threadPool_),
-      seenEmptyTileReloads(static_cast<const style::TileSource::Impl&>(*baseImpl).emptyTileReloads) {}
+      seenEmptyTileReloads(static_cast<const style::TileSource::Impl&>(*baseImpl).emptyTileReloads),
+      seenFailedTileReloads(static_cast<const style::TileSource::Impl&>(*baseImpl).failedTileReloads) {}
 
 RenderTileSetSource::~RenderTileSetSource() = default;
 
@@ -608,10 +609,17 @@ void RenderTileSetSource::update(Immutable<style::Source::Impl> baseImpl_,
         tilePyramid.clearAll();
     }
 
-    const uint64_t emptyTileReloads = static_cast<const style::TileSource::Impl&>(*baseImpl).emptyTileReloads;
-    if (emptyTileReloads != seenEmptyTileReloads) {
-        seenEmptyTileReloads = emptyTileReloads;
-        tilePyramid.reloadEmptyTiles();
+    const auto& tileImpl = static_cast<const style::TileSource::Impl&>(*baseImpl);
+    const bool reloadEmpty = tileImpl.emptyTileReloads != seenEmptyTileReloads;
+    const bool reloadFailed = tileImpl.failedTileReloads != seenFailedTileReloads;
+    seenEmptyTileReloads = tileImpl.emptyTileReloads;
+    seenFailedTileReloads = tileImpl.failedTileReloads;
+    if (reloadEmpty && reloadFailed) {
+        tilePyramid.reloadTiles(style::ReloadFilter::EmptyAndFailed);
+    } else if (reloadEmpty) {
+        tilePyramid.reloadTiles(style::ReloadFilter::Empty);
+    } else if (reloadFailed) {
+        tilePyramid.reloadTiles(style::ReloadFilter::Failed);
     }
 
     if (!cachedTileset) return;

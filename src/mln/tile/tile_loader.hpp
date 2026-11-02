@@ -9,6 +9,10 @@
 
 namespace mln {
 
+namespace style {
+enum class ReloadFilter : uint8_t;
+} // namespace style
+
 class FileSource;
 class AsyncRequest;
 class Response;
@@ -27,7 +31,7 @@ public:
     void setUpdateParameters(const TileUpdateParameters&);
     // Asks the network again when the last answer was empty or an error, no
     // request is in flight, and the tile is required.
-    void reloadIfEmpty();
+    void reload(style::ReloadFilter);
 
 private:
     // called when the tile is one of the ideal tiles that we want to show
@@ -51,8 +55,13 @@ private:
 
     T& tile;
     TileNecessity necessity;
-    // The last answer had no data: no content, or an error.
-    bool lastAnswerEmpty = false;
+    enum class LastAnswer : uint8_t {
+        None,
+        Data,
+        Empty,
+        Failed
+    };
+    LastAnswer lastAnswer = LastAnswer::None;
     Resource resource;
     std::shared_ptr<FileSource> fileSource;
     std::unique_ptr<AsyncRequest> request;

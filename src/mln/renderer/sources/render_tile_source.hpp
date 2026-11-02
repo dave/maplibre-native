@@ -90,6 +90,7 @@ private:
     std::optional<Tileset> cachedTileset;
     // The `TileSource::Impl::emptyTileReloads` count this source last acted on.
     uint64_t seenEmptyTileReloads;
+    uint64_t seenFailedTileReloads;
 };
 
 class PolylineLayerTweaker;

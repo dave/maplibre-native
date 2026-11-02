@@ -4,6 +4,7 @@
 #include <mln/tile/tile_id.hpp>
 #include <mln/tile/tile.hpp>
 
+#include <functional>
 #include <list>
 #include <memory>
 #include <map>
@@ -34,6 +35,7 @@ public:
     Tile* get(const OverscaledTileID& key);
     bool has(const OverscaledTileID& key);
     void clear();
+    void forEach(const std::function<void(Tile&)>&);
 
     /// Set aside a tile to be destroyed later, without blocking
     void deferredRelease(std::unique_ptr<Tile>&&);

@@ -49,7 +49,7 @@ jni::Local<jni::Array<jni::Object<geojson::Feature>>> VectorSource::querySourceF
 }
 
 void VectorSource::reloadEmptyTiles(jni::JNIEnv&) {
-    source.as<mln::style::VectorSource>()->reloadEmptyTiles();
+    source.as<mln::style::VectorSource>()->reloadTiles(mln::style::ReloadFilter::EmptyAndFailed);
 }
 
 jni::Local<jni::Object<Source>> VectorSource::createJavaPeer(jni::JNIEnv& env) {

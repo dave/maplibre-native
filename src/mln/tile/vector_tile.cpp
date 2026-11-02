@@ -25,8 +25,8 @@ void VectorTile::setUpdateParameters(const TileUpdateParameters& params) {
     loader->setUpdateParameters(params);
 }
 
-void VectorTile::reloadIfEmpty() {
-    loader->reloadIfEmpty();
+void VectorTile::reload(style::ReloadFilter filter) {
+    loader->reload(filter);
 }
 
 void VectorTile::setMetadata(std::optional<Timestamp> modified_, std::optional<Timestamp> expires_) {

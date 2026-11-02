@@ -214,7 +214,7 @@ MLN_EXPORT
  Each tile keeps what it draws until its new answer lands. Tiles that have
  data are not asked again, and none is cleared, so the tiles on screen do not
  flash. A tile that the map does not need now asks again when the map needs
- it. Core: `mln::style::TileSource::reloadEmptyTiles`.
+ it. Core: `mln::style::TileSource::reloadTiles`.
  */
 - (void)reloadEmptyTiles;
 
