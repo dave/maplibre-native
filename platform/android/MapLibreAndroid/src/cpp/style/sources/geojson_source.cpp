@@ -275,7 +275,7 @@ void GeoJSONSource::land(uint64_t generation, style::GeoJSONData::ParseResult re
 }
 
 jni::jlong GeoJSONSource::getLandedGeneration(jni::JNIEnv&) {
-    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getDataGeneration());
+    return static_cast<jni::jlong>(source.as<style::GeoJSONSource>()->getLandedGeneration());
 }
 
 jni::jlong GeoJSONSource::getDataGeneration(jni::JNIEnv&) {

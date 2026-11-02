@@ -601,8 +601,9 @@ class GeoJsonSource : Source {
     private external fun nativeGetDataGeneration(): Long
 
     /**
-     * The generation of the body the source holds now: the one the next render update
-     * draws (core `GeoJSONSource::getDataGeneration`). For a synchronous source
+     * The generation that has landed in the source: the one the next render update lays
+     * its tiles out with (core `GeoJSONSource::getLandedGeneration`). A [landingLimit]
+     * holds what the tiles draw, not this value. For a synchronous source
      * ([GeoJsonOptions.withSynchronousUpdate]) it is the generation a setter answered,
      * as soon as the setter returns. For an asynchronous source it trails until the
      * body has converted.
