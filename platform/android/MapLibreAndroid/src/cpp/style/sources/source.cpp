@@ -20,6 +20,7 @@
 #include <mln/style/sources/custom_vector_source.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/image_source.hpp>
+#include <mln/style/sources/raster_dem_source.hpp>
 #include <mln/style/sources/raster_source.hpp>
 #include <mln/style/sources/vector_source.hpp>
 
@@ -43,6 +44,8 @@ static std::unique_ptr<Source> createSourcePeer(jni::JNIEnv& env,
         return std::make_unique<VectorSource>(env, *coreSource.as<mln::style::VectorSource>(), frontend);
     } else if (coreSource.is<mln::style::RasterSource>()) {
         return std::make_unique<RasterSource>(env, *coreSource.as<mln::style::RasterSource>(), frontend);
+    } else if (coreSource.is<mln::style::RasterDEMSource>()) {
+        return std::make_unique<RasterDEMSource>(env, *coreSource.as<mln::style::RasterDEMSource>(), frontend);
     } else if (coreSource.is<mln::style::GeoJSONSource>()) {
         return std::make_unique<GeoJSONSource>(env, *coreSource.as<mln::style::GeoJSONSource>(), frontend);
     } else if (coreSource.is<mln::style::ImageSource>()) {
