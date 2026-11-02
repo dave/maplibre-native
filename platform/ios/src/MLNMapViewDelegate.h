@@ -520,6 +520,27 @@ cache or network, parsing, or encountering errors.
     sourceDidLayOut:(NSString *)sourceIdentifier
          generation:(uint64_t)generation;
 
+/**
+ Tells the delegate that a body of the shape source will not land: its URL
+ answers an error or no content, or what it answers does not parse.
+ `-mapView:sourceDidLayOut:generation:` never reports that generation, so a wait
+ for it ends here.
+
+ Called on the main thread, once for a generation. A failed refresh of a body
+ that has landed is not reported: that body stays. On Android this is
+ `MapView.OnSourceBodyFailedListener`.
+
+ @param mapView The map view.
+ @param sourceIdentifier The shape source's identifier.
+ @param generation The body's data generation (``MLNShapeSource/dataGeneration``
+    after its `URL` was set).
+ @param message Why the body will not land.
+ */
+- (void)mapView:(MLNMapView *)mapView
+    sourceBodyDidFail:(NSString *)sourceIdentifier
+           generation:(uint64_t)generation
+              message:(NSString *)message;
+
 // MARK: - Sprite Requests
 
 /**
