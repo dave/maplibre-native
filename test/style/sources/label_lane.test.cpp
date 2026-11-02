@@ -2018,3 +2018,55 @@ TEST(GeoJSONSource, ABodyThatCannotBeMadeReportsTheLayerChangesMadeWhileItWasPen
     EXPECT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", latest); }, "the layer change reported"));
     EXPECT_FALSE(test.observer.has("labels", failed)) << "the failed body was reported laid out";
 }
+
+// A URL body that does not parse does as a body that cannot be made
+// (setGeoJSONError): the source keeps the body it holds, and the failed body's
+// generation is never reported.
+
+namespace {
+
+/** Answers the source's next URL with `text`; true once the answer's parse has come back as a source load. */
+bool loadURLBody(LaneMap& test, const std::string& text) {
+    auto answer = std::make_shared<std::string>(text);
+    test.fileSource->sourceResponse = [answer](const Resource&) {
+        Response response;
+        response.data = answer;
+        return response;
+    };
+    test.labels().setURL("http://bodies/next.json");
+    return runUntil(test.loop, [&] { return test.labels().loaded; }, "the URL's answer");
+}
+
+} // namespace
+
+TEST(GeoJSONSource, AURLBodyThatDoesNotParseKeepsTheBodyTheSourceHolds) {
+    LaneMap test(circleStyleJSON());
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.observer.has("labels", 1); }, "the lane source laid out"));
+    const auto held = test.labels().impl().getData().lock();
+    ASSERT_NE(nullptr, held);
+
+    ASSERT_TRUE(loadURLBody(test, "{not json"));
+    const uint64_t failed = test.labels().getLatestGeneration();
+
+    EXPECT_EQ(held, test.labels().impl().getData().lock()) << "the failed body took away the one the source holds";
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame after the failed body"));
+    EXPECT_EQ(4u, drawnCircles(test));
+    EXPECT_FALSE(test.observer.has("labels", failed)) << "the failed body was reported laid out";
+    EXPECT_TRUE(setCircleFilterAndWaitForReport(test));
+}
+
+TEST(GeoJSONSource, ASourceWhoseOnlyURLBodyDoesNotParseIsLoadedAndNotReported) {
+    LaneMap test(circleStyleJSON());
+    test.fileSource->sourceResponse = [answer = std::make_shared<std::string>("{not json")](const Resource&) {
+        Response response;
+        response.data = answer;
+        return response;
+    };
+    ASSERT_TRUE(runUntil(test.loop, [&] { return test.labels().loaded; }, "the URL's answer"));
+    test.map->triggerRepaint();
+    ASSERT_TRUE(runOneFrame(test, "a frame after the failed body"));
+    EXPECT_EQ(nullptr, test.labels().impl().getData().lock());
+    EXPECT_FALSE(test.observer.has("labels", 1)) << "the failed body was reported laid out";
+    EXPECT_TRUE(setCircleFilterAndWaitForReport(test));
+}
