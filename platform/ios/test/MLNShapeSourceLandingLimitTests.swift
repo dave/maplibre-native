@@ -1,9 +1,9 @@
 import MapLibre
 import XCTest
 
-/// `MLNShapeSource.landingLimit` over core `GeoJSONSource::setLandingLimit`.
-/// Viatrail holds its label sources at a generation while a tile swap waits,
-/// so the labels land in the swap's frame.
+/// `MLNShapeSource.landingLimit` over core `GeoJSONSource::setLandingLimit`:
+/// an app holds a source at a generation while other work for the same frame
+/// is not ready, so the source's new body lands in that frame.
 class MLNShapeSourceLandingLimitTests: XCTestCase {
     func testTheLandingLimitIsNoneByDefaultAndRoundTrips() {
         let source = MLNShapeSource(identifier: "labels", shape: nil, options: [.labelLane: true])
