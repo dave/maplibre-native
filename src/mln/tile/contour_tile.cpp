@@ -268,8 +268,8 @@ std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTil
     // west_L + 0.5·cellWidth, sample dim-1 at east_L - 0.5·cellWidth.
     //
     // We sample the entire (dim + 2·border) buffered view rather than
-    // just the 1-pixel inner ring. With DEMData::border = 3 the
-    // marching-squares skirt extends three cells past the tile edge on
+    // just the 1-pixel inner ring. With DEMData::border = 2 the
+    // marching-squares skirt extends two cells past the tile edge on
     // every side, which
     // gives the downstream Douglas-Peucker / Chaikin smoothing more
     // context near the boundary so adjacent tiles' smoothed contours
@@ -355,8 +355,8 @@ void ContourTile::populate(const DEMSnapshot& snapshot_,
 
             // Shift so alg index `border` lands at +0.5cw (sample 0's
             // pixel-center position): the shift is (2·border − 1) half
-            // cells. With DEMData::border = 3 it is 2.5 cells, and alg
-            // index 0 (the outermost west border cell) sits three cells
+            // cells. With DEMData::border = 2 it is 1.5 cells, and alg
+            // index 0 (the outermost west border cell) sits two cells
             // west of sample 0.
             const double halfCellPx = 0.5 * static_cast<double>(util::EXTENT) / static_cast<double>(dim);
             const double shift = halfCellPx * static_cast<double>(2 * DEMData::border - 1);

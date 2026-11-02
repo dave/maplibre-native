@@ -152,7 +152,12 @@ void igor_hillshade(vec2 deriv) {
 }
 
 void main() {
-    vec4 pixel = texture(u_image, v_pos);
+    // The prepare pass renders one texel beyond the tile on each side. Sample
+    // the tile's own part, so that linear filtering at the tile boundary
+    // blends with the neighbour's slopes instead of clamping.
+    vec2 size = vec2(textureSize(u_image, 0));
+    vec2 texturePos = (v_pos * (size - 2.0) + 1.0) / size;
+    vec4 pixel = texture(u_image, texturePos);
 
     // Scale the derivative based on the mercator distortion at this latitude (v_pos.y)
     float scaleFactor = cos(radians((u_latrange[0] - u_latrange[1]) * (1.0 - v_pos.y) + u_latrange[1]));

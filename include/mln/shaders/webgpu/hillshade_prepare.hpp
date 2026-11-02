@@ -44,11 +44,8 @@ fn main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.position = drawable.matrix * vec4<f32>(f32(in.position.x), f32(in.position.y), 0.0, 1.0);
 
-    // DEM border is 3 (stride = dim + 6); the prepare-pass output is
-    // (dim + 3)² and each output texel i is centred on DEM buffer texel
-    // i + 2. Matches the GL / Metal hillshade_prepare vertex shader.
-    let epsilon = vec2<f32>(2.0, 2.0) / tileProps.dimension;
-    let scale = (tileProps.dimension.x - 3.0) / tileProps.dimension.x;
+    let epsilon = vec2<f32>(1.0, 1.0) / tileProps.dimension;
+    let scale = (tileProps.dimension.x - 2.0) / tileProps.dimension.x;
     out.tex_coord = vec2<f32>(f32(in.texcoord.x), f32(in.texcoord.y)) / 8192.0 * scale + epsilon;
     return out;
 }
@@ -82,11 +79,9 @@ fn main(in: FragmentInput) -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 1.0, 1.0, 1.0);
 #endif
 
-    // epsilon is one DEM texel step in normalized coords (unchanged).
-    // tileSize is the displayed tile width = stride - 2*border = dim
-    // (with border = 3, stride = dim + 6). Matches the GL fragment shader.
     let epsilon = vec2<f32>(1.0, 1.0) / tileProps.dimension;
-    let tileSize = tileProps.dimension.x - 6.0;
+    // the tile's interior width: the DEM stride less DEMData::border (2) texels on each side.
+    let tileSize = tileProps.dimension.x - 4.0;
 
     let a = getElevation(in.tex_coord + vec2<f32>(-epsilon.x, -epsilon.y));
     let b = getElevation(in.tex_coord + vec2<f32>(0.0, -epsilon.y));

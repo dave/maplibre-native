@@ -34,8 +34,6 @@ layout(push_constant) uniform Constants {
 
 struct HillshadeDrawableUBO {
     mat4 matrix;
-    vec2 dimension;
-    vec2 pad0;
 };
 
 layout(std140, set = LAYER_SET_INDEX, binding = idHillshadeDrawableUBO) readonly buffer HillshadeDrawableUBOVector {
@@ -50,19 +48,8 @@ void main() {
     gl_Position = drawable.matrix * vec4(in_position, 0.0, 1.0);
     applySurfaceTransform();
 
-    vec2 pos = vec2(in_texture_position) / 8192.0;
-    // Inset to the inner dim+1 texels of the (dim+3) prepare output.
-    // See shaders/hillshade.vertex.glsl for the rationale. Apply the inset
-    // BEFORE the Y-flip — same order as the Metal shader. With flip-first
-    // the offset/scale lands on the mirrored side of the texture, so the
-    // bilinear partner at the south tile boundary picks the wrong row of
-    // the prepare output and leaves a residual horizontal seam.
-    float texW = drawable.dimension.x;
-    float scale = (texW - 3.0) / texW;
-    float offset = 1.0 / texW;
-    pos = pos * scale + offset;
-    pos.y = 1.0 - pos.y;
-    frag_position = pos;
+    frag_position = vec2(in_texture_position) / 8192.0;
+    frag_position.y = 1.0 - frag_position.y;
 }
 )";
 
@@ -240,7 +227,12 @@ void main() {
 
     const HillshadeTilePropsUBO tileProps = tilePropsVector.tile_props_ubo[constant.ubo_index];
 
-    vec4 pixel = texture(image_sampler, frag_position);
+    // The prepare pass renders one texel beyond the tile on each side. Sample
+    // the tile's own part, so that linear filtering at the tile boundary
+    // blends with the neighbour's slopes instead of clamping.
+    const vec2 size = vec2(textureSize(image_sampler, 0));
+    const vec2 texturePos = (frag_position * (size - 2.0) + 1.0) / size;
+    vec4 pixel = texture(image_sampler, texturePos);
 
     // Scale the derivative based on the mercator distortion at this latitude
     float scaleFactor = cos(radians((tileProps.latrange[0] - tileProps.latrange[1]) * frag_position.y + tileProps.latrange[1]));

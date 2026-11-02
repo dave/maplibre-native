@@ -14,14 +14,13 @@ namespace mln {
 class DEMData {
 public:
     /// Width of the per-side neighbour border on the buffered image. The
-    /// hillshade prepare pass renders two "ghost" texels per side beyond a
-    /// tile's interior, and its Sobel kernel reads one pixel further out,
-    /// so it needs three backfilled pixels per side. Adjacent tiles' ghost
-    /// outputs then read identical neighbour data, bilinear sampling at the
-    /// boundary stays in shared data, and the visible step (seam) at
-    /// overzoomed tile boundaries goes away. The contour algorithm reads
-    /// the same border.
-    static constexpr int32_t border = 3;
+    /// hillshade prepare pass renders the slopes of a tile's interior and of
+    /// one texel beyond it on each side, and its Sobel kernel reads one pixel
+    /// further out, so it needs two backfilled pixels. The outer slopes then
+    /// equal the neighbour's own edge slopes, and linear filtering at an
+    /// overzoomed tile boundary shows no seam (as in MapLibre GL JS). The
+    /// contour algorithm reads the same border.
+    static constexpr int32_t border = 2;
 
     DEMData(const PremultipliedImage& image, Tileset::RasterEncoding encoding);
     void backfillBorder(const DEMData& borderTileData, int8_t dx, int8_t dy);

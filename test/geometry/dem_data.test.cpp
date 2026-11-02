@@ -15,11 +15,10 @@ auto fakeImage = [](Size s) {
     return img;
 };
 
-// DEMData uses a 3-pixel border on each side (DEMData::border): the
-// hillshade prepare pass renders two ghost texels per side beyond the tile
-// interior and its Sobel kernel reads one pixel further, which is what makes
-// adjacent prepare outputs share identical edge values at overzoom (no seam).
-// The tests below pin both the storage layout and the border content.
+// DEMData uses a 2-pixel border on each side (DEMData::border): the
+// hillshade prepare pass renders one texel beyond the tile interior on each
+// side and its Sobel kernel reads one pixel further. The tests below pin both
+// the storage layout and the border content.
 
 TEST(DEMData, ConstructorMapbox) {
     PremultipliedImage image = fakeImage({16, 16});

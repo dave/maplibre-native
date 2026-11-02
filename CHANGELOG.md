@@ -41,6 +41,7 @@
 
 - *...Add new stuff here...*
 - [core] Metal: fix a layer that drew nothing in one tile for a frame when one render pass drew the tile clipping masks three or more times (layers whose sources have different tile sets). A clipping-mask call bound a dead buffer's UBO, because the render pass's bind cache still held the previous call's temporary buffer at the same address.
+- [core] Fix the hillshade seam at tile boundaries when the hillshade is overzoomed ([#4281](https://github.com/maplibre/maplibre-native/issues/4281)), as MapLibre GL JS does ([maplibre-gl-js#8302](https://github.com/maplibre/maplibre-gl-js/pull/8302)). The DEM border is 2 pixels wide, the prepare pass renders one texel beyond the tile on each side, and the hillshade fragment shader samples the tile's own part of that texture, so linear filtering at the boundary blends with the neighbour's slopes. Adds GL JS's `resampling/hillshade/tile-boundaries` render test.
 - [core] OpenGL ES: a data-driven opacity is unpacked and mixed at high precision before it is clamped, in every shader that has one (circle, symbol, and the pattern, gradient and SDF line and fill shaders). A low-precision float need only hold -2..2, so a large opacity stop was undefined before the clamp on mobile GPUs.
 - [core] Fix a render-target leak in `RenderHillshadeLayer`: a tile that prepares again after a neighbour loads frees its old render target. Before, each old target stayed alive, and was drawn every frame, until the layer stopped rendering.
 - [core] WebGPU: `RenderingStats::numFrameBuffers` now counts an offscreen texture when it is made, as on Metal, Vulkan and OpenGL. Before, it was only decremented when one was freed, so it went below zero.
@@ -56,7 +57,6 @@
 - [core] Accept alpha values in legacy comma-separated `hsl()` colors ([#4434](https://github.com/maplibre/maplibre-native/issues/4434)).
 - [core] Fix thread-unsafe headless OpenGL display singleton initialization [#4332](https://github.com/maplibre/maplibre-native/pull/4332)
 - [macos] Fix `mlt-cpp` and `mbgl-vendor-icu` not being included in the amalgamation
-- [core] Fix hillshade overzoom seam at tile boundaries. Widens the DEMData neighbour border to 3 pixels, extends the prepare-pass output to `(dim+3)²` with two "ghost" texels per side beyond the displayed tile area, and insets the hillshade-color and color-relief vertex shader sampling so bilinear filtering at the tile boundary stays in shared-data territory ([#4280](https://github.com/maplibre/maplibre-native/pull/4280)).
 - [core] Fix memory access violation exception in vector_tile_data.cpp [#632](https://github.com/maplibre/maplibre-native/pull/632)
 - [iOS] Fix a bug where the compass was determined to be misplaced when hidden [#498](https://github.com/maplibre/maplibre-native/pull/498).
 - [core] `MaptilerFileSource` renamed to `MBTilesFileSource` [#198](https://github.com/maplibre/maplibre-native/pull/198).
