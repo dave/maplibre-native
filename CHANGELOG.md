@@ -54,6 +54,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] A contour source reads `intervals` and `majorMultiplier` at the map zoom a tile is drawn at. Before, it read them at the DEM tile's zoom: a band above the DEM's `maxzoom` was never used, and with 256 px DEM tiles every band started one zoom early.
 - [core] A contour source follows a new `raster-dem` source that gets the address of the one it replaced. Before, it compared addresses, kept no listener on the new source, and its lines stopped updating.
 - [core] A contour source no longer holds the map's load open when its `raster-dem` source has no data for a tile. A contour tile whose DEM tile has no content or fails completes with no lines, and the contour source makes the tiles its DEM source makes (same bounds, prefetch and parent-tile settings), so none waits for a DEM tile that never comes. While the DEM source or its tileset is not there, the contour source has no tiles; before, it made them from a guessed zoom range. A still render or a snapshot of such a view now finishes.
 - [core] Metal: fix a layer that drew nothing in one tile for a frame when one render pass drew the tile clipping masks three or more times (layers whose sources have different tile sets). A clipping-mask call bound a dead buffer's UBO, because the render pass's bind cache still held the previous call's temporary buffer at the same address.

@@ -6,6 +6,7 @@
 #include <mln/gfx/dynamic_texture_atlas.hpp>
 #include <mln/map/transform.hpp>
 #include <mln/renderer/image_manager.hpp>
+#include <mln/renderer/query.hpp>
 #include <mln/renderer/sources/render_contour_source.hpp>
 #include <mln/renderer/sources/render_raster_dem_source.hpp>
 #include <mln/renderer/tile_parameters.hpp>
@@ -22,9 +23,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <new>
 #include <optional>
+#include <string>
+#include <vector>
 
 using namespace mln;
 
@@ -88,10 +92,12 @@ public:
             *makeMutable<style::TileSource::Impl>(style::SourceType::RasterDEM, id, util::tileSize_I), tileset);
     }
 
-    Immutable<style::ContourSource::Impl> makeContourImpl(const std::string& id, const std::string& upstreamID) {
+    Immutable<style::ContourSource::Impl> makeContourImpl(const std::string& id,
+                                                          const std::string& upstreamID,
+                                                          std::vector<double> intervals = {100.0}) {
         style::ContourSourceOptions options;
         options.sourceID = upstreamID;
-        options.intervals.stops = {100.0};
+        options.intervals.stops = std::move(intervals);
         return makeMutable<style::ContourSource::Impl>(id, std::move(options));
     }
 };
@@ -470,4 +476,88 @@ TEST(RenderContourSource, ANewDEMSourceAtTheOldAddressIsListenedTo) {
     EXPECT_TRUE(contour.isLoaded());
 
     dem->~RenderRasterDEMSource();
+}
+
+namespace {
+
+// A terrarium DEM tile holding a 1000 m cone, so that it has lines at any
+// sensible interval.
+std::shared_ptr<const std::string> coneDEMTile() {
+    constexpr int dim = 64;
+    PremultipliedImage image({dim, dim});
+    for (int y = 0; y < dim; y++) {
+        for (int x = 0; x < dim; x++) {
+            const double value = 1000.0 - (30.0 * std::hypot(x - (dim / 2.0), y - (dim / 2.0))) + 32768.0;
+            uint8_t* pixel = image.data.get() + (static_cast<std::size_t>(y * dim + x) * 4);
+            pixel[0] = static_cast<uint8_t>(std::floor(value / 256.0));
+            pixel[1] = static_cast<uint8_t>(static_cast<int>(std::floor(value)) % 256);
+            pixel[2] = static_cast<uint8_t>((value - std::floor(value)) * 256.0);
+            pixel[3] = 255;
+        }
+    }
+    return std::make_shared<const std::string>(encodePNG(image));
+}
+
+// The contour features of a source at one zoom, over a DEM of that tile size
+// and maxzoom 12. (The contour tiles' features come back as the single layer
+// of their tile data.)
+std::vector<Feature> contourFeatures(double zoom, uint16_t demTileSize, std::vector<double> intervals) {
+    RenderContourSourceTest test;
+    test.tileset.rasterEncoding = Tileset::RasterEncoding::Terrarium;
+    test.transform.jumpTo(CameraOptions().withCenter(LatLng{10.0, 10.0}).withZoom(zoom));
+    test.transformState = test.transform.getState();
+    Immutable<style::TileSource::Impl> demImpl = makeMutable<style::TileSource::Impl>(
+        *makeMutable<style::TileSource::Impl>(style::SourceType::RasterDEM, "dem", demTileSize), test.tileset);
+    RenderRasterDEMSource dem(demImpl, test.threadPool);
+    auto contourImpl = test.makeContourImpl("contours", "dem", std::move(intervals));
+    RenderContourSource contour(contourImpl, test.threadPool);
+
+    auto params = test.makeParameters(
+        [&](const std::string& id) -> RenderSource* { return id == "dem" ? &dem : nullptr; });
+    auto update = [&] {
+        static_cast<RenderSource&>(dem).update(demImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+        contour.update(contourImpl, {}, /*needsRendering=*/true, /*needsRelayout=*/false, params);
+    };
+    update();
+    Response response;
+    response.data = coneDEMTile();
+    auto& fileSource = static_cast<FakeFileSource&>(*test.fileSource);
+    while (fileSource.respond(Resource::Tile, response)) {
+    }
+
+    util::Timer watchdog;
+    bool timedOut = false;
+    watchdog.start(std::chrono::seconds(30), Duration::zero(), [&] { timedOut = true; });
+    while (!contour.isLoaded() && !timedOut) {
+        test.loop.runOnce();
+        update();
+    }
+    EXPECT_TRUE(contour.isLoaded());
+    update();
+
+    SourceQueryOptions options;
+    options.sourceLayers = std::vector<std::string>{""};
+    return static_cast<RenderSource&>(contour).querySourceFeatures(options, nullptr);
+}
+
+double intervalOf(const std::vector<Feature>& features) {
+    EXPECT_FALSE(features.empty());
+    return features.empty() ? 0.0 : numericValue<double>(features.front().properties.at("interval")).value();
+}
+
+} // namespace
+
+// The schedule is read at the zoom of the map, not of the DEM tile. The DEM
+// stops at maxzoom 12 and, with 256 px tiles, its tile zoom is the map zoom + 1.
+TEST(RenderContourSource, TheIntervalFollowsTheMapZoomAboveTheDEMMaxzoom) {
+    const std::vector<double> schedule{200.0, 12.0, 100.0, 13.0, 50.0};
+    EXPECT_DOUBLE_EQ(50.0, intervalOf(contourFeatures(13.0, 512, schedule)));
+    EXPECT_DOUBLE_EQ(50.0, intervalOf(contourFeatures(13.0, 256, schedule)));
+}
+
+TEST(RenderContourSource, TheIntervalFollowsTheMapZoomWithSmallDEMTiles) {
+    const std::vector<double> schedule{200.0, 12.0, 100.0, 13.0, 50.0};
+    // Map zoom 11, DEM tile zoom 12: below the first stop.
+    EXPECT_DOUBLE_EQ(200.0, intervalOf(contourFeatures(11.0, 256, schedule)));
+    EXPECT_DOUBLE_EQ(100.0, intervalOf(contourFeatures(12.0, 512, schedule)));
 }
