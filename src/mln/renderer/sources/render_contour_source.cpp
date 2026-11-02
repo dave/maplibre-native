@@ -91,12 +91,7 @@ void RenderContourSource::update(Immutable<style::Source::Impl> baseImpl_,
                            // If the DEM tile has already settled, settle this one
                            // now: its notification came before this tile existed.
                            if (const RasterDEMTile* demTile = dem->getTile(tileID)) {
-                               if (demTile->isRenderable()) {
-                                   tile->populateFromDEM(*demTile,
-                                                         lineOptions(impl().getOptions(), tileID, dem->getTileSize()));
-                               } else if (demTile->isComplete()) {
-                                   tile->setNoData();
-                               }
+                               settle(*tile, *demTile, *dem);
                            }
                            return tile;
                        });
@@ -152,13 +147,7 @@ void RenderContourSource::rebindUpstream(const TileParameters& parameters) {
 }
 
 void RenderContourSource::onUpstreamTileLoaded(const RasterDEMTile& demTile) {
-    // One DEM arrival notifies its own tile and up to eight neighbours whose
-    // borders it backfilled, and several arrivals are often handled in one
-    // go. Keep the newest snapshot for each tile and populate each once,
-    // after the render thread's current messages. A snapshot, not the DEM
-    // tile: the DEM source and its tiles can go away before then. No snapshot:
-    // the DEM tile has no data, and the contour tile completes with no lines.
-    pendingPopulate.insert_or_assign(demTile.id, ContourTile::snapshot(demTile));
+    pendingPopulate.insert(demTile.id);
     if (populateScheduled) {
         return;
     }
@@ -179,20 +168,24 @@ void RenderContourSource::populatePending() {
         // the tiles built from it.
         return;
     }
-    for (const auto& [id, taken] : pending) {
+    for (const auto& id : pending) {
         Tile* match = tilePyramid.getTile(id);
-        if (match == nullptr) {
-            // No contour tile at this coord (yet, or any more) — the createTile
-            // callback settles one made later via getTile, so missing the
-            // notify is harmless.
+        const RasterDEMTile* demTile = dem->getTile(id);
+        if (match == nullptr || demTile == nullptr) {
+            // One of the two tiles is not there (yet, or any more). The createTile
+            // callback settles a contour tile made later, and a DEM tile made
+            // later notifies, so missing this notify is harmless.
             continue;
         }
-        auto& tile = static_cast<ContourTile&>(*match);
-        if (!taken) {
-            tile.setNoData();
-            continue;
-        }
-        tile.populate(*taken, lineOptions(impl().getOptions(), id, dem->getTileSize()));
+        settle(static_cast<ContourTile&>(*match), *demTile, *dem);
+    }
+}
+
+void RenderContourSource::settle(ContourTile& tile, const RasterDEMTile& demTile, const RenderRasterDEMSource& dem) {
+    if (demTile.isRenderable()) {
+        tile.populateFromDEM(demTile, lineOptions(impl().getOptions(), tile.id, dem.getTileSize()));
+    } else if (demTile.isComplete()) {
+        tile.setNoData();
     }
 }
 

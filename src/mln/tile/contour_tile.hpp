@@ -56,9 +56,11 @@ public:
 
     // Populate the tile from an upstream DEM tile that just finished parsing.
     //
-    // Each call starts a new generation. The work runs on the tile's thread
-    // pool, so calls can finish in any order; only the newest generation's
-    // result is applied (see `populatedGeneration`).
+    // Each call starts a new generation. One build runs on the tile's thread
+    // pool at a time. A call made while one runs waits for it, and only the
+    // newest such call is built, so neighbours arriving together cost one more
+    // build. Only the newest generation's result is applied (see
+    // `populatedGeneration`), so a tile draws once for those calls.
     void populateFromDEM(const RasterDEMTile& demTile, const LineOptions&);
 
     // A copy of a DEM tile's buffered image as it is now, to populate from
@@ -86,7 +88,17 @@ public:
     std::uint64_t populatedGeneration() const { return appliedGeneration; }
 
 private:
+    void startBuild(const DEMSnapshot&, const LineOptions&);
+
+    struct PendingBuild {
+        DEMSnapshot snapshot;
+        LineOptions options;
+    };
+
     TaggedScheduler threadPool;
+    bool buildRunning = false;
+    // The newest call made while a build ran.
+    std::optional<PendingBuild> nextBuild;
     std::uint64_t requestedGeneration = 0;
     std::uint64_t appliedGeneration = 0;
     // `requestedGeneration` for the jobs, which skip their work once a newer
