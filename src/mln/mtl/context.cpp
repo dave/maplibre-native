@@ -423,13 +423,6 @@ bool Context::renderTileClippingMasks(gfx::RenderPass& renderPass,
 
     mtlRenderPass.bindVertex(vertexRes, /*offset=*/0, ShaderClass::attributes[0].bufferIndex);
 
-    // The render pass skips a bind of the same BufferResource at the same offset. A second call
-    // in one render pass builds `tempBuffer` at the same stack address as the last one, so its
-    // first bind (offset 0) matched the dead buffer and was skipped: the first tile's mask was
-    // drawn with the previous call's UBO (another tile's matrix), and that tile's fills then
-    // failed the stencil test for the frame. Forget the cached bind so each call binds its own.
-    mtlRenderPass.unbindVertex(shaders::idClippingMaskUBO);
-
     // Instancing is disabled for now because the `[[stencil]]` attribute in the fragment shader output
     // that we need to apply a different stencil value for each tile causes a problem on some older (A8-A11)
     // devices, specifically `XPC_ERROR_CONNECTION_INTERRUPTED` when creating a render pipeline state.
@@ -455,6 +448,14 @@ bool Context::renderTileClippingMasks(gfx::RenderPass& renderPass,
                                        /*instanceCount=*/1);
     }
 #endif
+
+    // The render pass remembers the last BufferResource bound to each slot, by address, and skips
+    // a bind of the same address and offset. `tempBuffer` dies when this function returns, and the
+    // next call in the render pass builds its own at the same stack address. If the slot still held
+    // the dead buffer, that call's first bind matched it and was skipped: its first tile's mask was
+    // drawn with the previous call's UBO (another tile's matrix), and that tile's layer failed the
+    // stencil test for the frame. Forget the bind, so the slot never holds a buffer that is gone.
+    mtlRenderPass.unbindVertex(shaders::idClippingMaskUBO);
 
     stats.numDrawCalls++;
     stats.totalDrawCalls++;

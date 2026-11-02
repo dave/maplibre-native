@@ -40,6 +40,7 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] Metal: fix a layer that drew nothing in one tile for a frame when one render pass drew the tile clipping masks three or more times (layers whose sources have different tile sets). A clipping-mask call bound a dead buffer's UBO, because the render pass's bind cache still held the previous call's temporary buffer at the same address.
 - [core] OpenGL ES: a data-driven opacity is unpacked and mixed at high precision before it is clamped, in every shader that has one (circle, symbol, and the pattern, gradient and SDF line and fill shaders). A low-precision float need only hold -2..2, so a large opacity stop was undefined before the clamp on mobile GPUs.
 - [core] Fix a render-target leak in `RenderHillshadeLayer`: a tile that prepares again after a neighbour loads frees its old render target. Before, each old target stayed alive, and was drawn every frame, until the layer stopped rendering.
 - [core] WebGPU: `RenderingStats::numFrameBuffers` now counts an offscreen texture when it is made, as on Metal, Vulkan and OpenGL. Before, it was only decremented when one was freed, so it went below zero.
