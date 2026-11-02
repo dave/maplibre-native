@@ -17,6 +17,24 @@ import org.maplibre.android.testapp.activity.EspressoTest
 class NoFadeInSourcesTest : EspressoTest() {
 
     @Test
+    fun theIdsAreReadBackAsASet() {
+        validateTestSetup()
+        MapLibreMapAction.invoke(maplibreMap) { _, map ->
+            assertEquals(emptySet<String>(), map.noFadeInSources.toSet())
+
+            map.setNoFadeInSources(arrayOf("labels", "names", "labels"))
+            assertEquals(2, map.noFadeInSources.size)
+            assertEquals(setOf("labels", "names"), map.noFadeInSources.toSet())
+
+            map.setNoFadeInSources(arrayOf("names"))
+            assertEquals(setOf("names"), map.noFadeInSources.toSet())
+
+            map.setNoFadeInSources(emptyArray())
+            assertEquals(emptySet<String>(), map.noFadeInSources.toSet())
+        }
+    }
+
+    @Test
     fun aNullIdIsRefusedAndTheIdsSetBeforeAreKept() {
         validateTestSetup()
         MapLibreMapAction.invoke(maplibreMap) { _, map ->
