@@ -170,7 +170,7 @@ std::vector<std::vector<algorithm::contour::Point2D>> clipPolylineToTile(
 //
 // Per-feature properties (per the maplibre-style-spec contour-source
 // proposal, #583):
-//   ele      — elevation in display units (rounded int).
+//   ele      — elevation in display units: a whole number for a whole interval.
 //   interval — the contour spacing this tile was generated at, in display
 //              units.
 //   major    — true iff the line's elevation is a multiple of
@@ -193,8 +193,9 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
     mapbox::feature::feature_collection<std::int16_t> features;
     features.reserve(lines.size());
 
-    const std::int64_t intervalRound = static_cast<std::int64_t>(std::llround(intervalDisplayUnits));
-    const std::int64_t majorMod = (majorMultiplier > 0 && intervalRound > 0) ? intervalRound * majorMultiplier : 0;
+    // A whole interval has whole `ele` and `interval` values, for filters such as
+    // ["%", ["get", "ele"], 100]. A fractional one keeps its fraction.
+    const bool wholeInterval = intervalDisplayUnits == std::floor(intervalDisplayUnits);
 
     std::vector<algorithm::contour::Point2D> work;
     for (const auto& line : lines) {
@@ -220,15 +221,23 @@ mapbox::feature::feature_collection<std::int16_t> toFeatures(
                     {static_cast<std::int16_t>(std::lround(p[0])), static_cast<std::int16_t>(std::lround(p[1]))});
             }
 
-            // Round elevation to integer display units before emission.
+            // Lines lie on multiples of the interval. Work with that number of
+            // intervals, not with the elevation: it is exact, and it is what
+            // makes a line major.
             const double elevDisplay = algorithm::contour::metersToUnit(line.elevation, unit);
-            const std::int64_t elev = static_cast<std::int64_t>(std::llround(elevDisplay));
+            const std::int64_t level = std::llround(elevDisplay / intervalDisplayUnits);
 
             mapbox::feature::feature<std::int16_t> f;
             f.geometry = std::move(ls);
-            f.properties["ele"] = elev;
-            f.properties["interval"] = intervalRound;
-            f.properties["major"] = (majorMod > 0) && (elev % majorMod == 0);
+            if (wholeInterval) {
+                const auto interval = static_cast<std::int64_t>(intervalDisplayUnits);
+                f.properties["ele"] = level * interval;
+                f.properties["interval"] = interval;
+            } else {
+                f.properties["ele"] = static_cast<double>(level) * intervalDisplayUnits;
+                f.properties["interval"] = intervalDisplayUnits;
+            }
+            f.properties["major"] = level % majorMultiplier == 0;
             features.push_back(std::move(f));
         }
     }
