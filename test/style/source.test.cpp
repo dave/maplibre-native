@@ -14,6 +14,8 @@
 #include <mln/style/layers/raster_layer_impl.hpp>
 #include <mln/style/source_impl.hpp>
 #include <mln/style/sources/custom_geometry_source.hpp>
+#include <mln/style/conversion/json.hpp>
+#include <mln/style/conversion/source.hpp>
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/sources/image_source.hpp>
 #include <mln/style/sources/raster_dem_source.hpp>
@@ -1185,4 +1187,24 @@ TEST(Source, RasterDEMTileRoundsCoveringZoom) {
     for (const auto z : requestedZooms) {
         EXPECT_EQ(5, z);
     }
+}
+
+// A GeoJSON source whose options do not convert fails, with the reason. It is
+// not made with the default options.
+TEST(Source, GeoJSONSourceOptionsThatDoNotConvertFailTheSource) {
+    const auto convert = [](const std::string& options, conversion::Error& error) {
+        return conversion::convertJSON<std::unique_ptr<Source>>(
+            R"({"type": "geojson", "data": {"type": "FeatureCollection", "features": []})" + options + "}",
+            error,
+            std::string("source"));
+    };
+
+    conversion::Error error;
+    EXPECT_FALSE(convert(R"(, "maxzoom": "high")", error));
+    EXPECT_EQ("GeoJSON source maxzoom value must be a number", error.message);
+
+    conversion::Error none;
+    const auto good = convert(R"(, "maxzoom": 5)", none);
+    ASSERT_TRUE(good) << none.message;
+    EXPECT_EQ(5, (*good)->as<GeoJSONSource>()->getOptions().maxzoom);
 }

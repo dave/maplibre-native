@@ -24,6 +24,7 @@
 ### ✨ Technical Improvements
 
 - *...Add new stuff here...*
+- [core] **Behaviour change.** A GeoJSON source whose options do not convert (for example, `"maxzoom": "high"`) now fails to parse, with the reason. Before, it was made with the default options and the error was dropped, so a style that loaded before can now report this source as an error.
 - [core] `GeoJSONSource::setLandingLimit` to a generation whose body the bound of `maxHeldBodies` has freed is a source error; before, it landed nothing and said nothing.
 - [core] A tile made in the frame that raises a GeoJSON source's landing limit below its newest body draws the body at the limit, not the body from before the hold.
 - [core] `GeoJSONSource::setGeoJSONData(data, generation)` refuses a body older than one that has landed. A body older than a pending URL no longer cancels that URL's request.
