@@ -7,6 +7,16 @@ MapLibre welcomes participation and contributions from everyone. Please read [`M
 - Move `+[MLNShapeSource setRecordsLabelSteps:]` and `+[MLNShapeSource takeLabelSteps]`, the step recorder for debug probes and tests, from `MLNShapeSource.h` to the private header `MLNShapeSource_Private.h`. They are not public API. While the recorder is off it allocates nothing.
 - Add `MLNSource.isVolatile`: a source whose tiles are never written to the ambient cache on disk, as `Source.setVolatile()` on Android ([#4843](https://github.com/maplibre/maplibre-native/issues/4843)).
 - Make symbol guard checks opt-in, so symbol-dense tiles load faster. To keep them, set the environment variable `MLN_SYMBOL_GUARDS=1` before the first map loads.
+- Add `MLNMapView.noFadeInSourceIdentifiers`: the sources whose symbols appear at full opacity when first placed, with no fade-in.
+- Add `-[MLNMapView setZoomLevel:aroundAnchorPoint:duration:animationTimingFunction:]`: an animated zoom to an exact level that keeps the coordinate under a point at that point.
+- Add `-[MLNMapViewDelegate mapView:willGlideToCenter:zoomLevel:direction:pitch:duration:]`, called with the camera a glide ends at, and `-[MLNMapView visibleCoordinateBoundsAtCenter:zoomLevel:direction:pitch:]`, the visible bounds at a camera the map is not at.
+- Add `MLNShapeSourceOptionLabelLane`, a GeoJSON source whose bodies are cut and laid out on a worker thread, off the map's thread; `MLNShapeSource.dataGeneration`, the number of the latest body or layer change; and `-[MLNMapViewDelegate mapView:sourceDidLayOut:generation:]`, called when every tile in view of a source is laid out with a generation.
+- Add `MLNShapeSource.landingLimit`: hold a GeoJSON source at a data generation, so that newer bodies are laid out but not drawn until the limit is raised.
+- Add `MLNTileSource.prefetchZoomDelta`: a tile source's own prefetch zoom delta, in place of the map's.
+- Add `-[MLNTileSource reloadEmptyTiles]`: ask again for the tiles in view whose last answer was empty or an error, without clearing the tiles on screen.
+- Add `MLNMapView.keepsRenderingOffWindow`: a map view that keeps rendering while its view tree is out of the window, for example under a pushed navigation page.
+- A source in a style keeps its `MLNSource` object until it leaves the style, so a lookup returns the same object with its state. The object, and for `MLNShapeSource` its shape, stays in memory while the source is in the style.
+- Fix a crash in `MLNNetworkConfiguration` when two downloads for one path complete at once. Download events are now recorded only while a metrics delegate is set.
 
 ## 7.0.0
 
