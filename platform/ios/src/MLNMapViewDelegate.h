@@ -184,15 +184,26 @@ NS_ASSUME_NONNULL_BEGIN
                      animated:(BOOL)animated;
 
 /**
- Tells the delegate that a glide is about to start, and where it ends.
+ Tells the delegate that a glide has started, and where it ends.
 
- Called before the glide's first frame, for a pan fling, a pinch's zoom
- fling, and `-setZoomLevel:aroundAnchorPoint:duration:animationTimingFunction:`
- with a duration. Nothing is reported for a rotation. The end camera is the
- one the glide stops at: the same move run on a copy of the map's state to
- its last frame. The map's padding is unchanged by a glide. The glide can
- still be cut short (a touch, a pinch's snap to north, or any other camera
- change); the next camera idle tells.
+ Called once the glide has started, before its first frame, for a pan fling;
+ a zoom about a point that a gesture starts: a pinch's zoom fling, the double
+ tap and the two-finger tap; and
+ `-setZoomLevel:aroundAnchorPoint:duration:animationTimingFunction:` with a
+ duration (the anchored zoom an app's own tap gesture makes). Nothing is
+ reported for a rotation, or for any other camera change. The end camera is
+ the one the glide stops at: the same move run on a copy of the map's state
+ to its last frame. The map's padding is unchanged by a glide.
+
+ A pan, zoom or rotation fling that starts at the same lift as another cuts it
+ short, so neither is reported. A fling at a later lift is reported in turn,
+ and the newest report holds. The same event set is reported on Android
+ (`OnCameraGlideListener`), which also passes the kind of glide and adds its
+ zoom keys; the anchored zoom method above exists only on iOS.
+
+ The glide can still be cut short: by a touch, a gesture's snap to north, or
+ any other camera change, including one this method makes. The next camera
+ idle tells.
 
  @param mapView The map view about to glide.
  @param center The center coordinate the glide ends at.
