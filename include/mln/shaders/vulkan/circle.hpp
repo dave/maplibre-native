@@ -187,7 +187,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_opacity)
-    frag_opacity = unpack_mix_float(in_opacity, drawable.opacity_t);
+    frag_opacity = clamp(unpack_mix_float(in_opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
 #if !defined(HAS_UNIFORM_u_stroke_color)
@@ -199,7 +199,7 @@ void main() {
 #endif
 
 #if !defined(HAS_UNIFORM_u_stroke_opacity)
-    frag_stroke_opacity = unpack_mix_float(in_stroke_opacity, drawable.stroke_opacity_t);
+    frag_stroke_opacity = clamp(unpack_mix_float(in_stroke_opacity, drawable.stroke_opacity_t), 0.0, 1.0);
 #endif
 }
 )";

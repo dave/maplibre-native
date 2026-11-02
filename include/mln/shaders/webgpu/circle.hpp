@@ -118,7 +118,7 @@ fn main(in: VertexInput) -> VertexOutput {
 
     var opacity = props.opacity;
 #ifndef HAS_UNIFORM_u_opacity
-    opacity = unpack_mix_float(in.opacity, drawable.opacity_t);
+    opacity = clamp(unpack_mix_float(in.opacity, drawable.opacity_t), 0.0, 1.0);
 #endif
 
     var stroke_color = props.stroke_color;
@@ -133,7 +133,7 @@ fn main(in: VertexInput) -> VertexOutput {
 
     var stroke_opacity = props.stroke_opacity;
 #ifndef HAS_UNIFORM_u_stroke_opacity
-    stroke_opacity = unpack_mix_float(in.stroke_opacity, drawable.stroke_opacity_t);
+    stroke_opacity = clamp(unpack_mix_float(in.stroke_opacity, drawable.stroke_opacity_t), 0.0, 1.0);
 #endif
 
     let radius_with_stroke = radius + stroke_width;

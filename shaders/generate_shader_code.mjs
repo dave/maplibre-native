@@ -112,6 +112,15 @@ ${precision} ${type} ${name} = u_${name};
     });
 };
 
+// Unpacks a data-driven attribute in a vertex shader. A data-driven opacity
+// (`opacity`, `stroke_opacity`) is clamped to 0..1. A style can then give each
+// feature an unclamped straight line in zoom that crosses 0 and 1 at the
+// feature's own zooms, and the clamp turns it into a per-feature step or fade.
+const unpackMix = (name, unpackType) => {
+    const unpacked = `unpack_mix_${unpackType}(a_${name}, u_${name}_t)`;
+    return name.endsWith('opacity') ? `clamp(${unpacked}, 0.0, 1.0)` : unpacked;
+};
+
 /// This variant does not emit any uniforms and instead controls access to UBOs
 const pragmaMapConvertOnlyVertexArrays = (source, pragmaMap, attribLocations, pipelineStage) => {
     const re = /#pragma mapbox: ([\w]+) ([\w]+) ([\w]+) ([\w]+)/g;
@@ -152,13 +161,8 @@ ${name} = a_${name};
 ${precision} ${type} ${name} = u_${name};
 #endif`;
                 } else {
-                    // A data-driven opacity is clamped to 0..1. A style can then give each feature
-                    // an unclamped straight line in zoom that crosses 0 and 1 at the feature's own
-                    // zooms, and the clamp turns it into a per-feature step or fade.
-                    const unpacked = `unpack_mix_${unpackType}(a_${name}, u_${name}_t)`;
-                    const value = name === 'opacity' ? `clamp(${unpacked}, 0.0, 1.0)` : unpacked;
                     return `#ifndef HAS_UNIFORM_u_${name}
-${name} = ${value};
+${name} = ${unpackMix(name, unpackType)};
 #else
 ${precision} ${type} ${name} = u_${name};
 #endif`;
@@ -179,7 +183,7 @@ ${precision} ${type} ${name} = u_${name};
 #endif`;
                 } else /* */{
                     return `#ifndef HAS_UNIFORM_u_${name}
-${precision} ${type} ${name} = unpack_mix_${unpackType}(a_${name}, u_${name}_t);
+${precision} ${type} ${name} = ${unpackMix(name, unpackType)};
 #else
 ${precision} ${type} ${name} = u_${name};
 #endif`;

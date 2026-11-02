@@ -188,7 +188,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .blur           = half(unpack_mix_float(vertx.blur, drawable.blur_t)),
 #endif
 #if !defined(HAS_UNIFORM_u_opacity)
-        .opacity        = half(unpack_mix_float(vertx.opacity, drawable.opacity_t)),
+        .opacity        = half(saturate(unpack_mix_float(vertx.opacity, drawable.opacity_t))),
 #endif
 #if !defined(HAS_UNIFORM_u_stroke_color)
         .stroke_color   = half4(unpack_mix_color(vertx.stroke_color, drawable.stroke_color_t)),
@@ -197,7 +197,7 @@ FragmentStage vertex vertexMain(thread const VertexStage vertx [[stage_in]],
         .stroke_width   = half(stroke_width),
 #endif
 #if !defined(HAS_UNIFORM_u_stroke_opacity)
-        .stroke_opacity = half(unpack_mix_float(vertx.stroke_opacity, drawable.stroke_opacity_t)),
+        .stroke_opacity = half(saturate(unpack_mix_float(vertx.stroke_opacity, drawable.stroke_opacity_t))),
 #endif
     };
 }
