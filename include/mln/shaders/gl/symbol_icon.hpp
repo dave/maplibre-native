@@ -71,8 +71,8 @@ out vec2 v_tex;
 out float v_fade_opacity;
 
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 5) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 5) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 
 void main() {
@@ -81,7 +81,7 @@ void main() {
     #ifndef HAS_UNIFORM_u_opacity
 opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
 
     vec2 a_pos = a_pos_offset.xy;

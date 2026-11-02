@@ -62,8 +62,8 @@ layout (location = 1) in highp vec4 a_color;
 out highp vec4 color;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 2) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 2) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 #ifndef HAS_UNIFORM_u_pattern_from
 layout (location = 3) in lowp vec4 a_pattern_from;
@@ -83,7 +83,7 @@ highp vec4 color = u_color;
     #ifndef HAS_UNIFORM_u_opacity
 opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
     #ifndef HAS_UNIFORM_u_pattern_from
 pattern_from = a_pattern_from;

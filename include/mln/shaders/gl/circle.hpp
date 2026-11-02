@@ -30,10 +30,10 @@ layout (std140) uniform CircleDrawableUBO {
     lowp float u_color_t;
     lowp float u_radius_t;
     lowp float u_blur_t;
-    lowp float u_opacity_t;
+    highp float u_opacity_t;
     lowp float u_stroke_color_t;
     lowp float u_stroke_width_t;
-    lowp float u_stroke_opacity_t;
+    highp float u_stroke_opacity_t;
     lowp float drawable_pad1;
     lowp float drawable_pad2;
     lowp float drawable_pad3;
@@ -65,8 +65,8 @@ layout (location = 3) in lowp vec2 a_blur;
 out lowp float blur;
 #endif
 #ifndef HAS_UNIFORM_u_opacity
-layout (location = 4) in lowp vec2 a_opacity;
-out lowp float opacity;
+layout (location = 4) in highp vec2 a_opacity;
+out highp float opacity;
 #endif
 #ifndef HAS_UNIFORM_u_stroke_color
 layout (location = 5) in highp vec4 a_stroke_color;
@@ -77,8 +77,8 @@ layout (location = 6) in mediump vec2 a_stroke_width;
 out mediump float stroke_width;
 #endif
 #ifndef HAS_UNIFORM_u_stroke_opacity
-layout (location = 7) in lowp vec2 a_stroke_opacity;
-out lowp float stroke_opacity;
+layout (location = 7) in highp vec2 a_stroke_opacity;
+out highp float stroke_opacity;
 #endif
 
 void main(void) {
@@ -100,7 +100,7 @@ lowp float blur = u_blur;
     #ifndef HAS_UNIFORM_u_opacity
 opacity = clamp(unpack_mix_vec2(a_opacity, u_opacity_t), 0.0, 1.0);
 #else
-lowp float opacity = u_opacity;
+highp float opacity = u_opacity;
 #endif
     #ifndef HAS_UNIFORM_u_stroke_color
 stroke_color = unpack_mix_color(a_stroke_color, u_stroke_color_t);
@@ -115,7 +115,7 @@ mediump float stroke_width = u_stroke_width;
     #ifndef HAS_UNIFORM_u_stroke_opacity
 stroke_opacity = clamp(unpack_mix_vec2(a_stroke_opacity, u_stroke_opacity_t), 0.0, 1.0);
 #else
-lowp float stroke_opacity = u_stroke_opacity;
+highp float stroke_opacity = u_stroke_opacity;
 #endif
 
     // unencode the extrusion vector that we snuck into the a_pos vector
