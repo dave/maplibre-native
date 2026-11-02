@@ -453,7 +453,6 @@ list(APPEND INCLUDE_FILES
     ${PROJECT_SOURCE_DIR}/include/mln/util/indexed_tuple.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/instrumentation.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/interpolate.hpp
-    ${PROJECT_SOURCE_DIR}/include/mln/util/label_steps.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/listener_set.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/logging.hpp
     ${PROJECT_SOURCE_DIR}/include/mln/util/lru_cache.hpp
@@ -1019,6 +1018,7 @@ list(APPEND SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/mln/util/rapidjson.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/std.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/label_steps.cpp
+    ${PROJECT_SOURCE_DIR}/src/mln/util/label_steps.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/stopwatch.cpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/stopwatch.hpp
     ${PROJECT_SOURCE_DIR}/src/mln/util/string.cpp

@@ -4,6 +4,7 @@ MapLibre welcomes participation and contributions from everyone. Please read [`M
 
 ## main
 
+- Move `+[MLNShapeSource setRecordsLabelSteps:]` and `+[MLNShapeSource takeLabelSteps]`, the step recorder for debug probes and tests, from `MLNShapeSource.h` to the private header `MLNShapeSource_Private.h`. They are not public API. While the recorder is off it allocates nothing.
 - Add `MLNSource.isVolatile`: a source whose tiles are never written to the ambient cache on disk, as `Source.setVolatile()` on Android ([#4843](https://github.com/maplibre/maplibre-native/issues/4843)).
 - Make symbol guard checks opt-in, so symbol-dense tiles load faster. To keep them, set the environment variable `MLN_SYMBOL_GUARDS=1` before the first map loads.
 
