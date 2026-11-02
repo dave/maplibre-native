@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace mln {
@@ -295,6 +296,7 @@ std::optional<ContourTile::DEMSnapshot> ContourTile::snapshot(const RasterDEMTil
 void ContourTile::setNoData() {
     appliedGeneration = ++requestedGeneration;
     latestGeneration->store(requestedGeneration);
+    nextBuild.reset();
     setData(nullptr);
 }
 
@@ -362,8 +364,17 @@ mapbox::feature::feature_collection<std::int16_t> ContourTile::buildFeatures(con
 }
 
 void ContourTile::populate(const DEMSnapshot& snapshot_, const LineOptions& options) {
-    const std::uint64_t generation = ++requestedGeneration;
-    latestGeneration->store(generation);
+    latestGeneration->store(++requestedGeneration);
+    if (buildRunning) {
+        nextBuild = PendingBuild{.snapshot = snapshot_, .options = options};
+        return;
+    }
+    startBuild(snapshot_, options);
+}
+
+void ContourTile::startBuild(const DEMSnapshot& snapshot_, const LineOptions& options) {
+    buildRunning = true;
+    const std::uint64_t generation = requestedGeneration;
     threadPool.scheduleAndReplyValue(
         [snapshot_, options, generation, latest = latestGeneration]()
             -> mapbox::feature::feature_collection<std::int16_t> {
@@ -377,15 +388,16 @@ void ContourTile::populate(const DEMSnapshot& snapshot_, const LineOptions& opti
         [self = weakFactory.makeWeakPtr(), this, generation](
             mapbox::feature::feature_collection<std::int16_t> features) {
             if (auto guard = self.lock(); self) {
-                // A later call (e.g. after a neighbour's border backfill)
-                // supersedes this one; the jobs run in parallel and can
-                // finish in either order, so drop an older result rather
-                // than let it replace a newer one.
-                if (generation != requestedGeneration) {
-                    return;
+                buildRunning = false;
+                if (generation == requestedGeneration) {
+                    appliedGeneration = generation;
+                    setData(std::make_unique<GeoJSONTileData>(std::move(features)));
+                } else if (nextBuild) {
+                    // A later call (e.g. after a neighbour's border backfill)
+                    // supersedes this result. Build the newest one.
+                    const PendingBuild next = *std::exchange(nextBuild, std::nullopt);
+                    startBuild(next.snapshot, next.options);
                 }
-                appliedGeneration = generation;
-                setData(std::make_unique<GeoJSONTileData>(std::move(features)));
             }
         });
 }
