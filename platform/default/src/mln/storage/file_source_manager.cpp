@@ -7,6 +7,7 @@
 #include <mln/storage/mbtiles_file_source.hpp>
 #include <mln/storage/pmtiles_file_source.hpp>
 #include <mln/storage/resource_options.hpp>
+#include <mln/storage/resource_provider_file_source.hpp>
 
 namespace mln {
 
@@ -17,6 +18,11 @@ public:
                                   [](const ResourceOptions& resourceOptions, const ClientOptions& clientOptions) {
                                       return std::make_unique<MainResourceLoader>(resourceOptions, clientOptions);
                                   });
+
+        registerFileSourceFactory(
+            FileSourceType::Provider, [](const ResourceOptions& resourceOptions, const ClientOptions& clientOptions) {
+                return std::make_unique<ResourceProviderFileSource>(resourceOptions, clientOptions);
+            });
 
         registerFileSourceFactory(FileSourceType::Asset,
                                   [](const ResourceOptions& resourceOptions, const ClientOptions& clientOptions) {

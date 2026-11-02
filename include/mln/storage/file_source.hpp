@@ -26,6 +26,7 @@ enum FileSourceType : uint8_t {
     Network,
     Mbtiles,
     Pmtiles,
+    Provider,      ///< The URL schemes with a registered `ResourceProvider`.
     ResourceLoader ///< %Resource loader acts as a proxy and has logic
     /// for request delegation to Asset, Cache, and other
     /// file sources.
