@@ -2,6 +2,7 @@
 
 ## main
 
+- Fix a `raster-dem` source from style JSON getting an `UnknownSource` Java object. `Style.getSource()` now gives a `RasterDemSource`, so `uri` and `reloadEmptyTiles()` can reach it.
 - Mark `LabelSteps`, the step recorder for debug probes and tests, `@RestrictTo(LIBRARY_GROUP)`: it is not public API. While the recorder is off it allocates nothing.
 - Add `MapLibreMap.addOnCameraGlideListener()`: a pan fling, a scale fling, a double tap, a two-finger tap or a zoom key reports the camera its glide ends at, once the glide has started and before its first frame. A pan fling is reported at the end of its lift, so a zoom glide from the same lift, which cuts it short, stops the report whichever gesture detector ran first. A destroyed map reports nothing. The listener also gets a `GlideKind` (`PAN` or `ZOOM`), which is Android only: the iOS report has no kind.
 - ⚠️ Binary break: `GeoJsonSource.setGeoJson(...)` now returns `Long?` (the body's data generation; null for a detached source) and `setUri(...)` returns `Long`. Both returned `Unit` (JVM `void`) before. Source code that ignores the result compiles unchanged, but an app or library compiled against an earlier release gets `NoSuchMethodError` until it is rebuilt.

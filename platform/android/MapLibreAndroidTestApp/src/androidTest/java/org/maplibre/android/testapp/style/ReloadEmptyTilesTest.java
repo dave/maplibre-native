@@ -9,14 +9,18 @@ import org.junit.runner.RunWith;
 import org.maplibre.android.camera.CameraUpdateFactory;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.Style;
 import org.maplibre.android.module.http.HttpRequestUtil;
 import org.maplibre.android.style.layers.LineLayer;
+import org.maplibre.android.style.sources.RasterDemSource;
+import org.maplibre.android.style.sources.Source;
 import org.maplibre.android.style.sources.TileSet;
 import org.maplibre.android.style.sources.VectorSource;
 import org.maplibre.android.testapp.action.MapLibreMapAction;
 import org.maplibre.android.testapp.activity.EspressoTest;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import okhttp3.MediaType;
@@ -25,6 +29,8 @@ import okhttp3.Protocol;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 /**
@@ -36,6 +42,9 @@ import static org.junit.Assert.fail;
 public class ReloadEmptyTilesTest extends EspressoTest {
   private static final long BOUND_MS = 30_000;
   private static final String HOST = "reload-empty-tiles.test";
+  private static final String DEM_STYLE = "{\"version\":8,\"sources\":{\"dem\":{\"type\":\"raster-dem\","
+    + "\"tiles\":[\"https://" + HOST + "/{z}/{x}/{y}.png\"]}},"
+    + "\"layers\":[{\"id\":\"shade\",\"type\":\"hillshade\",\"source\":\"dem\"}]}";
 
   /** Tile requests to {@link #HOST}, each answered 204. */
   private final AtomicInteger tileRequests = new AtomicInteger();
@@ -55,9 +64,8 @@ public class ReloadEmptyTilesTest extends EspressoTest {
     HttpRequestUtil.setOkHttpClient(null);
   }
 
-  @Test
-  public void reloadEmptyTilesAsksAgainForATileThatAnswered204() {
-    validateTestSetup();
+  /** Answers every request to {@link #HOST} with a 204, and counts it. */
+  private void answerTileRequestsWith204() {
     HttpRequestUtil.setOkHttpClient(new OkHttpClient.Builder()
       .addInterceptor(chain -> {
         if (!chain.request().url().host().equals(HOST)) {
@@ -73,6 +81,42 @@ public class ReloadEmptyTilesTest extends EspressoTest {
           .build();
       })
       .build());
+  }
+
+  @Test
+  public void rasterDemSourceFromStyleJsonIsARasterDemSourceAndAsksAgain() {
+    validateTestSetup();
+    answerTileRequestsWith204();
+
+    MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
+      AtomicInteger idle = new AtomicInteger();
+      MapView.OnDidBecomeIdleListener listener = idle::incrementAndGet;
+      mapView.addOnDidBecomeIdleListener(listener);
+
+      AtomicReference<Style> loaded = new AtomicReference<>();
+      maplibreMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(0, 0), 2));
+      int idleBefore = idle.get();
+      maplibreMap.setStyle(new Style.Builder().fromJson(DEM_STYLE), loaded::set);
+      waitFor(uiController, () -> loaded.get() != null, "the style loaded");
+
+      Source source = loaded.get().getSource("dem");
+      assertNotNull(source);
+      assertEquals(RasterDemSource.class, source.getClass());
+
+      waitFor(uiController, () -> tileRequests.get() > 0 && idle.get() > idleBefore,
+        "the tiles asked for and the map idle");
+      int asked = tileRequests.get();
+
+      ((RasterDemSource) source).reloadEmptyTiles();
+      waitFor(uiController, () -> tileRequests.get() > asked, "an empty tile asked for again");
+      mapView.removeOnDidBecomeIdleListener(listener);
+    });
+  }
+
+  @Test
+  public void reloadEmptyTilesAsksAgainForATileThatAnswered204() {
+    validateTestSetup();
+    answerTileRequestsWith204();
 
     MapLibreMapAction.invoke(maplibreMap, (uiController, maplibreMap) -> {
       AtomicInteger idle = new AtomicInteger();
