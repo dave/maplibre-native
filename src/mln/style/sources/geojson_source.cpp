@@ -92,19 +92,26 @@ uint64_t GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData)
 }
 
 void GeoJSONSource::setGeoJSONData(std::shared_ptr<GeoJSONData> geoJSONData, uint64_t generation) {
-    req.reset();
-    // The inline data is the source's body now, and any URL request is
-    // cancelled: the source stands loaded, so that a later setURL signals a
-    // reload. Left false, a setURL after this saw neither a loaded source nor
-    // a request and never asked for its URL, for the life of the style.
-    loaded = true;
-    // A URL body still being parsed is older: it must not replace this one.
-    ++requestGeneration;
+    if (generation < newestBody) {
+        // A newer body has landed: this one must not replace it.
+        return;
+    }
+    if (generation >= pendingBody) {
+        req.reset();
+        // The inline data is the source's body now, and any URL request is
+        // cancelled: the source stands loaded, so that a later setURL signals a
+        // reload. Left false, a setURL after this saw neither a loaded source nor
+        // a request and never asked for its URL, for the life of the style.
+        loaded = true;
+        // A URL body still being parsed is older: it must not replace this one.
+        ++requestGeneration;
+    }
     baseImpl = makeMutable<Impl>(impl(), std::move(geoJSONData), landingGeneration(generation));
     observer->onSourceChanged(*this);
 }
 
 uint64_t GeoJSONSource::landingGeneration(uint64_t generation) {
+    newestBody = generation;
     if (pendingBody && generation == pendingBody) {
         // The newest body asked for lands: it covers every generation given
         // out since (layer changes made while it was pending), so it takes
