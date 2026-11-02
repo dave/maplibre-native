@@ -4,7 +4,7 @@
 #include <mln/style/sources/geojson_source.hpp>
 #include <mln/actor/optional_actor.hpp>
 
-#include <chrono>
+#include <mln/util/label_steps.hpp>
 #include "../../geojson/geometry.hpp"
 #include "../../geojson/feature.hpp"
 #include "../../geojson/feature_collection.hpp"
@@ -27,11 +27,11 @@ public:
         : options(std::move(options_)),
           sequencedScheduler(std::move(sequencedScheduler_)),
           sourceID(std::move(sourceID_)) {}
-    void convertJson(std::shared_ptr<std::string>, std::chrono::duration<double> queued, ActorRef<GeoJSONDataCallback>);
+    void convertJson(std::shared_ptr<std::string>, util::LabelSteps::Queued queued, ActorRef<GeoJSONDataCallback>);
 
     template <class JNIType>
     void convertObject(std::shared_ptr<jni::Global<jni::Object<JNIType>, jni::EnvAttachingDeleter>>,
-                       std::chrono::duration<double> queued,
+                       util::LabelSteps::Queued queued,
                        ActorRef<GeoJSONDataCallback>);
 
 private:

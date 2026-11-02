@@ -283,10 +283,10 @@ ArmResult runArm(Arm arm, const std::string& placementBody, const std::string& n
         auto& source = *map.getStyle().getSource(sourceID)->as<GeoJSONSource>();
         const uint64_t generation = source.nextDataGeneration();
         result.sets.push_back({.sourceID = sourceID, .generation = generation, .at = util::MonotonicTimer::now()});
-        const auto queued = util::MonotonicTimer::now();
+        const util::LabelSteps::Queued queued;
         const auto convert =
             [slicer = source.getSliceScheduler(), options = source.impl().getOptions(), sourceID, body, queued] {
-                const util::LabelSteps::Scope step(sourceID, "convert", false, queued);
+                const util::LabelSteps::Scope step(sourceID, "convert", queued);
                 return GeoJSONData::parse(body, slicer, options, sourceID);
             };
         const auto land = [&map, sourceID, generation](GeoJSONData::ParseResult parsed) {

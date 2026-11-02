@@ -9,7 +9,6 @@
 #include <mln/util/async_request.hpp>
 #include <mln/util/label_steps.hpp>
 #include <mln/util/logging.hpp>
-#include <mln/util/monotonic_timer.hpp>
 #include <mln/util/thread_pool.hpp>
 #include <mln/util/identity.hpp>
 
@@ -212,9 +211,8 @@ void GeoJSONSource::loadDescription(FileSource& fileSource) {
                  seqScheduler{sequencedScheduler},
                  options = impl().getOptions(),
                  id = getID(),
-                 queued = util::LabelSteps::recording() ? util::MonotonicTimer::now()
-                                                        : std::chrono::duration<double>{0}]() {
-                    const util::LabelSteps::Scope step(id, "parse-url", false, queued);
+                 queued = util::LabelSteps::Queued()]() {
+                    const util::LabelSteps::Scope step(id, "parse-url", queued);
                     return GeoJSONData::parse(*data, std::move(seqScheduler), options, id);
                 },
                 /* onParsed */

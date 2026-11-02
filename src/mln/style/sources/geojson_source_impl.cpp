@@ -7,7 +7,6 @@
 #include <mln/util/thread_pool.hpp>
 #include <mln/util/identity.hpp>
 #include <mln/util/label_steps.hpp>
-#include <mln/util/monotonic_timer.hpp>
 #include <mln/style/conversion/geojson.hpp>
 
 #ifdef _MSC_VER
@@ -31,27 +30,20 @@ class GeoJSONVTData final : public GeoJSONData {
     void getTile(const CanonicalTileID& id, const std::function<void(TileFeatures)>& fn, bool runSynchronously) final {
         assert(fn);
         if (runSynchronously) {
-            fn(slice(*impl, id, sourceID));
+            fn([&] {
+                const util::LabelSteps::Scope step(sourceID, "slice");
+                return this->impl->getTile(id.z, id.x, id.y).features;
+            }());
         } else {
+            // The source ID goes into the task only while the recorder is on.
             sequencedScheduler->scheduleAndReplyValue(
                 util::SimpleIdentity::Empty,
-                [id,
-                 geoJSONVT_impl = this->impl,
-                 sourceID_ = sourceID,
-                 queued = util::LabelSteps::recording() ? util::MonotonicTimer::now()
-                                                        : std::chrono::duration<double>{0}]() -> TileFeatures {
-                    return slice(*geoJSONVT_impl, id, sourceID_, queued);
+                [id, geoJSONVT_impl = this->impl, queued = util::LabelSteps::Queued(sourceID)]() -> TileFeatures {
+                    const util::LabelSteps::Scope step(queued, "slice");
+                    return geoJSONVT_impl->getTile(id.z, id.x, id.y).features;
                 },
                 fn);
         }
-    }
-
-    static TileFeatures slice(mapbox::geojsonvt::GeoJSONVT& vt,
-                              const CanonicalTileID& id,
-                              const std::string& sourceID,
-                              std::chrono::duration<double> queued = std::chrono::duration<double>{0}) {
-        const util::LabelSteps::Scope step(sourceID, "slice", false, queued);
-        return vt.getTile(id.z, id.x, id.y).features;
     }
 
     Features getChildren(const std::uint32_t) final { return {}; }
