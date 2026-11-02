@@ -18,7 +18,6 @@
 #include "../conversion/url_or_tileset.hpp"
 
 #include <mln/util/label_steps.hpp>
-#include <mln/util/monotonic_timer.hpp>
 
 #include <string>
 
@@ -68,10 +67,6 @@ std::unique_ptr<OptionalActor<FeatureConverter>> makeConverter(style::GeoJSONSou
                                                              source.getID());
 }
 
-std::chrono::duration<double> queuedNow() {
-    return util::LabelSteps::recording() ? util::MonotonicTimer::now() : std::chrono::duration<double>{0};
-}
-
 } // namespace
 
 GeoJSONSource::GeoJSONSource(jni::JNIEnv& env, const jni::String& sourceId, const jni::Object<>& options)
@@ -99,7 +94,7 @@ jni::jlong GeoJSONSource::setGeoJSONString(jni::JNIEnv& env, const jni::String& 
 
     OptionalActorRef<FeatureConverter> converterRef = converter->self();
     Update::Converter converterFn = [converterRef, json](ActorRef<GeoJSONDataCallback> _callback) {
-        converterRef.invoke(&FeatureConverter::convertJson, json, queuedNow(), _callback);
+        converterRef.invoke(&FeatureConverter::convertJson, json, util::LabelSteps::Queued(), _callback);
     };
 
     return setAsync(converterFn);
@@ -219,7 +214,7 @@ jni::jlong GeoJSONSource::setCollectionAsync(jni::JNIEnv& env, const jni::Object
 
     OptionalActorRef<FeatureConverter> converterRef = converter->self();
     Update::Converter converterFn = [converterRef, object](ActorRef<GeoJSONDataCallback> _callback) {
-        converterRef.invoke(&FeatureConverter::convertObject<JNIType>, object, queuedNow(), _callback);
+        converterRef.invoke(&FeatureConverter::convertObject<JNIType>, object, util::LabelSteps::Queued(), _callback);
     };
 
     return setAsync(converterFn);
@@ -343,9 +338,9 @@ void GeoJSONSource::registerNative(jni::JNIEnv& env) {
 }
 
 void FeatureConverter::convertJson(std::shared_ptr<std::string> json,
-                                   std::chrono::duration<double> queued,
+                                   util::LabelSteps::Queued queued,
                                    ActorRef<GeoJSONDataCallback> callback) {
-    const util::LabelSteps::Scope step(sourceID, "convert", false, queued);
+    const util::LabelSteps::Scope step(sourceID, "convert", queued);
     // A body that does not parse answers its error: the update chain goes on,
     // and the source reports it. It used to log and never answer, which held
     // every later body of the source for ever.
@@ -356,11 +351,11 @@ void FeatureConverter::convertJson(std::shared_ptr<std::string> json,
 template <class JNIType>
 void FeatureConverter::convertObject(
     std::shared_ptr<jni::Global<jni::Object<JNIType>, jni::EnvAttachingDeleter>> jObject,
-    std::chrono::duration<double> queued,
+    util::LabelSteps::Queued queued,
     ActorRef<GeoJSONDataCallback> callback) {
     using namespace mln::android::geojson;
 
-    const util::LabelSteps::Scope step(sourceID, "convert", false, queued);
+    const util::LabelSteps::Scope step(sourceID, "convert", queued);
     android::UniqueEnv _env = android::AttachEnv();
     // Convert the jni object
     auto geometry = JNIType::convert(*_env, *jObject);

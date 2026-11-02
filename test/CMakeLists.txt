@@ -145,6 +145,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/util/tile_server_options.test.cpp
     ${PROJECT_SOURCE_DIR}/test/util/lru_cache.test.cpp
     ${PROJECT_SOURCE_DIR}/test/util/vectors.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/util/label_steps.test.cpp
     ${PROJECT_SOURCE_DIR}/test/util/listener_set.test.cpp
 )
 

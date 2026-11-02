@@ -3,7 +3,7 @@
 #include <mln/util/platform.hpp>
 #include <mln/util/monotonic_timer.hpp>
 
-#include <atomic>
+#include <cassert>
 #include <mutex>
 
 namespace mln {
@@ -11,7 +11,6 @@ namespace util {
 
 namespace {
 
-std::atomic<bool> on{false};
 std::mutex mutex;
 
 std::vector<LabelStep>& steps() {
@@ -21,12 +20,15 @@ std::vector<LabelStep>& steps() {
 
 } // namespace
 
-void LabelSteps::setRecording(bool value) {
-    on = value;
-}
+std::atomic<bool> LabelSteps::on{false};
 
-bool LabelSteps::recording() noexcept {
-    return on;
+struct LabelSteps::Queued::Sent {
+    std::string sourceID;
+    std::chrono::duration<double> at;
+};
+
+void LabelSteps::setRecording(bool value) noexcept {
+    on.store(value, std::memory_order_relaxed);
 }
 
 std::vector<LabelStep> LabelSteps::take() {
@@ -36,23 +38,35 @@ std::vector<LabelStep> LabelSteps::take() {
     return result;
 }
 
-LabelSteps::Scope::Scope(const std::string& sourceID, const char* name, bool hop, std::chrono::duration<double> queued)
-    : on(LabelSteps::recording()) {
-    if (!on) return;
-    step.sourceID = sourceID;
-    step.name = name;
-    step.thread = platform::getCurrentThreadName();
-    step.threadID = std::this_thread::get_id();
-    step.hop = hop;
-    step.queued = queued;
-    step.start = MonotonicTimer::now();
+void LabelSteps::Queued::start(const std::string& sourceID) {
+    sent = std::make_shared<const Sent>(Sent{.sourceID = sourceID, .at = MonotonicTimer::now()});
 }
 
-LabelSteps::Scope::~Scope() {
-    if (!on) return;
-    step.end = MonotonicTimer::now();
+void LabelSteps::Scope::begin(const std::string& sourceID,
+                              const char* name,
+                              bool hop,
+                              std::chrono::duration<double> queued) {
+    step = std::make_unique<LabelStep>();
+    step->sourceID = sourceID;
+    step->name = name;
+    step->thread = platform::getCurrentThreadName();
+    step->threadID = std::this_thread::get_id();
+    step->hop = hop;
+    step->queued = queued;
+    step->start = MonotonicTimer::now();
+}
+
+void LabelSteps::Scope::begin(const Queued& queued, const std::string* sourceID, const char* name) {
+    // A time-only Queued needs the Scope that names the source.
+    assert(sourceID || !queued.sent->sourceID.empty());
+    begin(sourceID ? *sourceID : queued.sent->sourceID, name, false, queued.sent->at);
+}
+
+void LabelSteps::Scope::end() noexcept {
+    step->end = MonotonicTimer::now();
     std::scoped_lock lock(mutex);
-    steps().push_back(std::move(step));
+    steps().push_back(std::move(*step));
+    step.reset();
 }
 
 } // namespace util
