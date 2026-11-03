@@ -1,4 +1,3 @@
-#include <atomic>
 #include <mln/style/sources/geojson_source_impl.hpp>
 #include <mln/tile/tile_id.hpp>
 #include <mln/util/constants.hpp>
@@ -21,6 +20,7 @@
 #pragma warning(pop)
 #endif
 
+#include <atomic>
 #include <cmath>
 
 namespace mln {

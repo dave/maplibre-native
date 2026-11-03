@@ -17,6 +17,7 @@
 #include <mln/style/observer.hpp>
 #include <mln/style/parser.hpp>
 #include <mln/style/source_impl.hpp>
+#include <mln/style/sources/geojson_source.hpp>
 #include <mln/style/style_impl.hpp>
 #include <mln/style/transition_options.hpp>
 #include <mln/util/async_request.hpp>
@@ -25,7 +26,6 @@
 #include <mln/util/string.hpp>
 
 #include <algorithm>
-#include <mln/style/sources/geojson_source.hpp>
 #include <sstream>
 
 namespace mln {
