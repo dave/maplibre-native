@@ -660,7 +660,7 @@ std::unique_ptr<AsyncRequest> OnlineFileSource::request(const Resource& resource
 
 bool OnlineFileSource::canRequest(const Resource& resource) const {
     if (!resource.hasLoadingMethod(Resource::LoadingMethod::Network) ||
-        resource.url.rfind(mln::util::ASSET_PROTOCOL, 0) == 0 || resource.url.rfind(mln::util::FILE_PROTOCOL, 0) == 0) {
+        resource.url.starts_with(mln::util::ASSET_PROTOCOL) || resource.url.starts_with(mln::util::FILE_PROTOCOL)) {
         return false;
     }
     // A transform can turn any other URL into one the network can read.
