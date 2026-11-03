@@ -26,6 +26,8 @@
 #include <mln/test/map_adapter.hpp>
 #include <mln/test/util.hpp>
 #include <mln/util/async_request.hpp>
+#include <mln/tile/tile_id.hpp>
+#include <mln/tile/tile_operation.hpp>
 #include <mln/util/client_options.hpp>
 #include <mln/util/io.hpp>
 #include <mln/util/label_steps.hpp>
@@ -473,8 +475,17 @@ public:
         ++frames;
         lastFrameFull = status.mode == RenderMode::Full;
     }
+    /** The local-step answers that reached each tile ("z/x/y"). Each one lands its data
+     * in the same call. (A fetch step answered "not modified" lands nothing.) */
+    void onTileAction(TileOperation operation, const OverscaledTileID& id, const std::string&) override {
+        if (operation == TileOperation::LoadFromCache) {
+            ++answers[std::to_string(int(id.canonical.z)) + "/" + std::to_string(id.canonical.x) + "/" +
+                      std::to_string(id.canonical.y)];
+        }
+    }
     int frames = 0;
     bool lastFrameFull = false;
+    std::map<std::string, int> answers;
 };
 
 class ProviderMap {
@@ -547,6 +558,24 @@ void expectEachCalledOnce(const std::map<std::string, std::size_t>& calls, const
     }
 }
 
+/** The tiles in view at the map's camera. */
+constexpr std::array<const char*, 4> kViewTiles{"3/3/3", "3/3/4", "3/4/3", "3/4/4"};
+
+/** Each tile in view landed once, and no tile twice. A parent tile asked for while the
+ * view loads is optional: it may be dropped before its answer, and then never lands. */
+void expectEachViewTileLandedOnce(const std::map<std::string, int>& answers, std::size_t landings) {
+    for (const auto* tile : kViewTiles) {
+        const auto it = answers.find(tile);
+        EXPECT_TRUE(it != answers.end() && it->second == 1) << tile << " did not land exactly once";
+    }
+    std::size_t total = 0;
+    for (const auto& [tile, count] : answers) {
+        EXPECT_EQ(1, count) << tile << " was answered more than once";
+        total += count;
+    }
+    EXPECT_EQ(total, landings) << "a tile landed other than with its answer";
+}
+
 } // namespace
 
 // A stored tile: answered in its `localOnly` step, and not asked for again.
@@ -563,7 +592,22 @@ TEST(ResourceProvider, AStoredTileLandsOnceAndIsAskedForOnce) {
     EXPECT_FALSE(local.empty());
     expectEachCalledOnce(local, "local");
     EXPECT_TRUE(callsByURL(*registered.provider, false).empty()) << "a stored tile was fetched";
-    EXPECT_EQ(local.size(), landings.count()) << "a tile did not land exactly once";
+    expectEachViewTileLandedOnce(test.observer.answers, landings.count());
+}
+
+// A parent tile whose answer has not come when the view is drawn: the view's tiles
+// still land once each.
+TEST(ResourceProvider, TheViewLandsOnceWhileItsParentTilesAreUnanswered) {
+    Registered registered("provider-test");
+    registered.provider->onStart = [](const ProviderRequest& request, ProviderResponder& responder) {
+        if (request.tile && request.tile->z == 3) responder.data(mvt());
+    };
+    Landings landings;
+    ProviderMap test;
+    ASSERT_TRUE(test.settled("the tiles"));
+    ASSERT_TRUE(test.oneMoreFrame());
+    EXPECT_TRUE(callsByURL(*registered.provider, false).empty()) << "a stored tile was fetched";
+    expectEachViewTileLandedOnce(test.observer.answers, landings.count());
 }
 
 // An item tile: nothing stored, so it comes in the fetch step.
@@ -599,7 +643,7 @@ TEST(ResourceProvider, AnEmptyTileLandsOnce) {
     EXPECT_FALSE(local.empty());
     expectEachCalledOnce(local, "local");
     EXPECT_TRUE(callsByURL(*registered.provider, false).empty()) << "an empty tile was fetched";
-    EXPECT_EQ(local.size(), landings.count()) << "an empty tile did not land exactly once";
+    expectEachViewTileLandedOnce(test.observer.answers, landings.count());
 }
 
 // A tile taken back from the pyramid's cache asks for no bytes and parses nothing.
