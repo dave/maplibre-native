@@ -1411,14 +1411,11 @@ TEST(LabelLane, IOSReproAFilterChangeOnALaneSourceIsDrawnInTheFirstFrame) {
         loop,
         [&] { return observer.has("lane", body) && observer.has("overlay", overlay.getLandedGeneration()); },
         "both sources laid out"));
-    // Let the frames settle, as the iOS test sleeps 500 ms.
+    // Let the frames settle.
     for (int i = 0; i < 5; ++i) {
         const int before = observer.frames;
-        util::Timer settle;
-        bool done = false;
-        settle.start(Milliseconds(50), Duration::zero(), [&] { done = true; });
-        while (!done) turn(loop);
-        (void)before;
+        map.triggerRepaint();
+        ASSERT_TRUE(runUntil(loop, [&] { return observer.frames > before; }, "a settling frame"));
     }
     ASSERT_EQ(2u, drawn("lane-circles")) << "precondition";
     ASSERT_EQ(1u, drawn("overlay-circles")) << "precondition";

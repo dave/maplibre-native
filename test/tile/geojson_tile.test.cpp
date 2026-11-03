@@ -165,7 +165,7 @@ TEST(GeoJSONTile, ALayoutOlderThanTheOneTakenIsDropped) {
     EXPECT_EQ(sameIndex, tile.getFeatureIndex().get()) << "a layout as new as the last one was dropped";
 }
 
-// The landing limit's kept layouts are bounded (lead, 2026-10-20): a stream of
+// The landing limit's kept layouts are bounded: a stream of
 // ten bodies during one hold keeps at most `maxKeptLayouts`, and raising the
 // limit frees every kept layout at or below it but the one that lands.
 TEST(GeoJSONTile, AStreamOfBodiesDuringOneHoldKeepsABoundedNumberOfLayouts) {
@@ -357,7 +357,7 @@ TEST(GeoJSONTile, AnAsynchronousUpdateLaysOutTheIconAndTheText) {
 // A synchronous source (isUpdateSynchronous) with the glyphs already at hand:
 // the glyph answer comes inside parse(), before the image request has gone
 // out. The layout must still wait for the images and hold the icon, not lay
-// out text only (Viatrail, 2026-10-13: cards drawn as bare text on Android).
+// out text only (Viatrail: cards drawn as bare text on Android).
 TEST(GeoJSONTile, SynchronousUpdateKeepsTheIconWhenTheGlyphsAreAtHand) {
     IconAndTextTile t(std::make_shared<GlyphManager>(std::make_unique<EveryGlyphLocal>()));
     auto tile = t.build(true);

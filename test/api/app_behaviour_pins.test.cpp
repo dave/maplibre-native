@@ -1,5 +1,4 @@
-// Pins: fork behaviours that the Viatrail app relies on (Viatrail #170 F1,
-// spec F5). Each test pins what the fork does TODAY, so a fork update that
+// Pins: fork behaviours that the Viatrail app relies on. Each test pins what the fork does TODAY, so a fork update that
 // changes one of them fails here before it reaches the app. Each wait ends on
 // an event (a frame, a tile action, a laid-out report); the 30 s bound only
 // turns a missing event into a failure instead of a hang.
