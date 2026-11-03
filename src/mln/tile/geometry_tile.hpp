@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <mln/actor/optional_actor.hpp>
 #include <mln/geometry/feature_index.hpp>
 #include <mln/gfx/dynamic_texture_atlas.hpp>
@@ -13,6 +12,7 @@
 
 #include <atomic>
 #include <limits>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
