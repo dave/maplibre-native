@@ -84,6 +84,65 @@
     XCTAssertLessThan(self.largestDrift, 1e-6, @"the anchor's coordinate stays under it on every frame");
 }
 
+- (void)testACompletionIsCalledOnceWhenADurationEnds {
+    XCTestExpectation *completed = [self expectationWithDescription:@"the completion is called"];
+    __block NSUInteger calls = 0;
+    [self.mapView setZoomLevel:8.6
+             aroundAnchorPoint:self.anchor
+                      duration:0.25
+       animationTimingFunction:nil
+             completionHandler:^{
+                 calls++;
+                 XCTAssertTrue(NSThread.isMainThread);
+                 XCTAssertEqual(self.mapView.zoomLevel, 8.6, @"the change has ended");
+                 [completed fulfill];
+             }];
+    XCTAssertEqual(calls, 0u, @"the change has only started");
+    [self waitForExpectations:@[ completed ] timeout:10];
+    XCTAssertEqual(calls, 1u);
+}
+
+- (void)testACompletionIsCalledWithNoDuration {
+    XCTestExpectation *completed = [self expectationWithDescription:@"the completion is called"];
+    [self.mapView setZoomLevel:12.37
+             aroundAnchorPoint:self.anchor
+                      duration:0
+       animationTimingFunction:nil
+             completionHandler:^{
+                 XCTAssertEqual(self.mapView.zoomLevel, 12.37);
+                 [completed fulfill];
+             }];
+    [self waitForExpectations:@[ completed ] timeout:10];
+}
+
+- (void)testACompletionIsCalledForTheSameZoom {
+    XCTestExpectation *completed = [self expectationWithDescription:@"the completion is called"];
+    [self.mapView setZoomLevel:10
+             aroundAnchorPoint:self.anchor
+                      duration:0.1
+       animationTimingFunction:nil
+             completionHandler:^{
+                 [completed fulfill];
+             }];
+    [self waitForExpectations:@[ completed ] timeout:10];
+    XCTAssertEqual(self.mapView.zoomLevel, 10);
+}
+
+/// A change that another camera change cuts short still calls its completion.
+- (void)testACompletionIsCalledWhenTheChangeIsCutShort {
+    XCTestExpectation *completed = [self expectationWithDescription:@"the completion is called"];
+    [self.mapView setZoomLevel:8.6
+             aroundAnchorPoint:self.anchor
+                      duration:60
+       animationTimingFunction:nil
+             completionHandler:^{
+                 [completed fulfill];
+             }];
+    [self.mapView setZoomLevel:12 animated:NO];
+    [self waitForExpectations:@[ completed ] timeout:10];
+    XCTAssertEqual(self.mapView.zoomLevel, 12);
+}
+
 - (void)testTheSameZoomChangesNothing {
     CLLocationCoordinate2D center = self.mapView.centerCoordinate;
     [self.mapView setZoomLevel:10 aroundAnchorPoint:self.anchor duration:0.25 animationTimingFunction:nil];

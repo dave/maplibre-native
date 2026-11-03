@@ -1127,6 +1127,28 @@ of north, the map will automatically snap to exact north.
     animationTimingFunction:(nullable CAMediaTimingFunction *)function;
 
 /**
+ Changes the zoom level of the map, as
+ ``setZoomLevel:aroundAnchorPoint:duration:animationTimingFunction:`` does, and
+ calls a block when the change ends.
+
+ @param zoomLevel The new zoom level for the map.
+ @param anchorPoint The point in this view's coordinate system that stays
+    fixed on the screen.
+ @param duration The animation's duration, in seconds. 0 displays the new
+    zoom level immediately.
+ @param function The curve the zoom level follows. `nil` is
+    `kCAMediaTimingFunctionDefault`.
+ @param completion The block to call on the main thread when the change ends,
+    or when another camera change cuts it short. A zoom level equal to the
+    current one changes nothing, and the block is called after `duration`.
+ */
+- (void)setZoomLevel:(double)zoomLevel
+          aroundAnchorPoint:(CGPoint)anchorPoint
+                   duration:(NSTimeInterval)duration
+    animationTimingFunction:(nullable CAMediaTimingFunction *)function
+          completionHandler:(nullable void (^)(void))completion;
+
+/**
  * The minimum zoom level at which the map can be shown.
  *
  * Depending on the map view’s aspect ratio, the map view may be prevented
