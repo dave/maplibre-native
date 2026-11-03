@@ -4062,9 +4062,48 @@ static void *windowScreenContext = &windowScreenContext;
           aroundAnchorPoint:(CGPoint)anchorPoint
                    duration:(NSTimeInterval)duration
     animationTimingFunction:(nullable CAMediaTimingFunction *)function {
+  [self setZoomLevel:zoomLevel
+            aroundAnchorPoint:anchorPoint
+                     duration:duration
+      animationTimingFunction:function
+            completionHandler:nil];
+}
+
+- (void)setZoomLevel:(double)zoomLevel
+          aroundAnchorPoint:(CGPoint)anchorPoint
+                   duration:(NSTimeInterval)duration
+    animationTimingFunction:(nullable CAMediaTimingFunction *)function
+          completionHandler:(nullable void (^)(void))completion {
+  if (!_mbglMap) {
+    if (completion) {
+      completion();
+    }
+    return;
+  }
+
   MLNLogDebug(@"Setting zoomLevel: %f around: %@ duration: %f", zoomLevel,
               NSStringFromCGPoint(anchorPoint), duration);
-  if (zoomLevel == self.zoomLevel) return;
+
+  mln::AnimationOptions animationOptions;
+  dispatch_block_t pendingCompletion;
+  if (completion) {
+    __weak __typeof__(self) weakSelf = self;
+    pendingCompletion = ^{
+      if (![weakSelf scheduleTransitionCompletion:completion]) {
+        completion();
+      }
+    };
+    animationOptions.transitionFinishFn = [pendingCompletion]() {
+      dispatch_async(dispatch_get_main_queue(), pendingCompletion);
+    };
+  }
+
+  if (zoomLevel == self.zoomLevel) {
+    if (pendingCompletion) {
+      [self animateWithDelay:duration animations:pendingCompletion];
+    }
+    return;
+  }
   [self cancelTransitions];
 
   self.cameraChangeReasonBitmask |= MLNCameraChangeReasonProgrammatic;
@@ -4073,7 +4112,6 @@ static void *windowScreenContext = &windowScreenContext;
   // to the exact zoom level given, on the given curve: the zoom follows the
   // eased time and the anchor's coordinate is put back under it each frame.
   mln::ScreenCoordinate anchor(anchorPoint.x, anchorPoint.y);
-  mln::AnimationOptions animationOptions;
   if (duration <= 0) {
     self.mbglMap.easeTo(mln::CameraOptions().withZoom(zoomLevel).withAnchor(anchor),
                         animationOptions);
