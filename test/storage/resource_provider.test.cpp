@@ -967,7 +967,13 @@ TEST(ResourceProvider, ASnapshotterReachesTheProvider) {
 // The schemes with a file source of their own still reach it, through the loader.
 TEST(ResourceProvider, TheLocalSchemesStillReachTheirFileSources) {
     util::RunLoop loop;
-    MainResourceLoader fs(ResourceOptions{}.withAssetPath("test/fixtures/storage/assets").clone(), ClientOptions{});
+    // FileSourceManager keys its file sources without the asset path, and a PMTiles
+    // file source keeps its sources alive for the life of the process. So this test's
+    // asset source, with its own asset path, would serve every later test with the
+    // same key. An API key of its own gives it a key of its own.
+    MainResourceLoader fs(
+        ResourceOptions{}.withAssetPath("test/fixtures/storage/assets").withApiKey("local-schemes-test").clone(),
+        ClientOptions{});
     const std::string fixtures = std::filesystem::current_path().string() + "/test/fixtures/storage/";
     for (const std::string& url : std::array<std::string, 4>{
              std::string("asset://nonempty"),
