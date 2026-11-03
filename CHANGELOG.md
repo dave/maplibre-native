@@ -5,6 +5,14 @@
 ### ✨ New features
 
 - *...Add new stuff here...*
+- [core] Add `GeoJSONOptions::labelLane` (the style key `labelLane`, a fork extension): a GeoJSON source's parse, layout and cuts run on threads of their own (`Scheduler::GetLabelLane`), so its labels never wait behind basemap tiles.
+- [core] Add `MapObserver::onSourceLaidOut(sourceID, generation)` and `RendererObserver::onSourceLaidOut`: every tile in view of a GeoJSON source is laid out at that generation.
+- [core] Add data generations to `GeoJSONSource`: each body and each filter or layout change takes the next number, which `getLatestGeneration` reads, so a caller can wait for a change to be laid out. A layer change while a body is pending is not reported as that body.
+- [core] Add `GeoJSONSource::setLandingLimit`: bodies above the limit are laid out but not drawn, and raising the limit lands one in a single frame.
+- [core] Add `Map::setNoFadeInSources`: new symbols of the listed sources appear at full opacity when first placed.
+- [core] Add `Map::cameraForMoveBy` and `Map::cameraForZoomAround`: the camera a move or an anchored zoom would end at. They move nothing.
+- [core] Add `Map::latLngsForPixelsAtCamera`: screen points at a camera the map is not at.
+- [core] Add `TileSource::reloadTiles`: ask again for the tiles in view whose last answer was empty, an error, or either.
 - [core] A data-driven opacity (`fill-opacity`, `line-opacity`, `circle-opacity`, `circle-stroke-opacity`, `icon-opacity`, `text-opacity`) is clamped to 0..1 after the zoom stops are mixed, on every backend; a constant or zoom-function value of these properties is clamped as well. A style can give each feature an opacity that is a straight line in zoom, and the clamp turns it into a per-feature fade at a fractional zoom. Before, a value above 1 drew a brighter, wrong colour.
 - [core] Add support for colorizing SDF fill patterns with `fill-color` ([#4526](https://github.com/maplibre/maplibre-native/issues/4526)).
 - [core] Add support for the [`global-state`](https://maplibre.org/maplibre-style-spec/expressions/#global-state) expression and the root [`state`](https://maplibre.org/maplibre-style-spec/root/#state) style property in filters, layout properties, and paint properties, including the runtime API `style::Style::setGlobalStateProperty` / `style::Style::getGlobalState`. Calls to `setGlobalStateProperty` before the style has loaded are rejected, matching MapLibre GL JS ([#3302](https://github.com/maplibre/maplibre-native/issues/3302)).
@@ -64,6 +72,12 @@
 ### 🐞 Bug fixes
 
 - *...Add new stuff here...*
+- [core] A tile that fails asks for a frame, as a tile that loads does. Before, a still map whose last tile failed rendered nothing more.
+- [core] New symbol buckets keep the short placement period until a placement runs. Before, a frame within 30 ms of the last placement skipped it, and the symbols waited for the full period.
+- [core] A synchronous GeoJSON source keeps its icons when the glyphs are already loaded. Before, its symbols were laid out with text only.
+- [core] A GeoJSON source given inline data while its URL loads takes a new URL again. Before, that URL was never requested.
+- [core] A held GeoJSON tile lays out its newest body whatever the landing limit.
+- [core] After a style rebuild under the same source ID, a tile carries over only the drawn body and the bodies the old source released, and the render source forgets what it reported for the old source.
 - [core] A contour source with new settings under the same ID (for example after a style reload) rebuilds its lines. Before, its tiles kept the old interval and unit.
 - [core] A contour tile does less work while its neighbours load. Each tile copies its DEM image once per batch of arrivals, not once per notification, and it runs one build at a time: the arrivals during a build cost one more build, of the newest image.
 - [core] Contour lines come in order of elevation, not in the order of a hash map, so a tile's draw order is the same on every platform.
