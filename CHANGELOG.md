@@ -47,7 +47,7 @@
 - [core] GeoJSON sources with `labelLane` share one thread for their cuts (`Scheduler::GetLabelLaneSlicer`). Before, each source made a thread, and joined it when destroyed.
 - [core] Add `Resource::sourceID`: a tile, GeoJSON or TileJSON request names the style source that asked.
 - [core] The core unit test runner starts its C++ test server on Metal too. Before, its server tests could never connect, and some hung.
-- [core] **Behaviour change.** `OnlineFileSource` and `DatabaseFileSource` take only `http`, `https` and the tile server's scheme (and, for `OnlineFileSource` with a resource transform, any scheme). A URL that no file source can serve fails at once with "Unsupported resource request." Before, it went on to the network.
+- [core] **Behaviour change.** `OnlineFileSource` takes only `http`, `https` and the tile server's scheme (or, with a resource transform, any scheme). `DatabaseFileSource` takes any scheme but `file` and `asset`, as before, so an offline database serves resources under any key. A URL that the cache does not hold and the network cannot take fails at once with "Unsupported resource request." Before, it went on to the network.
 - [core] Add `getResourceProviderCounts`: the requests a resource provider has in flight, and their peak. There is no limit on them.
 - [core] `TileSource::reloadEmptyTiles` becomes `TileSource::reloadTiles(ReloadFilter)`, with `Empty`, `Failed` or `EmptyAndFailed`. A reload asks a real question (no conditional request), and reaches the tiles in the tile cache too.
 - [core] Test that a GeoJSON body from a resource provider on another thread gives the same laid-out reports and frames as one from a file source.

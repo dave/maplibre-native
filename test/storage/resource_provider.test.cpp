@@ -9,6 +9,7 @@
 #include <mln/map/map_snapshotter.hpp>
 #endif
 #include <mln/storage/database_file_source.hpp>
+#include <mln/storage/file_source_manager.hpp>
 #include <mln/storage/main_resource_loader.hpp>
 #include <mln/storage/online_file_source.hpp>
 #include <mln/storage/resource.hpp>
@@ -632,22 +633,48 @@ TEST(ResourceProvider, APanBackCallsNoProviderAndParsesNothing) {
     EXPECT_EQ(landingsAway, landings.count()) << "a tile taken from the cache landed again";
 }
 
-// A URL of a scheme that nothing serves fails at once and loudly. It never goes to
-// the disk cache or the network.
+// A URL of a scheme that nothing serves fails at once and loudly: no request is
+// left open with no answer, and none goes to the network. A cache-only request gets
+// the disk cache's answer, which here is a miss.
 TEST(ResourceProvider, AnUnregisteredSchemeIsAnError) {
     util::RunLoop loop;
     MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
-    EXPECT_FALSE(fs.canRequest({Resource::Unknown, "provider-test://nobody"}));
-    for (const auto method : {Method::All, Method::CacheOnly, Method::NetworkOnly}) {
+    for (const auto method : {Method::All, Method::NetworkOnly}) {
         std::optional<Response> response;
         auto request = fs.request({Resource::Unknown, "provider-test://nobody", std::nullopt, method},
                                   [&](Response res) { response = res; });
         ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
         expectError(*response, Reason::Other, "Unsupported resource request.");
     }
+    std::optional<Response> response;
+    auto request = fs.request({Resource::Unknown, "provider-test://nobody", std::nullopt, Method::CacheOnly},
+                              [&](Response res) { response = res; });
+    ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the cache's answer"));
+    EXPECT_FALSE(response->data);
 }
 
-TEST(ResourceProvider, TheNetworkAndTheDiskCacheTakeOnlyTheirSchemes) {
+// The disk cache holds any scheme but the local ones, as upstream's does: an offline
+// database can hold resources under any key, such as `mapbox://`.
+TEST(ResourceProvider, ACachedResourceOfAnotherSchemeIsServedFromTheDiskCache) {
+    util::RunLoop loop;
+    MainResourceLoader fs(ResourceOptions{}, ClientOptions{});
+    const Resource cached{Resource::Image, "mapbox://render-tests/image.png", {}, Method::CacheOnly};
+    Response stored;
+    stored.data = bytes("cached");
+    std::shared_ptr<FileSource> database = FileSourceManager::get()->getFileSource(
+        FileSourceType::Database, ResourceOptions{}, ClientOptions{});
+    bool forwarded = false;
+    database->forward(cached, stored, [&] { forwarded = true; });
+    ASSERT_TRUE(runUntil(loop, [&] { return forwarded; }, "the store"));
+
+    std::optional<Response> response;
+    auto request = fs.request(cached, [&](Response res) { response = res; });
+    ASSERT_TRUE(runUntil(loop, [&] { return bool(response); }, "the answer"));
+    ASSERT_TRUE(response->data) << (response->error ? response->error->message : "no error");
+    EXPECT_EQ("cached", *response->data);
+}
+
+TEST(ResourceProvider, TheNetworkTakesOnlyItsSchemesAndTheDiskCacheAnyButTheLocalOnes) {
     OnlineFileSource onlineSource(ResourceOptions{}, ClientOptions{});
     DatabaseFileSource databaseSource(ResourceOptions{}, ClientOptions{});
     const FileSource& online = onlineSource;
@@ -656,7 +683,11 @@ TEST(ResourceProvider, TheNetworkAndTheDiskCacheTakeOnlyTheirSchemes) {
         EXPECT_TRUE(online.canRequest({Resource::Unknown, url})) << url;
         EXPECT_TRUE(database.canRequest({Resource::Unknown, url})) << url;
     }
-    for (const std::string url : {"provider-test://a/b", "httpx://a/b", "file://a/b", "asset://a/b", "http"}) {
+    for (const std::string url : {"provider-test://a/b", "httpx://a/b", "mapbox://a/b"}) {
+        EXPECT_FALSE(online.canRequest({Resource::Unknown, url})) << url;
+        EXPECT_TRUE(database.canRequest({Resource::Unknown, url})) << url;
+    }
+    for (const std::string url : {"file://a/b", "asset://a/b"}) {
         EXPECT_FALSE(online.canRequest({Resource::Unknown, url})) << url;
         EXPECT_FALSE(database.canRequest({Resource::Unknown, url})) << url;
     }
