@@ -41,7 +41,9 @@ struct GeoJSONOptions {
     // Update options
     bool synchronousUpdate = false;
 
-    // The source's off-thread work runs on the label lane
+    // A fork extension: the style key `labelLane` on a GeoJSON source is not in
+    // the MapLibre style spec (see viatrail/README.md). The source's off-thread
+    // work runs on the label lane
     // (`Scheduler::GetLabelLane()`), not on the shared worker pool: its body's
     // parse, its tiles' parse and layout, and its geojson-vt cuts (on one thread
     // that every lane source shares). Refused with `synchronousUpdate` and
