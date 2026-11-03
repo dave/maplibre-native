@@ -85,6 +85,7 @@
 #import "MLNUserLocation_Private.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <map>
 #include <optional>
@@ -462,6 +463,19 @@ public:
 
 - (void)initDefaults;
 @end
+
+/// The bounds of a rect's four corners. If they straddle the antimeridian, each is
+/// unwrapped toward the rect's middle, so that one side extends beyond ±180°
+/// longitude. All five coordinates come wrapped.
+static mln::LatLngBounds MLNLatLngBoundsOfCorners(std::array<mln::LatLng, 4> corners,
+                                                  const mln::LatLng &middle) {
+  auto bounds = mln::LatLngBounds::empty();
+  for (auto &corner : corners) {
+    corner.unwrapForShortestPath(middle);
+    bounds.extend(corner);
+  }
+  return bounds;
+}
 
 @implementation MLNMapView {
   std::unique_ptr<mln::Map> _mbglMap;
@@ -4135,9 +4149,7 @@ static void *windowScreenContext = &windowScreenContext;
                                                  pitch:(CGFloat)pitch {
   // What `convertRect:toLatLngBoundsFromView:` does for
   // `visibleCoordinateBounds`, on a copy of the state: the four corners in
-  // its order, each wrapped as `convertPoint:toLatLngFromView:` does, then
-  // unwrapped toward the view's middle, so a view across the antimeridian
-  // extends beyond ±180° instead of spanning the world.
+  // its order, each wrapped as `convertPoint:toLatLngFromView:` does.
   CGRect rect = self.bounds;
   std::vector<mln::ScreenCoordinate> pixels = {
       {CGRectGetMinX(rect), CGRectGetMinY(rect)}, {CGRectGetMaxX(rect), CGRectGetMinY(rect)},
@@ -4150,15 +4162,9 @@ static void *windowScreenContext = &windowScreenContext;
                                   .withBearing(direction)
                                   .withPitch(pitch);
   std::vector<mln::LatLng> latLngs = self.mbglMap.latLngsForPixelsAtCamera(camera, pixels);
-  const mln::LatLng middle = latLngs.back().wrapped();
-  latLngs.pop_back();
-  auto bounds = mln::LatLngBounds::empty();
-  for (const auto &latLng : latLngs) {
-    mln::LatLng corner = latLng.wrapped();
-    corner.unwrapForShortestPath(middle);
-    bounds.extend(corner);
-  }
-  return MLNCoordinateBoundsFromLatLngBounds(bounds);
+  return MLNCoordinateBoundsFromLatLngBounds(MLNLatLngBoundsOfCorners(
+      {latLngs[0].wrapped(), latLngs[1].wrapped(), latLngs[2].wrapped(), latLngs[3].wrapped()},
+      latLngs[4].wrapped()));
 }
 
 /// A pan, zoom or rotation fling has started. Its report waits for the other
@@ -4858,7 +4864,6 @@ static void *windowScreenContext = &windowScreenContext;
 /// Converts a rectangle in the given view’s coordinate system to a geographic
 /// bounding box.
 - (mln::LatLngBounds)convertRect:(CGRect)rect toLatLngBoundsFromView:(nullable UIView *)view {
-  auto bounds = mln::LatLngBounds::empty();
   auto topLeft = [self convertPoint:{CGRectGetMinX(rect), CGRectGetMinY(rect)}
                    toLatLngFromView:view];
   auto topRight = [self convertPoint:{CGRectGetMaxX(rect), CGRectGetMinY(rect)}
@@ -4868,21 +4873,9 @@ static void *windowScreenContext = &windowScreenContext;
   auto bottomLeft = [self convertPoint:{CGRectGetMinX(rect), CGRectGetMaxY(rect)}
                       toLatLngFromView:view];
 
-  // If the bounds straddles the antimeridian, unwrap it so that one side
-  // extends beyond ±180° longitude.
   auto center = [self convertPoint:{CGRectGetMidX(rect), CGRectGetMidY(rect)}
                   toLatLngFromView:view];
-  topLeft.unwrapForShortestPath(center);
-  topRight.unwrapForShortestPath(center);
-  bottomRight.unwrapForShortestPath(center);
-  bottomLeft.unwrapForShortestPath(center);
-
-  bounds.extend(topLeft);
-  bounds.extend(topRight);
-  bounds.extend(bottomRight);
-  bounds.extend(bottomLeft);
-
-  return bounds;
+  return MLNLatLngBoundsOfCorners({topLeft, topRight, bottomRight, bottomLeft}, center);
 }
 
 - (CLLocationDistance)metersPerPointAtLatitude:(CLLocationDegrees)latitude {
