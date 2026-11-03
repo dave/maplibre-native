@@ -3,6 +3,7 @@
 #include <mln/test/stub_map_observer.hpp>
 #include <mln/test/util.hpp>
 
+#include <mln/gfx/backend_scope.hpp>
 #include <mln/gfx/headless_frontend.hpp>
 #include <mln/map/map_options.hpp>
 #include <mln/style/sources/raster_dem_source.hpp>
@@ -74,6 +75,12 @@ public:
         map.jumpTo(CameraOptions().withCenter(LatLng{0.0, 0.0}).withZoom(2.0));
     }
 };
+
+/** The last frame. A read outside a backend scope asserts on GL. */
+PremultipliedImage lastFrame(HeadlessFrontend& frontend) {
+    const gfx::BackendScope scope{*frontend.getBackend()};
+    return frontend.readStillImage();
+}
 
 std::size_t darkPixels(const PremultipliedImage& image) {
     std::size_t dark = 0;
@@ -169,7 +176,7 @@ TEST(ContourSource, LinesAppearWhenAnEmptyDEMTileLandsAfterAReload) {
     test.map.getStyle().loadJSON(contourStyle());
     test.loop.run();
     ASSERT_GT(emptyAnswers, 0);
-    EXPECT_EQ(0u, darkPixels(test.frontend.readStillImage())) << "no DEM data, no lines";
+    EXPECT_EQ(0u, darkPixels(lastFrame(test.frontend))) << "no DEM data, no lines";
 
     online = true;
     test.map.getStyle().getSource("dem")->as<style::RasterDEMSource>()->reloadTiles(
@@ -178,7 +185,7 @@ TEST(ContourSource, LinesAppearWhenAnEmptyDEMTileLandsAfterAReload) {
     // Each frame that follows looks for the lines. The watchdog ends a run with none.
     bool drawn = false;
     test.observer.didFinishRenderingFrameCallback = [&](MapObserver::RenderFrameStatus) {
-        if (!drawn && darkPixels(test.frontend.readStillImage()) > 0) {
+        if (!drawn && darkPixels(lastFrame(test.frontend)) > 0) {
             drawn = true;
             test.loop.stop();
         }
