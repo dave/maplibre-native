@@ -9,7 +9,6 @@
 #include <mln/util/client_options.hpp>
 #include <mln/util/constants.hpp>
 #include <mln/util/logging.hpp>
-#include <mln/util/mapbox.hpp>
 #include <mln/util/platform.hpp>
 #include <mln/util/thread.hpp>
 
@@ -229,8 +228,9 @@ void DatabaseFileSource::forward(const Resource& res, const Response& response, 
 }
 
 bool DatabaseFileSource::canRequest(const Resource& resource) const {
+    // Any scheme but the local ones: an offline database holds resources under any key.
     return resource.hasLoadingMethod(Resource::LoadingMethod::Cache) &&
-           util::mapbox::isNetworkURL(impl->getResourceOptions().tileServerOptions(), resource.url);
+           !resource.url.starts_with(mln::util::ASSET_PROTOCOL) && !resource.url.starts_with(mln::util::FILE_PROTOCOL);
 }
 
 void DatabaseFileSource::setDatabasePath(const std::string& path, std::function<void()> callback) {

@@ -91,10 +91,18 @@ public:
                 // Cache request with fallback to network with cache control
                 tasks[req] = databaseFileSource->request(resource, [=, this](const Response& response) {
                     Resource res = resource;
+                    const bool answered = !response.noContent && response.isUsable();
+
+                    // The cache had nothing usable, and no network source takes
+                    // this URL: answer now, or the request stays open for ever.
+                    if (!answered && (!onlineFileSource || !onlineFileSource->canRequest(resource))) {
+                        callback(unsupported());
+                        return;
+                    }
 
                     // Resource is in the cache
                     if (!response.noContent) {
-                        if (response.isUsable()) {
+                        if (answered) {
                             callback(response);
                             // Set the priority of existing resource to low if it's expired but usable.
                             res.setPriority(Resource::Priority::Low);
@@ -122,12 +130,16 @@ public:
 
         // If no new tasks were added, notify client that request cannot be processed.
         if (tasks.size() == tasksSize) {
-            Response response;
-            response.noContent = true;
-            response.error = std::make_unique<Response::Error>(Response::Error::Reason::Other,
-                                                               "Unsupported resource request.");
-            callback(response);
+            callback(unsupported());
         }
+    }
+
+    static Response unsupported() {
+        Response response;
+        response.noContent = true;
+        response.error = std::make_unique<Response::Error>(Response::Error::Reason::Other,
+                                                           "Unsupported resource request.");
+        return response;
     }
 
     void cancel(AsyncRequest* req) {
