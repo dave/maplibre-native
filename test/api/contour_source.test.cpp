@@ -172,7 +172,8 @@ TEST(ContourSource, LinesAppearWhenAnEmptyDEMTileLandsAfterAReload) {
     EXPECT_EQ(0u, darkPixels(test.frontend.readStillImage())) << "no DEM data, no lines";
 
     online = true;
-    test.map.getStyle().getSource("dem")->as<style::RasterDEMSource>()->reloadEmptyTiles();
+    test.map.getStyle().getSource("dem")->as<style::RasterDEMSource>()->reloadTiles(
+        style::ReloadFilter::EmptyAndFailed);
 
     // Each frame that follows looks for the lines. The watchdog ends a run with none.
     bool drawn = false;
