@@ -2412,8 +2412,7 @@ public final class MapLibreMap {
    * camera of the glide's last frame, worked out from the camera before the glide. The glide can still
    * be cut short (a touch, or a camera change); the next camera idle tells. A listener should not move
    * the camera: that cuts a pan glide short, and a zoom glide then goes on from the new camera, so it
-   * does not end at the target. With {@link #setLatLngBoundsForCameraTarget(LatLngBounds) bounds} that
-   * hold the camera back during a zoom glide, the end can differ from the target.
+   * does not end at the target.
    * </p>
    *
    * @see MapLibreMap#addOnCameraGlideListener(OnCameraGlideListener)

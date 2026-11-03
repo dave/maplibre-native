@@ -1362,3 +1362,40 @@ TEST(Transform, ZoomAroundEndIsWhatSetZoomAboutTheAnchorGives) {
         expectSameCamera(predicted, transform);
     }
 }
+
+// An Android zoom glide sets the zoom about the anchor frame by frame. Bounds can hold the camera back
+// during those frames, and its end is still the one step from the start.
+TEST(Transform, ZoomAroundEndIsWhereTheFramesEndWithinBounds) {
+    struct Case {
+        double bearing;
+        LatLng center;
+        ScreenCoordinate anchor;
+        double fromZoom;
+        double toZoom;
+    };
+    const std::vector<Case> cases = {
+        {.bearing = 0, .center = {8, 8}, .anchor = {500, 10}, .fromZoom = 4, .toZoom = 6},
+        {.bearing = 45, .center = {8, 8}, .anchor = {500, 10}, .fromZoom = 4, .toZoom = 6},
+        {.bearing = 30, .center = {8, 0}, .anchor = {500, 300}, .fromZoom = 4, .toZoom = 6},
+        {.bearing = 60, .center = {9, 3}, .anchor = {10, 500}, .fromZoom = 6, .toZoom = 4.5},
+    };
+    for (const Case& c : cases) {
+        Transform transform;
+        transform.resize({512, 512});
+        transform.setLatLngBounds(LatLngBounds::hull({-10.0, -10.0}, {10.0, 10.0}));
+        transform.jumpTo(CameraOptions().withCenter(c.center).withZoom(c.fromZoom).withBearing(c.bearing));
+
+        const CameraOptions predicted = transform.zoomAroundEnd(c.toZoom, c.anchor);
+
+        constexpr int frames = 20;
+        for (int frame = 1; frame <= frames; ++frame) {
+            const double zoom = c.fromZoom + (c.toZoom - c.fromZoom) * frame / frames;
+            transform.easeTo(CameraOptions().withZoom(zoom).withAnchor(c.anchor), AnimationOptions{Milliseconds(0)});
+        }
+
+        const CameraOptions reached = transform.getCameraOptions(std::nullopt);
+        EXPECT_NEAR(predicted.center->latitude(), reached.center->latitude(), 1e-9) << "bearing " << c.bearing;
+        EXPECT_NEAR(predicted.center->longitude(), reached.center->longitude(), 1e-9) << "bearing " << c.bearing;
+        EXPECT_EQ(*predicted.zoom, *reached.zoom) << "bearing " << c.bearing;
+    }
+}
