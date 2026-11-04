@@ -1949,20 +1949,35 @@ TEST(LabelLane, ARebuildDuringAPanDoesNotDrawAHeldBody) {
 
 // The old object at no hold, a body in flight, rebuild: no wait for ever.
 TEST(LabelLane, ARebuildLandsABodyTheOldObjectReleasedInEveryTile) {
+    Recording recording;
     LaneMap test(rebuildStyle());
     oldObjectState(test, false, false);
     // Hold the lane until every tile has been sent the released body, so its
     // layout, not its cut, is on the way at the rebuild. A cut still on the way
-    // is dropped: its tile then keeps the body it draws.
+    // is dropped: its tile then keeps the body it draws. Wait for the cuts
+    // themselves, not for a frame: a frame-end event can belong to the frame
+    // before the one that took the body.
     LaneBlock block;
     ASSERT_TRUE(block.allHeld);
+    const std::size_t from = recording.steps().size();
     test.labels().setGeoJSON(body(kOne));
     test.map->triggerRepaint();
-    ASSERT_TRUE(runOneFrame(test, "frame that sends the body to its tiles"));
-    test.labels().getSliceScheduler()->waitForEmpty();
-    bool cutsTaken = false;
-    Scheduler::GetCurrent()->schedule([&] { cutsTaken = true; });
-    ASSERT_TRUE(runUntil(test.loop, [&] { return cutsTaken; }, "every tile takes its cut"));
+    const auto count = [&](const std::string& name) {
+        const auto& steps = recording.steps();
+        return std::count_if(steps.begin() + static_cast<std::ptrdiff_t>(from), steps.end(), [&](const auto& step) {
+            return step.sourceID == "labels" && step.name == name;
+        });
+    };
+    // A source's cuts for one body are all asked for in one update: once one has
+    // run, the rest are on the slicer, and an empty slicer has run them all.
+    ASSERT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            if (count("slice") == 0) return false;
+            test.labels().getSliceScheduler()->waitForEmpty();
+            return count("hop-data") == count("slice");
+        },
+        "every tile takes its cut"));
     std::size_t before = 0;
     const uint64_t n = rebuildUnderTheSameID(test, 0, kTwo, before);
     block.release();
