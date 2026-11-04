@@ -55,7 +55,35 @@ public:
 std::atomic<bool> running{true};
 std::atomic<bool> success{false};
 std::once_flag done;
-ALooper* looper = NULL;
+
+// The runner thread belongs to the process, not to an activity. The system can
+// destroy the activity while the tests run (a configuration or overlay change),
+// and its android_main must then return at once: the activity's onDestroy waits
+// for it. A joinable std::thread destroyed on that return would end the process.
+// The activity made in its place finds the thread running and waits for it.
+std::thread* runnerThread = nullptr; // never freed: a thread may still run at exit
+
+// The looper of the activity that waits for the runner; null while there is none.
+std::mutex looperMutex;
+ALooper* looper = nullptr;
+
+void wakeLooper() {
+    const std::scoped_lock lock(looperMutex);
+    if (looper != nullptr) {
+        ALooper_wake(looper);
+    }
+}
+
+void setLooper(ALooper* newLooper) {
+    const std::scoped_lock lock(looperMutex);
+    if (looper != nullptr) {
+        ALooper_release(looper);
+    }
+    looper = newLooper;
+    if (looper != nullptr) {
+        ALooper_acquire(looper);
+    }
+}
 
 // The tests the runner runs when the instrumentation names none.
 const std::string defaultGtestFilter = "-StringIndexer.GetOOBIdentity";
@@ -75,23 +103,24 @@ void runner(const std::string& gtestOutput, const std::string& gtestFilter) {
     mln::Log::Info(mln::Event::General, "Start TestRunner");
     int status = mln::runTests(argv.size(), argv.data());
     mln::Log::Info(mln::Event::General, "TestRunner finished with status: '" + std::to_string(status) + "'");
-    running = false;
     success = (status == 0);
-    ALooper_wake(looper);
+    running = false;
+    wakeLooper();
 }
 
 void android_main(struct android_app* app) {
     mln::android::theJVM = app->activity->vm;
     JNIEnv* env = nullptr;
-    std::thread runnerThread;
     app->activity->vm->AttachCurrentThread(&env, NULL);
-    looper = ALooper_forThread();
+    setLooper(ALooper_forThread());
 
     std::string storagePath(app->activity->internalDataPath);
     std::string zipFile = storagePath + "/data.zip";
     const std::string gtestOutput = storagePath + "/results.xml";
 
-    if (copyFile(env, app->activity->assetManager, zipFile, storagePath, "data.zip")) {
+    if (runnerThread != nullptr) {
+        mln::Log::Info(mln::Event::General, "The activity was made again; the tests are still running");
+    } else if (copyFile(env, app->activity->assetManager, zipFile, storagePath, "data.zip")) {
         if (chdir(storagePath.c_str())) {
             mln::Log::Error(mln::Event::General, "Failed to change the directory to storage dir");
             changeState(env, app, success);
@@ -102,7 +131,7 @@ void android_main(struct android_app* app) {
             if (gtestFilter.empty()) {
                 gtestFilter = defaultGtestFilter;
             }
-            runnerThread = std::thread(runner, gtestOutput, gtestFilter);
+            runnerThread = new std::thread(runner, gtestOutput, gtestFilter);
         }
     } else {
         mln::Log::Error(mln::Event::General, "Failed to copy zip file '" + zipFile + "' to external storage");
@@ -121,12 +150,13 @@ void android_main(struct android_app* app) {
         if (!running) {
             std::call_once(done, [&] {
                 mln::Log::Info(mln::Event::General, "TestRunner done");
-                runnerThread.join();
+                runnerThread->join();
                 changeState(env, app, success);
             });
         }
 
         if (app->destroyRequested != 0) {
+            setLooper(nullptr);
             app->activity->vm->DetachCurrentThread();
             mln::Log::Info(mln::Event::General, "Close the App!");
             return;
