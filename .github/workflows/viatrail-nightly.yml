@@ -1,0 +1,192 @@
+name: viatrail-nightly
+
+# Viatrail's nightly CI round for this fork (fork only; upstream does not use it).
+#
+# Work lands on `next` during the day. At night, if `next` has commits that `main`
+# lacks, the `round` job moves `main` to `next` (a fast-forward only) and starts
+# the four CI workflows on it. The hourly `report` job reruns jobs that GitHub
+# dropped before they started, then writes one annotation per workflow, once, and
+# fails if any workflow failed. The annotations are read with
+#   gh api repos/<owner>/<repo>/check-runs/<job id>/annotations
+# because a step summary has no API.
+
+on:
+  schedule:
+    - cron: "30 16 * * *" # round: 00:30 in Manila
+    - cron: "30 17-23 * * *" # report: hourly, 01:30 to 07:30 in Manila
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        required: true
+        type: choice
+        options: [round, report]
+      main_ref:
+        description: "round: the branch to move (a scratch branch for a dry run)"
+        default: main
+      next_ref:
+        description: "round: the branch to move it to"
+        default: next
+      tag:
+        description: "report: the round tag to report on; empty for tonight's"
+        default: ""
+
+permissions:
+  contents: write # move main, write the round tags
+  actions: write # dispatch the four workflows, rerun dropped jobs
+  checks: read # read job annotations
+
+# One round or report at a time; a later one waits rather than racing.
+concurrency:
+  group: viatrail-nightly
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  WORKFLOWS: linux-ci macos-ci ios-ci android-ci
+
+jobs:
+  round:
+    # Each job runs for its own cron, or for its `job` input.
+    if: github.event.schedule == '30 16 * * *' || inputs.job == 'round'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the ancestor checks need the history of both branches
+
+      - name: Move main to next, tag the round and start it
+        env:
+          MAIN_REF: ${{ inputs.main_ref || 'main' }}
+          NEXT_REF: ${{ inputs.next_ref || 'next' }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "+refs/heads/$MAIN_REF:refs/remotes/origin/$MAIN_REF" \
+            "+refs/heads/$NEXT_REF:refs/remotes/origin/$NEXT_REF"
+          main=$(git rev-parse "origin/$MAIN_REF")
+          next=$(git rev-parse "origin/$NEXT_REF")
+
+          # Nothing new: no workflow starts, so the report finds no round tonight.
+          if git merge-base --is-ancestor "$next" "$main"; then
+            echo "::notice title=Nothing new::$MAIN_REF ($main) already contains $NEXT_REF ($next); no round."
+            exit 0
+          fi
+
+          # Only a fast-forward. A rebased next is moved by hand, so this run is red:
+          # a green run that tested nothing would hide it.
+          if ! git merge-base --is-ancestor "$main" "$next"; then
+            echo "::error title=Not a fast-forward::$NEXT_REF ($next) does not contain $MAIN_REF ($main). Replace $MAIN_REF by hand, then dispatch $WORKFLOWS on it."
+            exit 1
+          fi
+
+          # No force. GitHub refuses a GITHUB_TOKEN push that changes a workflow file.
+          if ! git push origin "$next:refs/heads/$MAIN_REF"; then
+            echo "::error title=Push refused::$MAIN_REF was not moved to $next. If $NEXT_REF changes .github/workflows, move $MAIN_REF by hand, then dispatch $WORKFLOWS on it."
+            exit 1
+          fi
+
+          # The tag names tonight's round for the report: its runs are the dispatched
+          # runs at this SHA. A dry run on a scratch branch gets its own tag name.
+          if [ "$MAIN_REF" = main ]; then
+            tag="viatrail-nightly/$(date -u +%F)"
+          else
+            tag="viatrail-dry-nightly/$(date -u +%F)-$GITHUB_RUN_ID"
+          fi
+          git tag "$tag" "$next"
+          git push origin "refs/tags/$tag"
+
+          # A push with GITHUB_TOKEN starts no workflow; a dispatch does, and gets past
+          # every workflow's skip and path filters.
+          for w in $WORKFLOWS; do
+            gh workflow run "$w.yml" --ref "$MAIN_REF"
+          done
+          echo "::notice title=Round started::$MAIN_REF moved to $next, tag $tag, dispatched $WORKFLOWS."
+
+  report:
+    if: (github.event_name == 'schedule' && github.event.schedule != '30 16 * * *') || inputs.job == 'report'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Rerun dropped jobs, then report the round once
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=${TAG_INPUT:-viatrail-nightly/$(date -u +%F)}
+          reported="${tag%%/*}-reported/${tag#*/}"
+
+          # No round tonight (nothing new), or it is reported already: nothing to do.
+          if ! sha=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+            echo "No round tag $tag; nothing to report."
+            exit 0
+          fi
+          if gh api "repos/$GH_REPO/git/ref/tags/$reported" --silent 2>/dev/null; then
+            echo "$tag is reported already ($reported)."
+            exit 0
+          fi
+
+          complete=true
+          declare -A run_of
+          for w in $WORKFLOWS; do
+            # Only the round's own runs: dispatched, at the tagged SHA.
+            row=$(gh run list --workflow "$w.yml" --commit "$sha" --event workflow_dispatch --limit 1 \
+              --json databaseId,status --jq '.[0] | select(.) | "\(.databaseId) \(.status)"')
+            if [ -z "$row" ]; then
+              echo "$w: no dispatched run at $sha yet."
+              complete=false
+              continue
+            fi
+            read -r id status <<<"$row"
+            run_of[$w]=$id
+            if [ "$status" != completed ]; then
+              echo "$w: run $id is $status."
+              complete=false
+              continue
+            fi
+
+            # A job that GitHub dropped before it started has no steps and says
+            # "not acquired". Each such job is rerun once (its latest attempt is the
+            # first); a job that ran, or that a person cancelled, is a result.
+            while IFS=$'\t' read -r job attempt steps; do
+              [ "$attempt" = 1 ] && [ "$steps" = 0 ] || continue
+              notes=$(gh api "repos/$GH_REPO/check-runs/$job/annotations" --jq '.[].message')
+              if [[ "$notes" == *"was not acquired by Runner"* ]]; then
+                # The run is busy after the first rerun; a refused rerun waits for the next hour.
+                if gh run rerun "$id" --job "$job"; then
+                  echo "$w: reran dropped job $job of run $id."
+                else
+                  echo "$w: could not rerun job $job of run $id yet."
+                fi
+                complete=false
+              fi
+            done < <(gh api --paginate "repos/$GH_REPO/actions/runs/$id/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | [.id, .run_attempt, (.steps | length)] | @tsv')
+          done
+
+          if [ "$complete" != true ]; then
+            echo "The round $tag is not complete; the next hourly run looks again."
+            exit 0
+          fi
+
+          # One annotation per workflow, then the marker, so later hours stop.
+          red=false
+          for w in $WORKFLOWS; do
+            id=${run_of[$w]}
+            conclusion=$(gh run view "$id" --json conclusion --jq .conclusion)
+            counts=$(gh api --paginate "repos/$GH_REPO/actions/runs/$id/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | .conclusion' | sort | uniq -c | awk '{printf "%s%s %s", sep, $1, $2; sep=", "}')
+            failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$id/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and (.steps | length) > 0) | .name' |
+              paste -sd ';' -)
+            line="$w $conclusion: $counts. Run https://github.com/$GH_REPO/actions/runs/$id"
+            if [ "$conclusion" = success ]; then
+              echo "::notice title=$w::$line"
+            else
+              red=true
+              echo "::error title=$w::$line. Not passed: ${failed:-none that ran}"
+            fi
+          done
+          gh api -X POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$reported" -f "sha=$sha" --silent
+          [ "$red" = false ]
