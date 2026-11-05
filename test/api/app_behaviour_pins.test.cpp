@@ -809,9 +809,22 @@ std::pair<std::size_t, std::size_t> firstPlacementPixels(const std::set<std::str
         test.loop,
         [&] { return test.observer.reported("snap") && test.observer.reported("fade") && test.observer.lastFrameFull; },
         "the names laid out"));
-    EXPECT_TRUE(test.placed("a placement with both names"));
-    EXPECT_EQ(1u, test.count("snap")) << "the listed source's name is not placed";
-    EXPECT_EQ(1u, test.count("fade")) << "the other source's name is not placed";
+    // Wait for the names to be placed, not for a placement that starts after this
+    // point. With placement transitions on, a placement after the first waits for
+    // the transition (an hour here). New buckets shorten that only until they are
+    // placed, which can be before this point.
+    int seen = test.observer.frames;
+    EXPECT_TRUE(runUntil(
+        test.loop,
+        [&] {
+            if (test.count("snap") == 1 && test.count("fade") == 1) return true;
+            if (test.observer.frames != seen) {
+                seen = test.observer.frames;
+                test.map->triggerRepaint();
+            }
+            return false;
+        },
+        "both names placed"));
     return drawnPixels(test);
 }
 
