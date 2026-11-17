@@ -192,7 +192,7 @@ lowp float halo_blur = u_halo_blur;
     mat2 rotation_matrix = mat2(angle_cos, -1.0 * angle_sin, angle_sin, angle_cos);
 
     vec4 projected_pos = u_label_plane_matrix * vec4(a_projected_pos.xy, 0.0, 1.0);
-    gl_Position = u_coord_matrix * vec4(projected_pos.xy / projected_pos.w + rotation_matrix * (a_offset / 32.0 * fontScale + a_pxoffset), 0.0, 1.0);
+    gl_Position = u_coord_matrix * vec4(projected_pos.xy / projected_pos.w + rotation_matrix * (a_offset / 8.0 * fontScale + a_pxoffset), 0.0, 1.0);
     float gamma_scale = gl_Position.w;
 
     vec2 fade_opacity = unpack_opacity(a_fade_opacity);

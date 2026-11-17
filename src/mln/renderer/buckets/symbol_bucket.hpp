@@ -11,6 +11,9 @@
 #include <mln/style/layers/symbol_layer_properties.hpp>
 #include <mln/text/glyph_range.hpp>
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -68,6 +71,33 @@ using CollisionBoxDynamicVertexAttributes = gfx::Vertex<TypeList<attributes::pla
 const uint16_t MAX_GLYPH_ICON_SIZE = 255;
 const uint16_t SIZE_PACK_FACTOR = 128;
 const uint16_t MAX_PACKED_SIZE = MAX_GLYPH_ICON_SIZE * SIZE_PACK_FACTOR;
+
+// The fixed-point scale of a symbol quad's corner offsets from its anchor
+// (`a_offset`). Each corner is packed as an int16 in 1/SYMBOL_OFFSET_PACK_FACTOR
+// layout units, and every symbol shader (gl, mtl, vulkan, webgpu) and the CPU
+// copy in render_symbol_layer.cpp divide `a_offset` by the same number. A test
+// (symbol_offset_pack.test.cpp) checks that the compiled shaders agree.
+//
+// At 8 a corner can be up to 32767 / 8 = 4095.9 units from its anchor: for
+// text (units of 1/24 em) that is 2,389 pt at 14 pt text, for icons 4,096 pt.
+// It was 32 (1,024 units: 597 pt for 14 pt text), and a tall map card's text
+// past that limit wrapped by 2048 units and drew in the wrong place (#966).
+constexpr float SYMBOL_OFFSET_PACK_FACTOR = 8.0f;
+
+// Packs one corner offset. A value that does not fit an int16 sets `overflow`
+// and is saturated, never wrapped (a wrap is undefined behaviour and draws the
+// glyph far away). The caller logs the overflow as an error: no layout is
+// meant to reach it, so the saturated value is a guard, not a behaviour.
+inline int16_t packSymbolOffset(const float value, bool& overflow) {
+    const float packed = std::round(value * SYMBOL_OFFSET_PACK_FACTOR);
+    constexpr auto lowest = static_cast<float>(std::numeric_limits<int16_t>::min());
+    constexpr auto highest = static_cast<float>(std::numeric_limits<int16_t>::max());
+    if (!(packed >= lowest && packed <= highest)) {
+        overflow = true;
+        return packed > 0 ? std::numeric_limits<int16_t>::max() : std::numeric_limits<int16_t>::min();
+    }
+    return static_cast<int16_t>(packed);
+}
 
 struct ZoomEvaluatedSize {
     bool isZoomConstant;
@@ -305,9 +335,11 @@ public:
 #endif
 
 #if MLN_USE_SYMBOL_INSTANCING
+    // `offsetOverflow` is set when a corner offset does not fit (packSymbolOffset).
     static SymbolLayoutAttributes layoutAttributes(const SymbolQuad& symbol,
                                                    const Anchor& labelAnchor,
-                                                   const Range<float>& sizeData) {
+                                                   const Range<float>& sizeData,
+                                                   bool& offsetOverflow) {
         const uint16_t aSizeMin = (std::min(MAX_PACKED_SIZE, static_cast<uint16_t>(sizeData.min * SIZE_PACK_FACTOR))
                                    << 1) +
                                   uint16_t(symbol.isSDF);
@@ -318,15 +350,15 @@ public:
                        static_cast<int16_t>(symbol.minFontScale.x * 256),
                        static_cast<int16_t>(symbol.minFontScale.y * 256)},
 
-                .a2 = {static_cast<int16_t>(std::round(symbol.tl.x * 32)),
-                       static_cast<int16_t>(std::round((symbol.tl.y + symbol.glyphOffset.y) * 32)),
-                       static_cast<int16_t>(std::round(symbol.tr.x * 32)),
-                       static_cast<int16_t>(std::round((symbol.tr.y + symbol.glyphOffset.y) * 32))},
+                .a2 = {packSymbolOffset(symbol.tl.x, offsetOverflow),
+                       packSymbolOffset(symbol.tl.y + symbol.glyphOffset.y, offsetOverflow),
+                       packSymbolOffset(symbol.tr.x, offsetOverflow),
+                       packSymbolOffset(symbol.tr.y + symbol.glyphOffset.y, offsetOverflow)},
 
-                .a3 = {static_cast<int16_t>(std::round(symbol.bl.x * 32)),
-                       static_cast<int16_t>(std::round((symbol.bl.y + symbol.glyphOffset.y) * 32)),
-                       static_cast<int16_t>(std::round(symbol.br.x * 32)),
-                       static_cast<int16_t>(std::round((symbol.br.y + symbol.glyphOffset.y) * 32))},
+                .a3 = {packSymbolOffset(symbol.bl.x, offsetOverflow),
+                       packSymbolOffset(symbol.bl.y + symbol.glyphOffset.y, offsetOverflow),
+                       packSymbolOffset(symbol.br.x, offsetOverflow),
+                       packSymbolOffset(symbol.br.y + symbol.glyphOffset.y, offsetOverflow)},
 
                 .a4 = {symbol.tex.x, symbol.tex.y, symbol.tex.w, symbol.tex.h},
 
@@ -341,6 +373,7 @@ public:
                 }};
     }
 #else
+    // `offsetOverflow` is set when the corner offset does not fit (packSymbolOffset).
     static SymbolLayoutAttributes layoutAttributes(Point<float> labelAnchor,
                                                    Point<float> o,
                                                    float glyphOffsetY,
@@ -349,7 +382,8 @@ public:
                                                    const Range<float>& sizeData,
                                                    bool isSDF,
                                                    Point<float> pixelOffset,
-                                                   Point<float> minFontScale) {
+                                                   Point<float> minFontScale,
+                                                   bool& offsetOverflow) {
         const uint16_t aSizeMin = (std::min(MAX_PACKED_SIZE, static_cast<uint16_t>(sizeData.min * SIZE_PACK_FACTOR))
                                    << 1) +
                                   uint16_t(isSDF);
@@ -359,8 +393,8 @@ public:
             // passed to shader (8 max for some devices)
             .a1 = {{static_cast<int16_t>(labelAnchor.x),
                     static_cast<int16_t>(labelAnchor.y),
-                    static_cast<int16_t>(std::round(o.x * 32)), // use 1/32 pixels for placement
-                    static_cast<int16_t>(std::round((o.y + glyphOffsetY) * 32))}},
+                    packSymbolOffset(o.x, offsetOverflow), // 1/SYMBOL_OFFSET_PACK_FACTOR units
+                    packSymbolOffset(o.y + glyphOffsetY, offsetOverflow)}},
             .a2 = {{tx, ty, aSizeMin, aSizeMax}},
             .a3 = {{static_cast<int16_t>(pixelOffset.x * 16),
                     static_cast<int16_t>(pixelOffset.y * 16),

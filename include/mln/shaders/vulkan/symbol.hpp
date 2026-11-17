@@ -178,7 +178,7 @@ void main() {
 
     const vec4 projected_pos = drawable.label_plane_matrix * vec4(dynamic.projected_pos[0], dynamic.projected_pos[1], 0.0, 1.0);
     const vec2 pos0 = projected_pos.xy / projected_pos.w;
-    const vec2 posOffset = a_offset * max(a_minFontScale, fontScale) / 32.0 + a_pxoffset / 16.0;
+    const vec2 posOffset = a_offset * max(a_minFontScale, fontScale) / 8.0 + a_pxoffset / 16.0;
     gl_Position = drawable.coord_matrix * vec4(pos0 + rotation_matrix * posOffset, 0.0, 1.0);
     applySurfaceTransform();
 
@@ -454,7 +454,7 @@ void main() {
     const mat2 rotation_matrix = mat2(angle_cos, -1.0 * angle_sin, angle_sin, angle_cos);
 
     const vec4 projected_pos = drawable.label_plane_matrix * vec4(dynamic.projected_pos[0], dynamic.projected_pos[1], 0.0, 1.0);
-    const vec2 pos_rot = a_offset / 32.0 * fontScale + a_pxoffset;
+    const vec2 pos_rot = a_offset / 8.0 * fontScale + a_pxoffset;
     const vec2 pos0 = projected_pos.xy / projected_pos.w + rotation_matrix * pos_rot;
     gl_Position = drawable.coord_matrix * vec4(pos0, 0.0, 1.0);
     applySurfaceTransform();
@@ -810,7 +810,7 @@ void main() {
     const mat2 rotation_matrix = mat2(angle_cos, -1.0 * angle_sin, angle_sin, angle_cos);
 
     const vec4 projected_pos = drawable.label_plane_matrix * vec4(dynamic.projected_pos[0], dynamic.projected_pos[1], 0.0, 1.0);
-    const vec2 pos_rot = a_offset / 32.0 * fontScale;
+    const vec2 pos_rot = a_offset / 8.0 * fontScale;
     const vec2 pos0 = projected_pos.xy / projected_pos.w + rotation_matrix * pos_rot;
     gl_Position = drawable.coord_matrix * vec4(pos0, 0.0, 1.0);
     applySurfaceTransform();

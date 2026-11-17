@@ -87,6 +87,11 @@ private:
 
     void addToDebugBuffers(SymbolBucket&);
 
+    // Logs, once per layout, that a symbol corner offset did not fit its
+    // int16 pack (#966). No layout is meant to reach it.
+    void reportOffsetOverflow();
+    bool offsetOverflowReported = false;
+
     // Adds placed items to the buffer.
     size_t addSymbol(SymbolBucket::Buffer&,
                      Range<float> sizeData,

@@ -15,6 +15,7 @@
 #include <mln/util/containers.hpp>
 #include <mln/util/feature.hpp>
 #include <mln/util/i18n.hpp>
+#include <mln/util/logging.hpp>
 #include <mln/util/platform.hpp>
 #include <mln/util/string.hpp>
 #include <mln/util/utf.hpp>
@@ -1255,6 +1256,17 @@ std::size_t SymbolLayout::addSymbolGlyphQuads(SymbolBucket& bucket,
     return lastAddedSection ? *lastAddedSection : 0u;
 }
 
+void SymbolLayout::reportOffsetOverflow() {
+    if (offsetOverflowReported) {
+        return;
+    }
+    offsetOverflowReported = true;
+    Log::Error(Event::Render,
+               "Symbol layer '" + bucketLeaderID + "': a glyph or icon corner is more than " +
+                   std::to_string(static_cast<int>(std::numeric_limits<int16_t>::max() / SYMBOL_OFFSET_PACK_FACTOR)) +
+                   " layout units from its anchor; it is cut at that limit (#966)");
+}
+
 #if MLN_USE_SYMBOL_INSTANCING
 size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
                                const Range<float> sizeData,
@@ -1276,7 +1288,11 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
     auto& segment = buffer.segments.back();
     auto index = static_cast<uint16_t>(segment.baseInstance + segment.instanceCount);
 
-    auto attributes = SymbolBucket::layoutAttributes(symbol, labelAnchor, sizeData);
+    bool offsetOverflow = false;
+    auto attributes = SymbolBucket::layoutAttributes(symbol, labelAnchor, sizeData, offsetOverflow);
+    if (offsetOverflow) {
+        reportOffsetOverflow();
+    }
     buffer.attributeData().emplace_back(attributes);
 
     auto dynamicAttributes = SymbolBucket::dynamicLayoutAttributes(labelAnchor.point, 0);
@@ -1324,6 +1340,7 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
 
     // coordinates (2 triangles)
     auto& attributeData = buffer.attributeData();
+    bool offsetOverflow = false;
     attributeData.emplace_back(SymbolBucket::layoutAttributes(labelAnchor.point,
                                                               tl,
                                                               symbol.glyphOffset.y,
@@ -1332,7 +1349,8 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
                                                               sizeData,
                                                               symbol.isSDF,
                                                               pixelOffsetTL,
-                                                              minFontScale));
+                                                              minFontScale,
+                                                              offsetOverflow));
     attributeData.emplace_back(SymbolBucket::layoutAttributes(labelAnchor.point,
                                                               tr,
                                                               symbol.glyphOffset.y,
@@ -1341,7 +1359,8 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
                                                               sizeData,
                                                               symbol.isSDF,
                                                               {pixelOffsetBR.x, pixelOffsetTL.y},
-                                                              minFontScale));
+                                                              minFontScale,
+                                                              offsetOverflow));
     attributeData.emplace_back(SymbolBucket::layoutAttributes(labelAnchor.point,
                                                               bl,
                                                               symbol.glyphOffset.y,
@@ -1350,7 +1369,8 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
                                                               sizeData,
                                                               symbol.isSDF,
                                                               {pixelOffsetTL.x, pixelOffsetBR.y},
-                                                              minFontScale));
+                                                              minFontScale,
+                                                              offsetOverflow));
     attributeData.emplace_back(SymbolBucket::layoutAttributes(labelAnchor.point,
                                                               br,
                                                               symbol.glyphOffset.y,
@@ -1359,7 +1379,11 @@ size_t SymbolLayout::addSymbol(SymbolBucket::Buffer& buffer,
                                                               sizeData,
                                                               symbol.isSDF,
                                                               pixelOffsetBR,
-                                                              minFontScale));
+                                                              minFontScale,
+                                                              offsetOverflow));
+    if (offsetOverflow) {
+        reportOffsetOverflow();
+    }
 
     // Dynamic/Opacity vertices are initialized so that the vertex count always
     // agrees with the layout vertex buffer, but they will always be updated

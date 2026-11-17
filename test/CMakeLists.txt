@@ -33,6 +33,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/renderer/image_manager.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/offscreen_texture_stats.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/pattern_atlas.test.cpp
+    ${PROJECT_SOURCE_DIR}/test/renderer/symbol_offset_pack.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/renderable.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/shader_registry.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/sources/render_contour_source.test.cpp

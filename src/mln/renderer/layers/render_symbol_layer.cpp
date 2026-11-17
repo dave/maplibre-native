@@ -714,7 +714,8 @@ void RenderSymbolLayer::captureRenderedFeatures(const RenderTile& tile,
 
                 const vec4 projected_pos = labelPlaneMatrix * vec(in_projected_pos, 0, 1);
                 const vec2 pos0 = {projected_pos[0] / projected_pos[3], projected_pos[1] / projected_pos[3]};
-                const vec2 posOffset = a_offset * max(a_minFontScale, fontScale) / 32.0 + a_pxoffset / 16.0;
+                const vec2 posOffset = a_offset * max(a_minFontScale, fontScale) / SYMBOL_OFFSET_PACK_FACTOR +
+                                       a_pxoffset / 16.0;
 
                 const vec4 outPos = glCoordMatrix * vec(pos0 + rotation_matrix * posOffset, 0.0, 1.0);
                 return slice<0, 3>(outPos) / outPos[3];

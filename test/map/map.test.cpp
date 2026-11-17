@@ -2453,3 +2453,39 @@ TEST(Map, NoFadeInSourcesKeepTheTileBorderData) {
     EXPECT_TRUE(crossesTheBorder({})) << "the control: the symbol must cross the tile's edge";
     EXPECT_TRUE(crossesTheBorder({"names"})) << "no-fade-in changed the tile's border data";
 }
+
+// A symbol corner that does not fit the int16 offset pack is an error, logged
+// once for its layer, not a silent wrap (#966). A corner past the old limit
+// (1,024 units) but inside the new one (4,096) is fine and logs nothing.
+TEST(Map, SymbolOffsetPastTheLimitLogsAnError) {
+    FixtureLog log;
+    util::RunLoop runLoop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    fileSource->glyphsResponse = [](const Resource&) {
+        Response response;
+        response.data = std::make_shared<std::string>(util::read_file("test/fixtures/resources/glyphs.pbf"));
+        return response;
+    };
+    StubMapObserver observer;
+    HeadlessFrontend frontend{Size{256, 256}, 1.0f};
+    MapAdapter map{
+        frontend, observer, fileSource, MapOptions().withMapMode(MapMode::Static).withSize(frontend.getSize())};
+    // text-size 24: one em is 24 units. 100 em = 2,400 units (inside); 250 em = 6,000 (past).
+    map.getStyle().loadJSON(R"({"version": 8,
+        "glyphs": "http://glyphs/{fontstack}/{range}.pbf",
+        "sources": {"point": {"type": "geojson", "data": {"type": "Point", "coordinates": [0, 0]}}},
+        "layers": [
+          {"id": "inside", "type": "symbol", "source": "point",
+           "layout": {"text-field": "abab", "text-font": ["Test Stack"], "text-size": 24,
+                      "text-offset": [0, 100], "text-allow-overlap": true}},
+          {"id": "past", "type": "symbol", "source": "point",
+           "layout": {"text-field": "abab", "text-font": ["Test Stack"], "text-size": 24,
+                      "text-offset": [0, 250], "text-allow-overlap": true}}]})");
+    map.jumpTo(CameraOptions().withZoom(0).withCenter(LatLng{0, 0}));
+    frontend.render(map);
+
+    const auto past = FixtureLog::Message(EventSeverity::Error, Event::Render, -1, "Symbol layer 'past'");
+    const auto inside = FixtureLog::Message(EventSeverity::Error, Event::Render, -1, "Symbol layer 'inside'");
+    EXPECT_EQ(1u, log.count(past, true)) << "no error for a corner past the limit";
+    EXPECT_EQ(0u, log.count(inside, true)) << "an error for a corner inside the new limit";
+}
