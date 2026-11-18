@@ -24,7 +24,7 @@
 #include <mln/shaders/webgpu/symbol.hpp>
 #endif
 
-#include <cstdio>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -159,8 +159,9 @@ std::vector<std::string> decodeLines(const std::string& source) {
 }
 
 void expectDecodesWithThePackFactor(const std::string& name, const std::string& source) {
-    char factor[32];
-    std::snprintf(factor, sizeof(factor), "/ %.1f", static_cast<double>(SYMBOL_OFFSET_PACK_FACTOR));
+    std::ostringstream factorText;
+    factorText << "/ " << std::fixed << std::setprecision(1) << SYMBOL_OFFSET_PACK_FACTOR;
+    const std::string factor = factorText.str();
     const auto lines = decodeLines(source);
     ASSERT_EQ(1u, lines.size()) << name << ": expected one a_offset decode";
     EXPECT_NE(std::string::npos, lines.front().find(factor))

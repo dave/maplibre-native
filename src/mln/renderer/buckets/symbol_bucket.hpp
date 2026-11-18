@@ -92,7 +92,7 @@ inline int16_t packSymbolOffset(const float value, bool& overflow) {
     const float packed = std::round(value * SYMBOL_OFFSET_PACK_FACTOR);
     constexpr auto lowest = static_cast<float>(std::numeric_limits<int16_t>::min());
     constexpr auto highest = static_cast<float>(std::numeric_limits<int16_t>::max());
-    if (!(packed >= lowest && packed <= highest)) {
+    if (std::isnan(packed) || packed < lowest || packed > highest) {
         overflow = true;
         return packed > 0 ? std::numeric_limits<int16_t>::max() : std::numeric_limits<int16_t>::min();
     }
