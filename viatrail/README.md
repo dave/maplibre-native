@@ -6,7 +6,7 @@ Fork-only build scripts. Upstream MapLibre Native does not use this folder.
   app vendors. Upstream's release build, then the simulator slice is thinned to
   arm64 and the dSYMs move out of the framework.
 - `build-aar.sh <out dir>`: the Android OpenGL release AAR for arm64-v8a.
-- `copy-licenses.sh <out dir>`: the fork's licence files into `<out dir>/licenses/`
+- `copy-licenses.sh <out dir>`: the licence files of the fork and of every linked submodule (at its pinned commit) into `<out dir>/licenses/`
   (both build scripts call it). Viatrail commits them as `vendor/maplibre/licenses/`
   for its licence notices (Viatrail #270).
 - `ci-runs.sh <sha> <workflow>...`: the fork's CI runs for a commit; both build
