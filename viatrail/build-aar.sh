@@ -17,7 +17,9 @@
 # (platform/android/android.cmake: -Oz to compile, -O2 and -flto to link).
 #
 # It writes <out dir>/maplibre-android-fork.aar and <out dir>/BUILD_INFO (the
-# fork commit, its CI runs, the command, the NDK, the AAR's md5).
+# fork commit, its CI runs, the command, the NDK, the AAR's md5), and
+# <out dir>/licenses/ (viatrail/copy-licenses.sh: the fork's licence files,
+# which Viatrail commits as vendor/maplibre/licenses/).
 #
 # Set ANDROID_SDK_ROOT if the SDK is not at ~/Library/Android/sdk.
 #
@@ -61,4 +63,5 @@ MD5=$(md5 -q "$OUT/maplibre-android-fork.aar")
   echo "ndk $NDK_VERSION"
   echo "md5 $MD5"
 } > "$OUT/BUILD_INFO"
+viatrail/copy-licenses.sh "$OUT"
 echo "built $OUT/maplibre-android-fork.aar from $SHA (OpenGL release, arm64-v8a), md5 $MD5"

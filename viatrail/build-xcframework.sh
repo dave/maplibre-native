@@ -24,7 +24,9 @@
 #   - the device binary is checked for release mode: no __assert_rtn import.
 #
 # It writes <out dir>/MapLibre.xcframework and <out dir>/BUILD_INFO (the fork
-# commit, its CI runs, the command, Xcode's version).
+# commit, its CI runs, the command, Xcode's version), and <out dir>/licenses/
+# (viatrail/copy-licenses.sh: the fork's licence files, which Viatrail commits
+# as vendor/maplibre/licenses/).
 #
 # To build another commit: git worktree add <dir> <sha>, and run the script
 # from that tree.
@@ -112,4 +114,5 @@ fi
   echo "script viatrail/build-xcframework.sh (simulator slice thinned to arm64, dSYMs moved out)"
   echo "xcode $(xcodebuild -version | tr '\n' ' ')"
 } > "$OUT/BUILD_INFO"
+viatrail/copy-licenses.sh "$OUT"
 echo "built $XCF from $SHA (release mode)"
