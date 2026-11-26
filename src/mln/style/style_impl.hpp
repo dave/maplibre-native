@@ -98,6 +98,7 @@ public:
 
     std::optional<Immutable<style::Image::Impl>> getImage(const std::string&) const;
     void addImage(std::unique_ptr<style::Image>);
+    void addImages(std::vector<std::unique_ptr<style::Image>>);
     void removeImage(const std::string&);
 
     const std::string& getGlyphURL() const;

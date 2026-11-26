@@ -60,6 +60,9 @@ public:
     // Images
     std::optional<Image> getImage(const std::string&) const;
     void addImage(std::unique_ptr<Image>);
+    // Adds or replaces every image in one style update. If an id repeats in
+    // the list, the last image with that id wins.
+    void addImages(std::vector<std::unique_ptr<Image>>);
     void removeImage(const std::string&);
 
     // Sources

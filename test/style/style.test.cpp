@@ -7,6 +7,7 @@
 #include <mln/style/observer.hpp>
 #include <mln/style/layers/line_layer_impl.hpp>
 #include <mln/style/source_impl.hpp>
+#include <mln/style/image_impl.hpp>
 #include <mln/style/sources/vector_source.hpp>
 #include <mln/style/layer.hpp>
 #include <mln/style/layers/line_layer.hpp>
@@ -17,6 +18,7 @@
 #include <mln/util/run_loop.hpp>
 #include <mln/util/client_options.hpp>
 
+#include <algorithm>
 #include <memory>
 
 #ifdef WIN32
@@ -474,6 +476,63 @@ TEST(Style, AddRemoveRemoveImage) {
     EXPECT_TRUE(!!style.getImage("three"));
     EXPECT_FALSE(!!style.getImage("two"));
     EXPECT_FALSE(!!style.getImage("four"));
+}
+
+namespace {
+std::unique_ptr<style::Image> makeTestImage(const std::string& id, uint32_t size) {
+    return std::make_unique<style::Image>(id, PremultipliedImage({size, size}), 1.0f);
+}
+
+std::vector<std::string> imageIDs(const Style::Impl& style) {
+    std::vector<std::string> ids;
+    for (const auto& image : *style.getImageImpls()) {
+        ids.push_back(image->id);
+    }
+    return ids;
+}
+} // namespace
+
+TEST(Style, AddImagesBatch) {
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    Style::Impl style{fileSource, 1.0, {Scheduler::GetBackground(), {}}};
+    style.addImage(makeTestImage("b", 4));
+    style.addImage(makeTestImage("d", 4));
+
+    std::vector<std::unique_ptr<style::Image>> batch;
+    batch.push_back(makeTestImage("e", 8));
+    batch.push_back(makeTestImage("a", 8));
+    batch.push_back(makeTestImage("d", 8)); // replaces the existing "d"
+    batch.push_back(makeTestImage("c", 2));
+    batch.push_back(makeTestImage("c", 16)); // repeated in the batch: the last wins
+    style.addImages(std::move(batch));
+
+    const auto ids = imageIDs(style);
+    EXPECT_EQ((std::vector<std::string>{"a", "b", "c", "d", "e"}), ids);
+    EXPECT_TRUE(std::is_sorted(style.getImageImpls()->begin(), style.getImageImpls()->end()));
+    EXPECT_EQ(4u, style.getImage("b")->get()->image.size.width);
+    EXPECT_EQ(8u, style.getImage("d")->get()->image.size.width);
+    EXPECT_EQ(16u, style.getImage("c")->get()->image.size.width);
+    EXPECT_EQ(8u, style.getImage("a")->get()->image.size.width);
+}
+
+TEST(Style, AddImagesBatchPublishesOneUpdate) {
+    util::RunLoop loop;
+    auto fileSource = std::make_shared<StubFileSource>();
+    Style::Impl style{fileSource, 1.0, {Scheduler::GetBackground(), {}}};
+    struct Observer final : style::Observer {
+        size_t updates = 0;
+        void onUpdate() override { ++updates; }
+    } observer;
+    style.setObserver(&observer);
+
+    std::vector<std::unique_ptr<style::Image>> batch;
+    for (const auto* id : {"x", "y", "z"}) {
+        batch.push_back(makeTestImage(id, 4));
+    }
+    style.addImages(std::move(batch));
+    EXPECT_EQ(1u, observer.updates);
+    EXPECT_EQ((std::vector<std::string>{"x", "y", "z"}), imageIDs(style));
 }
 
 TEST(Style, LayerTransitionRefreshesImmutableCollection) {

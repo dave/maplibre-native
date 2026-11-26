@@ -1332,10 +1332,14 @@ void NativeMapView::addImages(JNIEnv& env, const jni::Array<jni::Object<mln::and
     jni::NullCheck(env, &jimages);
     std::size_t len = jimages.Length(env);
 
+    // One style update for the whole array (Viatrail #1357). Each Java Image
+    // carries its own sdf and stretch values.
+    std::vector<std::unique_ptr<mln::style::Image>> images;
+    images.reserve(len);
     for (std::size_t i = 0; i < len; i++) {
-        auto image = mln::android::Image::getImage(env, jimages.Get(env, i));
-        map->getStyle().addImage(std::make_unique<mln::style::Image>(image));
+        images.push_back(std::make_unique<mln::style::Image>(mln::android::Image::getImage(env, jimages.Get(env, i))));
     }
+    map->getStyle().addImages(std::move(images));
 }
 
 void NativeMapView::removeImage(JNIEnv& env, const jni::String& name) {

@@ -301,6 +301,17 @@ MLN_EXPORT
 - (void)setImage:(MLNImage *)image forName:(NSString *)name;
 
 /**
+ Adds or overrides several images used by the style’s layers, in one style
+ update.
+
+ This has the same result as calling ``setImage:forName:`` for each entry, but
+ the style changes once for the whole dictionary.
+
+ @param images The images to set, keyed by name.
+ */
+- (void)setImages:(NSDictionary<NSString *, MLNImage *> *)images;
+
+/**
  Removes a name and its associated image from the style.
 
  @param name The name of the image to remove.

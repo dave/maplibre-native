@@ -515,6 +515,20 @@ const MLNExceptionName MLNRedundantSourceIdentifierException =
   self.rawStyle->addImage([image mgl_styleImageWithIdentifier:name]);
 }
 
+- (void)setImages:(NSDictionary<NSString *, MLNImage *> *)images {
+  MLNLogDebug(@"Setting %lu images", (unsigned long)images.count);
+  if (!images) {
+    [NSException raise:NSInvalidArgumentException format:@"Cannot assign a nil image dictionary."];
+  }
+
+  std::vector<std::unique_ptr<mln::style::Image>> styleImages;
+  styleImages.reserve(images.count);
+  for (NSString *name in images) {
+    styleImages.push_back([images[name] mgl_styleImageWithIdentifier:name]);
+  }
+  self.rawStyle->addImages(std::move(styleImages));
+}
+
 - (void)removeImageForName:(NSString *)name {
   MLNLogDebug(@"Removing imageForName: %@", name);
   if (!name) {

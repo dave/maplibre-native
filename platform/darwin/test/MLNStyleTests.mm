@@ -443,6 +443,56 @@
   XCTAssertEqual(image.size.height, styleImage.size.height);
 }
 
+- (void)testSetImages {
+  NSString *maskName = @"TrackingLocationMask";
+#if TARGET_OS_IPHONE
+  MLNImage *mask = [MLNImage imageNamed:maskName
+                               inBundle:[NSBundle bundleForClass:[self class]]
+          compatibleWithTraitCollection:nil];
+#else
+  MLNImage *mask = [[NSBundle bundleForClass:[self class]] imageForResource:maskName];
+#endif
+  XCTAssertNotNil(mask);
+  MLNImage *small = [self imageOfWidth:3 height:5];
+  MLNImage *replaced = [self imageOfWidth:7 height:2];
+
+  [self.style setImage:small forName:@"replaced"];
+  [self.style setImages:@{@"mask" : mask, @"small" : small, @"replaced" : replaced}];
+
+  for (NSString *name in @[ @"mask", @"small", @"replaced" ]) {
+    XCTAssertNotNil([self.style imageForName:name], @"%@ is missing", name);
+  }
+  XCTAssertEqual(mask.size.width, [self.style imageForName:@"mask"].size.width);
+  XCTAssertEqual(3, [self.style imageForName:@"small"].size.width);
+  XCTAssertEqual(5, [self.style imageForName:@"small"].size.height);
+  XCTAssertEqual(7, [self.style imageForName:@"replaced"].size.width);
+  XCTAssertEqual(2, [self.style imageForName:@"replaced"].size.height);
+
+  [self.style setImages:@{}];
+  XCTAssertNotNil([self.style imageForName:@"small"]);
+}
+
+- (MLNImage *)imageOfWidth:(CGFloat)width height:(CGFloat)height {
+  CGSize size = CGSizeMake(width, height);
+#if TARGET_OS_IPHONE
+  UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+  format.scale = 1;
+  UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size
+                                                                             format:format];
+  return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+    [[UIColor redColor] setFill];
+    [context fillRect:CGRectMake(0, 0, width, height)];
+  }];
+#else
+  NSImage *image = [[NSImage alloc] initWithSize:size];
+  [image lockFocus];
+  [[NSColor redColor] setFill];
+  NSRectFill(NSMakeRect(0, 0, width, height));
+  [image unlockFocus];
+  return image;
+#endif
+}
+
 - (void)testLayersOrder {
   NSString *filePath = [[NSBundle bundleForClass:self.class] pathForResource:@"amsterdam"
                                                                       ofType:@"geojson"];

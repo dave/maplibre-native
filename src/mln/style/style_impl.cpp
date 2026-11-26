@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <unordered_set>
 
 namespace mln {
 namespace style {
@@ -401,6 +402,35 @@ void Style::Impl::addImage(std::unique_ptr<style::Image> image) {
     } else {
         newImages->insert(it, std::move(image->baseImpl));
     }
+    images = std::move(newImages);
+    observer->onUpdate();
+}
+
+void Style::Impl::addImages(std::vector<std::unique_ptr<style::Image>> batch) {
+    // Remove repeated ids first, keeping the last image with each id, so the
+    // one sort below never sees two images with one id (Viatrail #1357).
+    std::unordered_set<std::string> seen;
+    std::vector<Immutable<style::Image::Impl>> added;
+    added.reserve(batch.size());
+    for (auto it = batch.rbegin(); it != batch.rend(); ++it) {
+        if (seen.insert((*it)->getID()).second) {
+            added.push_back(std::move((*it)->baseImpl));
+        }
+    }
+
+    auto newImages = makeMutable<ImageImpls>(*images);
+    assert(std::is_sorted(newImages->begin(), newImages->end()));
+    const auto existing = static_cast<std::ptrdiff_t>(newImages->size());
+    for (auto& image : added) {
+        const auto end = newImages->begin() + existing;
+        const auto found = std::lower_bound(newImages->begin(), end, image);
+        if (found != end && (*found)->id == image->id) {
+            *found = std::move(image); // addImages may update, as addImage does
+        } else {
+            newImages->push_back(std::move(image));
+        }
+    }
+    std::sort(newImages->begin(), newImages->end());
     images = std::move(newImages);
     observer->onUpdate();
 }

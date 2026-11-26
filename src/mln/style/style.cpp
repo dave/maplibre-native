@@ -108,6 +108,14 @@ void Style::addImage(std::unique_ptr<Image> image) {
     impl->addImage(std::move(image));
 }
 
+void Style::addImages(std::vector<std::unique_ptr<Image>> images) {
+    MLN_TRACE_FUNC();
+
+    if (images.empty()) return;
+    impl->mutated = true;
+    impl->addImages(std::move(images));
+}
+
 void Style::removeImage(const std::string& name) {
     MLN_TRACE_FUNC();
 

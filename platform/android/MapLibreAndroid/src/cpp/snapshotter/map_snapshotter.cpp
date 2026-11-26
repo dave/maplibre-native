@@ -289,10 +289,12 @@ void MapSnapshotter::addImages(JNIEnv& env, const jni::Array<jni::Object<mln::an
     jni::NullCheck(env, &jimages);
     std::size_t len = jimages.Length(env);
 
+    std::vector<std::unique_ptr<mln::style::Image>> images;
+    images.reserve(len);
     for (std::size_t i = 0; i < len; ++i) {
-        auto image = mln::android::Image::getImage(env, jimages.Get(env, i));
-        snapshotter->getStyle().addImage(std::make_unique<mln::style::Image>(image));
+        images.push_back(std::make_unique<mln::style::Image>(mln::android::Image::getImage(env, jimages.Get(env, i))));
     }
+    snapshotter->getStyle().addImages(std::move(images));
 }
 
 jni::Local<jni::Object<Layer>> MapSnapshotter::getLayer(JNIEnv& env, const jni::String& layerId) {
