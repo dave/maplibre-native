@@ -2,6 +2,7 @@
 
 #include <mln/gfx/render_pass.hpp>
 #include <mln/mtl/context.hpp>
+#include <mln/util/hash.hpp>
 #include <mln/mtl/renderer_backend.hpp>
 #include <mln/mtl/renderable_resource.hpp>
 #include <mln/mtl/uniform_buffer.hpp>
@@ -84,12 +85,6 @@ MTLRenderPipelineStatePtr ShaderProgram::getRenderPipelineState(const gfx::Rende
                                                                 const MTLVertexDescriptorPtr& vertexDescriptor,
                                                                 const gfx::ColorMode& colorMode,
                                                                 const std::optional<std::size_t> reuseHash) const {
-    if (reuseHash.has_value()) {
-        // we'd like to reuse a previous value
-        if (auto it = renderPipelineStateCache.find(reuseHash.value()); it != renderPipelineStateCache.end())
-            return it->second;
-    }
-
     auto pool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
 
     const auto& renderableResource = renderable.getResource<RenderableResource>();
@@ -112,6 +107,19 @@ MTLRenderPipelineStatePtr ShaderProgram::getRenderPipelineState(const gfx::Rende
             if (auto* tex = stencilTarget->texture()) {
                 stencilFormat = tex->pixelFormat();
             }
+        }
+    }
+
+    // The same shader can draw into targets with different attachments (the main framebuffer, and the
+    // offscreen image of a line-glow-radius layer with no depth or stencil), so the formats are part of the key.
+    std::optional<std::size_t> cacheKey;
+    if (reuseHash.has_value()) {
+        cacheKey = util::hash(reuseHash.value(),
+                              static_cast<std::size_t>(colorFormat),
+                              static_cast<std::size_t>(depthFormat.value_or(MTL::PixelFormatInvalid)),
+                              static_cast<std::size_t>(stencilFormat.value_or(MTL::PixelFormatInvalid)));
+        if (auto it = renderPipelineStateCache.find(*cacheKey); it != renderPipelineStateCache.end()) {
+            return it->second;
         }
     }
 
@@ -171,9 +179,9 @@ MTLRenderPipelineStatePtr ShaderProgram::getRenderPipelineState(const gfx::Rende
         assert(false);
     }
 
-    if (reuseHash.has_value()) {
+    if (cacheKey.has_value()) {
         // store the value for future reuse
-        renderPipelineStateCache[reuseHash.value()] = rps;
+        renderPipelineStateCache[*cacheKey] = rps;
     }
 
     return rps;

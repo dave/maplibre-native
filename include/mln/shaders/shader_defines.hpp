@@ -132,6 +132,11 @@ enum {
 };
 
 enum {
+    idLineGlowBlurUBO = getEnumValue(drawableReservedUBOCount, layerUBOStartId),
+    lineGlowBlurUBOCount
+};
+
+enum {
     idHillshadeEvaluatedPropsUBO = getEnumValue(hillshadeLayerSSBOCount, layerUBOStartId),
     hillshadeLayerUBOCount
 };
@@ -327,6 +332,11 @@ enum {
 };
 
 enum {
+    idLineGlowImageTexture,
+    lineGlowTextureCount
+};
+
+enum {
     idHillshadeImageTexture,
     hillshadeTextureCount
 };
@@ -447,6 +457,11 @@ enum {
     idFillExtrusionPatternToVertexAttribute,
 
     fillExtrusionVertexAttributeCount
+};
+
+enum {
+    idLineGlowPosVertexAttribute,
+    lineGlowVertexAttributeCount
 };
 
 enum {

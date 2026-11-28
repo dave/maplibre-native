@@ -198,4 +198,17 @@ modifiedReferenceSpec["layout_symbol"]["symbol-screen-space"] = {
     "doc": "Internal use only"
 };
 
+// Viatrail: a soft glow drawn from the line's exact shape.
+modifiedReferenceSpec["paint_line"]["line-glow-radius"] = {
+    "type": "number",
+    "default": 0,
+    "minimum": 0,
+    "transition": true,
+    "units": "pixels",
+    "doc": "When above 0, the layer draws its lines into an offscreen image and blurs it with a Gaussian of this radius (sigma = radius / 2), in pixels, instead of drawing the lines directly. Line color, width and opacity apply. Overlapping parts of the line do not add up.",
+    "sdk-support": {"basic functionality": {"android": "viatrail", "ios": "viatrail"}},
+    "expression": {"interpolated": true, "parameters": ["zoom"]},
+    "property-type": "data-constant"
+};
+
 export default modifiedReferenceSpec;

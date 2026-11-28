@@ -67,12 +67,15 @@ void RenderTarget::upload(gfx::UploadPass& uploadPass) {
 void RenderTarget::render(RenderOrchestrator& orchestrator, const RenderTree& renderTree, PaintParameters& parameters) {
     parameters.renderPass = parameters.encoder->createRenderPass("render target",
                                                                  {.renderable = *offscreenTexture,
-                                                                  .clearColor = Color{0.0f, 0.0f, 0.0f, 1.0f},
+                                                                  .clearColor = clearColor,
                                                                   .clearDepth = 1.0f,
                                                                   .clearStencil = {}});
 #if MLN_RENDER_BACKEND_OPENGL
     parameters.updateStencilBufferAvailability();
 #endif
+
+    // Line drawables (line-glow-radius) read the global paint parameters, like in the main pass.
+    parameters.context.bindGlobalUniformBuffers(*parameters.renderPass);
 
     const gfx::ScissorRect prevScissorRect = parameters.scissorRect;
     const auto& size = getTexture()->getSize();
@@ -109,6 +112,7 @@ void RenderTarget::render(RenderOrchestrator& orchestrator, const RenderTree& re
         }
     });
 
+    parameters.context.unbindGlobalUniformBuffers(*parameters.renderPass);
     parameters.renderPass.reset();
     parameters.encoder->present(*offscreenTexture);
 

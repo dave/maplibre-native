@@ -40,6 +40,7 @@ list(APPEND
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/fill_extrusion.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/heatmap.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/heatmap_texture.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/line_glow_blur.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/hillshade.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/hillshade_prepare.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/shaders/mtl/color_relief.hpp
@@ -81,6 +82,7 @@ list(APPEND
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/fill_extrusion.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/heatmap.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/heatmap_texture.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/line_glow_blur.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/hillshade.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/hillshade_prepare.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/shaders/mtl/color_relief.cpp

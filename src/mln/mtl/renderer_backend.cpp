@@ -21,6 +21,7 @@
 #include <mln/shaders/mtl/fill_extrusion.hpp>
 #include <mln/shaders/mtl/heatmap.hpp>
 #include <mln/shaders/mtl/heatmap_texture.hpp>
+#include <mln/shaders/mtl/line_glow_blur.hpp>
 #include <mln/shaders/mtl/hillshade.hpp>
 #include <mln/shaders/mtl/hillshade_prepare.hpp>
 #include <mln/shaders/mtl/line.hpp>
@@ -107,6 +108,7 @@ void RendererBackend::initShaders(gfx::ShaderRegistry& shaders, const ProgramPar
                   shaders::BuiltIn::ColorReliefShader,
                   shaders::BuiltIn::LineShader,
                   shaders::BuiltIn::LineGradientShader,
+                  shaders::BuiltIn::LineGlowBlurShader,
                   shaders::BuiltIn::LineSDFShader,
                   shaders::BuiltIn::LineGradientSDFShader,
                   shaders::BuiltIn::LinePatternShader,

@@ -254,6 +254,34 @@ TransitionOptions LineLayer::getLineGapWidthTransition() const {
     return impl().paint.template get<LineGapWidth>().options;
 }
 
+PropertyValue<float> LineLayer::getDefaultLineGlowRadius() {
+    return {0.f};
+}
+
+const PropertyValue<float>& LineLayer::getLineGlowRadius() const {
+    return impl().paint.template get<LineGlowRadius>().value;
+}
+
+void LineLayer::setLineGlowRadius(const PropertyValue<float>& value) {
+    if (value == getLineGlowRadius())
+        return;
+    auto impl_ = mutableImpl();
+    impl_->paint.template get<LineGlowRadius>().value = value;
+    baseImpl = std::move(impl_);
+    observer->onLayerChanged(*this);
+}
+
+void LineLayer::setLineGlowRadiusTransition(const TransitionOptions& options) {
+    auto impl_ = mutableImpl();
+    impl_->paint.template get<LineGlowRadius>().options = options;
+    baseImpl = std::move(impl_);
+    observer->onLayerChanged(*this);
+}
+
+TransitionOptions LineLayer::getLineGlowRadiusTransition() const {
+    return impl().paint.template get<LineGlowRadius>().options;
+}
+
 ColorRampPropertyValue LineLayer::getDefaultLineGradient() {
     return {{}};
 }
@@ -455,13 +483,14 @@ using namespace conversion;
 
 namespace {
 
-constexpr uint8_t kPaintPropertyCount = 22u;
+constexpr uint8_t kPaintPropertyCount = 24u;
 
 enum class Property : uint8_t {
     LineBlur,
     LineColor,
     LineDasharray,
     LineGapWidth,
+    LineGlowRadius,
     LineGradient,
     LineOffset,
     LineOpacity,
@@ -473,6 +502,7 @@ enum class Property : uint8_t {
     LineColorTransition,
     LineDasharrayTransition,
     LineGapWidthTransition,
+    LineGlowRadiusTransition,
     LineGradientTransition,
     LineOffsetTransition,
     LineOpacityTransition,
@@ -497,6 +527,7 @@ constexpr const auto layerProperties = mapbox::eternal::hash_map<mapbox::eternal
      {"line-color", toUint8(Property::LineColor)},
      {"line-dasharray", toUint8(Property::LineDasharray)},
      {"line-gap-width", toUint8(Property::LineGapWidth)},
+     {"line-glow-radius", toUint8(Property::LineGlowRadius)},
      {"line-gradient", toUint8(Property::LineGradient)},
      {"line-offset", toUint8(Property::LineOffset)},
      {"line-opacity", toUint8(Property::LineOpacity)},
@@ -508,6 +539,7 @@ constexpr const auto layerProperties = mapbox::eternal::hash_map<mapbox::eternal
      {"line-color-transition", toUint8(Property::LineColorTransition)},
      {"line-dasharray-transition", toUint8(Property::LineDasharrayTransition)},
      {"line-gap-width-transition", toUint8(Property::LineGapWidthTransition)},
+     {"line-glow-radius-transition", toUint8(Property::LineGlowRadiusTransition)},
      {"line-gradient-transition", toUint8(Property::LineGradientTransition)},
      {"line-offset-transition", toUint8(Property::LineOffsetTransition)},
      {"line-opacity-transition", toUint8(Property::LineOpacityTransition)},
@@ -531,6 +563,8 @@ StyleProperty getLayerProperty(const LineLayer& layer, Property property) {
             return makeStyleProperty(layer.getLineDasharray());
         case Property::LineGapWidth:
             return makeStyleProperty(layer.getLineGapWidth());
+        case Property::LineGlowRadius:
+            return makeStyleProperty(layer.getLineGlowRadius());
         case Property::LineGradient:
             return makeStyleProperty(layer.getLineGradient());
         case Property::LineOffset:
@@ -553,6 +587,8 @@ StyleProperty getLayerProperty(const LineLayer& layer, Property property) {
             return makeStyleProperty(layer.getLineDasharrayTransition());
         case Property::LineGapWidthTransition:
             return makeStyleProperty(layer.getLineGapWidthTransition());
+        case Property::LineGlowRadiusTransition:
+            return makeStyleProperty(layer.getLineGlowRadiusTransition());
         case Property::LineGradientTransition:
             return makeStyleProperty(layer.getLineGradientTransition());
         case Property::LineOffsetTransition:
@@ -666,6 +702,29 @@ std::optional<Error> LineLayer::setPropertyInternal(const std::string& name, con
         setLineDasharray(*typedValue);
         return std::nullopt;
     }
+    if (property == Property::LineGlowRadius || property == Property::LineMiterLimit ||
+        property == Property::LineRoundLimit) {
+        Error error;
+        const auto& typedValue = convert<PropertyValue<float>>(value, error, false, false);
+        if (!typedValue) {
+            return error;
+        }
+
+        if (property == Property::LineGlowRadius) {
+            setLineGlowRadius(*typedValue);
+            return std::nullopt;
+        }
+
+        if (property == Property::LineMiterLimit) {
+            setLineMiterLimit(*typedValue);
+            return std::nullopt;
+        }
+
+        if (property == Property::LineRoundLimit) {
+            setLineRoundLimit(*typedValue);
+            return std::nullopt;
+        }
+    }
     if (property == Property::LineGradient) {
         Error error;
         const auto& typedValue = convert<ColorRampPropertyValue>(value, error, false, false);
@@ -726,23 +785,6 @@ std::optional<Error> LineLayer::setPropertyInternal(const std::string& name, con
         setLineJoin(*typedValue);
         return std::nullopt;
     }
-    if (property == Property::LineMiterLimit || property == Property::LineRoundLimit) {
-        Error error;
-        const auto& typedValue = convert<PropertyValue<float>>(value, error, false, false);
-        if (!typedValue) {
-            return error;
-        }
-
-        if (property == Property::LineMiterLimit) {
-            setLineMiterLimit(*typedValue);
-            return std::nullopt;
-        }
-
-        if (property == Property::LineRoundLimit) {
-            setLineRoundLimit(*typedValue);
-            return std::nullopt;
-        }
-    }
 
     Error error;
     std::optional<TransitionOptions> transition = convert<TransitionOptions>(value, error);
@@ -767,6 +809,11 @@ std::optional<Error> LineLayer::setPropertyInternal(const std::string& name, con
 
     if (property == Property::LineGapWidthTransition) {
         setLineGapWidthTransition(*transition);
+        return std::nullopt;
+    }
+
+    if (property == Property::LineGlowRadiusTransition) {
+        setLineGlowRadiusTransition(*transition);
         return std::nullopt;
     }
 

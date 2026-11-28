@@ -70,6 +70,12 @@ public:
     void setLineGapWidthTransition(const TransitionOptions&);
     TransitionOptions getLineGapWidthTransition() const;
 
+    static PropertyValue<float> getDefaultLineGlowRadius();
+    const PropertyValue<float>& getLineGlowRadius() const;
+    void setLineGlowRadius(const PropertyValue<float>&);
+    void setLineGlowRadiusTransition(const TransitionOptions&);
+    TransitionOptions getLineGlowRadiusTransition() const;
+
     static ColorRampPropertyValue getDefaultLineGradient();
     const ColorRampPropertyValue& getLineGradient() const;
     void setLineGradient(const ColorRampPropertyValue&);

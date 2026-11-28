@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mln/gfx/types.hpp>
+#include <mln/util/color.hpp>
 #include <mln/util/size.hpp>
 
 #include <functional>
@@ -75,6 +76,9 @@ public:
     /// Upload the layer groups
     void upload(gfx::UploadPass& uploadPass);
 
+    /// The colour the target is cleared to before each render. Opaque black by default (the heatmap's).
+    void setClearColor(const Color& color) { clearColor = color; }
+
     /// Render the layer groups
     void render(RenderOrchestrator&, const RenderTree&, PaintParameters&);
 
@@ -83,6 +87,7 @@ protected:
     std::unique_ptr<gfx::OffscreenTexture> offscreenTexture;
     using LayerGroupMap = std::map<int32_t, LayerGroupBasePtr>;
     LayerGroupMap layerGroupsByLayerIndex;
+    Color clearColor{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 } // namespace mln

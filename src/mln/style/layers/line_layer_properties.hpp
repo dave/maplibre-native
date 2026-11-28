@@ -62,6 +62,10 @@ struct LineGapWidth : DataDrivenPaintProperty<float, attributes::gapwidth, unifo
     static float defaultValue() { return 0.f; }
 };
 
+struct LineGlowRadius : PaintProperty<float> {
+    static float defaultValue() { return 0.f; }
+};
+
 struct LineGradient : ColorRampProperty {
 };
 
@@ -103,6 +107,7 @@ class LinePaintProperties : public Properties<
     LineDasharray,
     LineFloorWidth,
     LineGapWidth,
+    LineGlowRadius,
     LineGradient,
     LineOffset,
     LineOpacity,

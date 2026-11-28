@@ -13,6 +13,12 @@
 #include <mln/renderer/layers/line_layer_tweaker.hpp>
 #include <mln/renderer/paint_parameters.hpp>
 #include <mln/renderer/render_source.hpp>
+#include <mln/renderer/render_static_data.hpp>
+#include <mln/renderer/render_target.hpp>
+#include <mln/renderer/change_request.hpp>
+#include <mln/renderer/buckets/heatmap_bucket.hpp>
+#include <mln/shaders/line_glow_ubo.hpp>
+#include <mln/gfx/context.hpp>
 #include <mln/renderer/render_tile.hpp>
 #include <mln/renderer/render_tree.hpp>
 #include <mln/renderer/tile_render_data.hpp>
@@ -42,6 +48,44 @@ inline const LineLayer::Impl& impl_cast(const Immutable<style::Layer::Impl>& imp
 }
 
 const auto posNormalAttribName = "a_pos_normal";
+
+// Viatrail line glow (line-glow-radius). The offscreen images are this fraction of the viewport.
+constexpr float glowScale = 0.25f;
+
+/// Sets one glow pass's UBO each frame: a 1D Gaussian over `source` along `direction`,
+/// or a plain copy (sigma 0) for the final draw onto the map.
+class LineGlowBlurTweaker final : public LayerTweaker {
+public:
+    LineGlowBlurTweaker(std::string id_,
+                        Immutable<style::LayerProperties> properties,
+                        gfx::Texture2DPtr source_,
+                        std::array<float, 2> direction_)
+        : LayerTweaker(std::move(id_), std::move(properties)),
+          source(std::move(source_)),
+          direction(direction_) {}
+
+    void execute(LayerGroupBase& layerGroup, const PaintParameters& parameters) override {
+        if (layerGroup.empty()) {
+            return;
+        }
+        const auto& evaluated = static_cast<const LineLayerProperties&>(*evaluatedProperties).evaluated;
+        const auto size = source->getSize();
+        const bool blur = direction[0] != 0.f || direction[1] != 0.f;
+        // line-glow-radius is in pixels (points); sigma = radius / 2, converted to source texels.
+        const float sigma = blur ? evaluated.get<LineGlowRadius>() * 0.5f * parameters.pixelRatio * glowScale : 0.f;
+        const LineGlowBlurUBO ubo = {
+            .step_x = size.width ? direction[0] / static_cast<float>(size.width) : 0.f,
+            .step_y = size.height ? direction[1] / static_cast<float>(size.height) : 0.f,
+            .sigma = sigma,
+            .opacity = 1.f,
+        };
+        layerGroup.mutableUniformBuffers().createOrUpdate(idLineGlowBlurUBO, &ubo, parameters.context);
+    }
+
+private:
+    gfx::Texture2DPtr source;
+    std::array<float, 2> direction;
+};
 
 } // namespace
 
@@ -92,6 +136,11 @@ void RenderLineLayer::evaluate(const PropertyEvaluationParameters& parameters) {
     properties->renderPasses = mln::underlying_type(passes);
     evaluatedProperties = std::move(properties);
 
+    for (const auto& glowTweaker : glowTweakers) {
+        if (glowTweaker) {
+            glowTweaker->updateProperties(evaluatedProperties);
+        }
+    }
     if (auto* tweaker = static_cast<LineLayerTweaker*>(layerTweaker.get())) {
         tweaker->updateProperties(evaluatedProperties);
 #if MLN_RENDER_BACKEND_METAL
@@ -282,7 +331,12 @@ void RenderLineLayer::updateColorRamp() {
         colorRampTexture2D.reset();
 
         // delete all gradient drawables
-        if (layerGroup) {
+        if (glowMode && glowTargets[0]) {
+            if (const auto& group = glowTargets[0]->getLayerGroup(0)) {
+                stats.drawablesRemoved += group->getDrawableCount();
+                group->clearDrawables();
+            }
+        } else if (layerGroup) {
             stats.drawablesRemoved += layerGroup->getDrawableCount();
             layerGroup->clearDrawables();
         }
@@ -312,6 +366,176 @@ inline void setSegments(std::unique_ptr<gfx::DrawableBuilder>& builder, const Li
 
 } // namespace
 
+void RenderLineLayer::activateGlowTargets(bool activate, UniqueChangeRequestVec& changes) {
+    // In order: the lines, then the horizontal blur that reads them, then the vertical blur.
+    for (const auto& target : glowTargets) {
+        if (!target) {
+            continue;
+        }
+        if (activate) {
+            changes.emplace_back(std::make_unique<AddRenderTargetRequest>(target));
+        } else {
+            changes.emplace_back(std::make_unique<RemoveRenderTargetRequest>(target));
+        }
+    }
+}
+
+void RenderLineLayer::markLayerRenderable(bool willRender, UniqueChangeRequestVec& changes) {
+    RenderLayer::markLayerRenderable(willRender, changes);
+    activateGlowTargets(willRender, changes);
+}
+
+void RenderLineLayer::layerRemoved(UniqueChangeRequestVec& changes) {
+    RenderLayer::layerRemoved(changes);
+    activateGlowTargets(false, changes);
+}
+
+std::size_t RenderLineLayer::removeTile(RenderPass renderPass, const OverscaledTileID& tileID) {
+    if (glowMode) {
+        if (glowTargets[0]) {
+            auto* group = static_cast<TileLayerGroup*>(glowTargets[0]->getLayerGroup(0).get());
+            const auto n = group->removeDrawables(renderPass, tileID).size();
+            stats.drawablesRemoved += n;
+            return n;
+        }
+        return 0;
+    }
+    return RenderLayer::removeTile(renderPass, tileID);
+}
+
+std::size_t RenderLineLayer::removeAllDrawables() {
+    auto removed = RenderLayer::removeAllDrawables();
+    for (const auto& target : glowTargets) {
+        if (target) {
+            target->visitLayerGroups([&](LayerGroupBase& group) {
+                const auto n = group.getDrawableCount();
+                removed += n;
+                stats.drawablesRemoved += n;
+                group.clearDrawables();
+            });
+        }
+    }
+    return removed;
+}
+
+void RenderLineLayer::teardownGlow(UniqueChangeRequestVec& changes) {
+    removeAllDrawables();
+    activateGlowTargets(false, changes);
+    for (auto& target : glowTargets) {
+        target.reset();
+    }
+    for (auto& tweaker : glowTweakers) {
+        tweaker.reset();
+    }
+    setLayerGroup(nullptr, changes);
+    layerTweaker.reset();
+}
+
+namespace {
+gfx::UniqueDrawable makeGlowQuad(gfx::Context& context,
+                              const gfx::ShaderProgramBasePtr& shader,
+                              const gfx::Texture2DPtr& source,
+                              const gfx::ColorMode& colorMode,
+                              const SegmentVector& segments) {
+    const auto vertices = std::make_shared<gfx::VertexVector<HeatmapTextureLayoutVertex>>(
+        RenderStaticData::heatmapTextureVertices());
+
+    auto attrs = context.createVertexAttributeArray();
+    if (const auto& attr = attrs->set(idLineGlowPosVertexAttribute)) {
+        attr->setSharedRawData(vertices,
+                               offsetof(HeatmapTextureLayoutVertex, a1),
+                               /*vertexOffset=*/0,
+                               sizeof(HeatmapTextureLayoutVertex),
+                               gfx::AttributeDataType::Short2);
+    }
+    auto builder = context.createDrawableBuilder("lineGlow");
+    builder->setShader(shader);
+    builder->setEnableDepth(false);
+    builder->setColorMode(colorMode);
+    builder->setCullFaceMode(gfx::CullFaceMode::disabled());
+    builder->setRenderPass(RenderPass::Translucent);
+    builder->setVertexAttributes(std::move(attrs));
+    builder->setRawVertices({}, vertices->elements(), gfx::AttributeDataType::Short2);
+    builder->setSegments(
+        gfx::Triangles(), RenderStaticData::quadTriangleIndices().vector(), segments.data(), segments.size());
+    builder->setTexture(source, idLineGlowImageTexture);
+    builder->flush(context);
+    auto drawables = builder->clearDrawables();
+    assert(drawables.size() == 1);
+    return std::move(drawables.front());
+}
+} // namespace
+
+bool RenderLineLayer::updateGlow(gfx::ShaderRegistry& shaders,
+                                 gfx::Context& context,
+                                 const TransformState& state,
+                                 UniqueChangeRequestVec& changes) {
+    const auto& viewport = state.getSize();
+    const Size size{std::max(1u, static_cast<uint32_t>(viewport.width * glowScale)),
+                    std::max(1u, static_cast<uint32_t>(viewport.height * glowScale))};
+
+    if (!glowShader) {
+        glowShader = context.getGenericShader(shaders, "LineGlowBlurShader");
+        if (!glowShader) {
+            Log::Error(Event::Render, "line-glow-radius: no LineGlowBlurShader on this backend");
+            return false;
+        }
+    }
+
+    if (!glowTargets[0]) {
+        if (glowSegments.empty()) {
+            glowSegments = RenderStaticData::heatmapTextureSegments();
+        }
+        for (auto& target : glowTargets) {
+            target = context.createRenderTarget(size, gfx::TextureChannelDataType::UnsignedByte);
+            if (!target) {
+                Log::Error(Event::Render, "line-glow-radius: no render target");
+                teardownGlow(changes);
+                return false;
+            }
+            target->setClearColor(Color{0.f, 0.f, 0.f, 0.f});
+            target->getTexture()->setSamplerConfiguration({.filter = gfx::TextureFilterType::Linear,
+                                                           .wrapU = gfx::TextureWrapType::Clamp,
+                                                           .wrapV = gfx::TextureWrapType::Clamp});
+        }
+
+        // [0] the lines, drawn by the usual line drawables and tweaker
+        auto tileGroup = context.createTileLayerGroup(0, /*initialCapacity=*/64, getID());
+        glowTargets[0]->addLayerGroup(tileGroup, /*replace=*/true);
+
+        // [1] horizontal blur of [0], [2] vertical blur of [1]
+        for (int i = 1; i < 3; ++i) {
+            auto group = context.createLayerGroup(0, /*initialCapacity=*/1, getID());
+            glowTweakers[i] = std::make_shared<LineGlowBlurTweaker>(
+                getID(),
+                evaluatedProperties,
+                glowTargets[i - 1]->getTexture(),
+                i == 1 ? std::array<float, 2>{1.f, 0.f} : std::array<float, 2>{0.f, 1.f});
+            group->addLayerTweaker(glowTweakers[i]);
+            group->addDrawable(makeGlowQuad(context, glowShader, glowTargets[i - 1]->getTexture(),
+                                            gfx::ColorMode::unblended(), glowSegments));
+            glowTargets[i]->addLayerGroup(std::move(group), /*replace=*/true);
+        }
+        activateGlowTargets(isRenderable, changes);
+
+        // The layer's own group draws [2] onto the map.
+        auto composite = context.createLayerGroup(layerIndex, /*initialCapacity=*/1, getID());
+        glowTweakers[0] = std::make_shared<LineGlowBlurTweaker>(
+            getID(), evaluatedProperties, glowTargets[2]->getTexture(), std::array<float, 2>{0.f, 0.f});
+        composite->addLayerTweaker(glowTweakers[0]);
+        composite->addDrawable(
+            makeGlowQuad(context, glowShader, glowTargets[2]->getTexture(), gfx::ColorMode::alphaBlended(), glowSegments));
+        setLayerGroup(std::move(composite), changes);
+    }
+
+    for (const auto& target : glowTargets) {
+        if (target->getTexture()->getSize() != size) {
+            target->getTexture()->setSize(size);
+        }
+    }
+    return true;
+}
+
 void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
                              gfx::Context& context,
                              const TransformState& state,
@@ -326,15 +550,31 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
         return;
     }
 
-    // Set up a layer group
-    if (!layerGroup) {
-        if (auto layerGroup_ = context.createTileLayerGroup(layerIndex, /*initialCapacity=*/64, getID())) {
-            setLayerGroup(std::move(layerGroup_), changes);
-        } else {
+    const bool wantGlow = static_cast<const LineLayerProperties&>(*evaluatedProperties)
+                              .evaluated.get<LineGlowRadius>() > 0.f;
+    if (wantGlow != glowMode) {
+        teardownGlow(changes);
+        glowMode = wantGlow;
+    }
+
+    TileLayerGroup* tileLayerGroup = nullptr;
+    if (glowMode) {
+        if (!updateGlow(shaders, context, state, changes)) {
+            glowMode = false;
             return;
         }
+        tileLayerGroup = static_cast<TileLayerGroup*>(glowTargets[0]->getLayerGroup(0).get());
+    } else {
+        // Set up a layer group
+        if (!layerGroup) {
+            if (auto layerGroup_ = context.createTileLayerGroup(layerIndex, /*initialCapacity=*/64, getID())) {
+                setLayerGroup(std::move(layerGroup_), changes);
+            } else {
+                return;
+            }
+        }
+        tileLayerGroup = static_cast<TileLayerGroup*>(layerGroup.get());
     }
-    auto* tileLayerGroup = static_cast<TileLayerGroup*>(layerGroup.get());
 
     if (!layerTweaker) {
         auto tweaker = std::make_shared<LineLayerTweaker>(getID(), evaluatedProperties);
@@ -343,7 +583,7 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
 #endif // MLN_RENDER_BACKEND_METAL
 
         layerTweaker = std::move(tweaker);
-        layerGroup->addLayerTweaker(layerTweaker);
+        tileLayerGroup->addLayerTweaker(layerTweaker);
     }
 
     const RenderPass renderPass = static_cast<RenderPass>(evaluatedProperties->renderPasses &
@@ -365,7 +605,11 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
         builder->setColorMode(renderPass == RenderPass::Translucent ? gfx::ColorMode::alphaBlended()
                                                                     : gfx::ColorMode::unblended());
         builder->setCullFaceMode(gfx::CullFaceMode::disabled());
-        builder->setEnableStencil(true);
+        builder->setEnableStencil(!glowMode);
+        if (glowMode) {
+            // The glow image has no depth or stencil buffer.
+            builder->setEnableDepth(false);
+        }
 
         return builder;
     };
@@ -394,7 +638,8 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
             builder.setVertexAttributes(std::move(vertexAttrs));
         };
 
-    tileLayerGroup->setStencilTiles(renderTiles);
+    // The glow image has no stencil buffer, and a clip mask drawn there would be counted as drawn for the map.
+    tileLayerGroup->setStencilTiles(glowMode ? RenderTiles{} : renderTiles);
 
     // The ramp texture is shared by every tile of the layer.
     const auto ensureColorRampTexture = [&] {
@@ -442,7 +687,7 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
             // A drawable produced on a previous style/bucket should not be updated.
             return drawable.getLayerTweaker() == layerTweaker;
         };
-        if (updateTile(renderPass, tileID, std::move(updateExisting))) {
+        if (updateTile(tileLayerGroup, renderPass, tileID, std::move(updateExisting))) {
             continue;
         }
 

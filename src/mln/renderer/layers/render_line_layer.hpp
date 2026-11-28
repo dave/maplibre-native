@@ -3,11 +3,13 @@
 #include <mln/layout/pattern_layout.hpp>
 #include <mln/renderer/paint_property_binder.hpp>
 #include <mln/renderer/render_layer.hpp>
+#include <mln/shaders/segment.hpp>
 #include <mln/shaders/uniforms.hpp>
 #include <mln/style/image_impl.hpp>
 #include <mln/style/layers/line_layer_impl.hpp>
 #include <mln/style/layers/line_layer_properties.hpp>
 
+#include <array>
 #include <memory>
 
 namespace mln {
@@ -17,6 +19,14 @@ class ShaderGroup;
 class UniformBuffer;
 using ShaderGroupPtr = std::shared_ptr<ShaderGroup>;
 using UniformBufferPtr = std::shared_ptr<UniformBuffer>;
+} // namespace gfx
+
+class LayerTweaker;
+class RenderTarget;
+using RenderTargetPtr = std::shared_ptr<RenderTarget>;
+namespace gfx {
+class ShaderProgramBase;
+using ShaderProgramBasePtr = std::shared_ptr<ShaderProgramBase>;
 } // namespace gfx
 
 class LineBucket;
@@ -38,7 +48,20 @@ public:
                 const RenderTree &,
                 UniqueChangeRequestVec &) override;
 
+    void markLayerRenderable(bool willRender, UniqueChangeRequestVec &) override;
+    void layerRemoved(UniqueChangeRequestVec &) override;
+    std::size_t removeAllDrawables() override;
+
 private:
+    std::size_t removeTile(RenderPass, const OverscaledTileID &) override;
+
+    /// Glow mode (line-glow-radius > 0): the lines draw into glowTargets[0] instead of the
+    /// layer group; [1] blurs it horizontally, [2] vertically, and the layer group draws [2]
+    /// onto the map. All three are a quarter of the viewport.
+    bool updateGlow(gfx::ShaderRegistry &, gfx::Context &, const TransformState &, UniqueChangeRequestVec &);
+    void teardownGlow(UniqueChangeRequestVec &);
+    void activateGlowTargets(bool activate, UniqueChangeRequestVec &);
+
     void transition(const TransitionParameters &) override;
     void evaluate(const PropertyEvaluationParameters &) override;
     bool hasTransition() const override;
@@ -76,6 +99,12 @@ private:
     gfx::ShaderGroupPtr lineSDFShaderGroup;
     gfx::ShaderGroupPtr lineGradientSDFShaderGroup;
     gfx::ShaderGroupPtr linePatternShaderGroup;
+
+    bool glowMode = false;
+    std::array<RenderTargetPtr, 3> glowTargets;
+    gfx::ShaderProgramBasePtr glowShader;
+    std::array<std::shared_ptr<LayerTweaker>, 3> glowTweakers; // [0] composite, [1] horizontal, [2] vertical
+    SegmentVector glowSegments;
 };
 
 } // namespace mln
