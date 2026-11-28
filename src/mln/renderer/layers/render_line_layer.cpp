@@ -436,10 +436,10 @@ void RenderLineLayer::teardownGlow(UniqueChangeRequestVec& changes) {
 
 namespace {
 gfx::UniqueDrawable makeGlowQuad(gfx::Context& context,
-                              const gfx::ShaderProgramBasePtr& shader,
-                              const gfx::Texture2DPtr& source,
-                              const gfx::ColorMode& colorMode,
-                              const SegmentVector& segments) {
+                                 const gfx::ShaderProgramBasePtr& shader,
+                                 const gfx::Texture2DPtr& source,
+                                 const gfx::ColorMode& colorMode,
+                                 const SegmentVector& segments) {
     const auto vertices = std::make_shared<gfx::VertexVector<HeatmapTextureLayoutVertex>>(
         RenderStaticData::heatmapTextureVertices());
 
@@ -515,8 +515,8 @@ bool RenderLineLayer::updateGlow(gfx::ShaderRegistry& shaders,
                 glowTargets[i - 1]->getTexture(),
                 i == 1 ? std::array<float, 2>{1.f, 0.f} : std::array<float, 2>{0.f, 1.f});
             group->addLayerTweaker(glowTweakers[i]);
-            group->addDrawable(makeGlowQuad(context, glowShader, glowTargets[i - 1]->getTexture(),
-                                            gfx::ColorMode::unblended(), glowSegments));
+            group->addDrawable(makeGlowQuad(
+                context, glowShader, glowTargets[i - 1]->getTexture(), gfx::ColorMode::unblended(), glowSegments));
             glowTargets[i]->addLayerGroup(std::move(group), /*replace=*/true);
         }
         activateGlowTargets(isRenderable, changes);
@@ -526,8 +526,8 @@ bool RenderLineLayer::updateGlow(gfx::ShaderRegistry& shaders,
         glowTweakers[0] = std::make_shared<LineGlowBlurTweaker>(
             getID(), evaluatedProperties, glowTargets[2]->getTexture(), std::array<float, 2>{0.f, 0.f});
         composite->addLayerTweaker(glowTweakers[0]);
-        composite->addDrawable(
-            makeGlowQuad(context, glowShader, glowTargets[2]->getTexture(), gfx::ColorMode::alphaBlended(), glowSegments));
+        composite->addDrawable(makeGlowQuad(
+            context, glowShader, glowTargets[2]->getTexture(), gfx::ColorMode::alphaBlended(), glowSegments));
         setLayerGroup(std::move(composite), changes);
     }
 
@@ -553,8 +553,8 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
         return;
     }
 
-    const bool wantGlow = static_cast<const LineLayerProperties&>(*evaluatedProperties)
-                              .evaluated.get<LineGlowRadius>() > 0.f;
+    const bool wantGlow =
+        static_cast<const LineLayerProperties&>(*evaluatedProperties).evaluated.get<LineGlowRadius>() > 0.f;
     if (wantGlow != glowMode) {
         teardownGlow(changes);
         glowMode = wantGlow;

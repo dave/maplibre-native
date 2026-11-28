@@ -65,11 +65,9 @@ void RenderTarget::upload(gfx::UploadPass& uploadPass) {
 }
 
 void RenderTarget::render(RenderOrchestrator& orchestrator, const RenderTree& renderTree, PaintParameters& parameters) {
-    parameters.renderPass = parameters.encoder->createRenderPass("render target",
-                                                                 {.renderable = *offscreenTexture,
-                                                                  .clearColor = clearColor,
-                                                                  .clearDepth = 1.0f,
-                                                                  .clearStencil = {}});
+    parameters.renderPass = parameters.encoder->createRenderPass(
+        "render target",
+        {.renderable = *offscreenTexture, .clearColor = clearColor, .clearDepth = 1.0f, .clearStencil = {}});
 #if MLN_RENDER_BACKEND_OPENGL
     parameters.updateStencilBufferAvailability();
 #endif
