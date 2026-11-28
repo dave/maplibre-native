@@ -124,6 +124,13 @@
         "uses_ubos": true
     },
     {
+        "name": "LineGlowBlurShader",
+        "header": "line_glow_blur",
+        "glsl_vert": "line_glow_blur.vertex.glsl",
+        "glsl_frag": "line_glow_blur.fragment.glsl",
+        "uses_ubos": true
+    },
+    {
         "name": "HeatmapTextureShader",
         "header": "heatmap_texture",
         "glsl_vert": "heatmap_texture.vertex.glsl",

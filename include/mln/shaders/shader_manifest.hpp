@@ -21,6 +21,7 @@
 #include <mln/shaders/gl/fill_extrusion_pattern.hpp>
 #include <mln/shaders/gl/fill_extrusion_pattern_instanced.hpp>
 #include <mln/shaders/gl/heatmap.hpp>
+#include <mln/shaders/gl/line_glow_blur.hpp>
 #include <mln/shaders/gl/heatmap_texture.hpp>
 #include <mln/shaders/gl/hillshade_prepare.hpp>
 #include <mln/shaders/gl/color_relief.hpp>
