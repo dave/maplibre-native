@@ -404,22 +404,25 @@ std::size_t RenderLineLayer::removeTile(RenderPass renderPass, const OverscaledT
 }
 
 std::size_t RenderLineLayer::removeAllDrawables() {
-    auto removed = RenderLayer::removeAllDrawables();
-    for (const auto& target : glowTargets) {
-        if (target) {
-            target->visitLayerGroups([&](LayerGroupBase& group) {
-                const auto n = group.getDrawableCount();
-                removed += n;
-                stats.drawablesRemoved += n;
-                group.clearDrawables();
-            });
+    if (!glowMode) {
+        return RenderLayer::removeAllDrawables();
+    }
+    // Glow mode: remove the line drawables only. The blur and composite quads are built once, with the
+    // render targets, and must survive a frame with no tiles, or the glow never draws again.
+    if (glowTargets[0]) {
+        if (const auto& group = glowTargets[0]->getLayerGroup(0)) {
+            const auto n = group->getDrawableCount();
+            stats.drawablesRemoved += n;
+            group->clearDrawables();
+            return n;
         }
     }
-    return removed;
+    return 0;
 }
 
 void RenderLineLayer::teardownGlow(UniqueChangeRequestVec& changes) {
     removeAllDrawables();
+    RenderLayer::removeAllDrawables();
     activateGlowTargets(false, changes);
     for (auto& target : glowTargets) {
         target.reset();

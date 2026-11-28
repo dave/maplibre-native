@@ -1,3 +1,6 @@
 {
-    "render-tests/line-glow-radius/zigzag": "Viatrail: line-glow-radius has Metal and OpenGL shaders only"
+    "render-tests/line-glow-radius/zigzag": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/filter-after-load": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/visibility-toggle": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/no-tiles-frame": "Viatrail: line-glow-radius has Metal and OpenGL shaders only"
 }

@@ -1,0 +1,89 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 256,
+      "height": 256,
+      "operations": [
+        [
+          "wait"
+        ],
+        [
+          "setCenter",
+          [
+            -120,
+            -40
+          ]
+        ],
+        [
+          "wait"
+        ],
+        [
+          "setCenter",
+          [
+            13.418056,
+            52.499167
+          ]
+        ],
+        [
+          "wait"
+        ]
+      ]
+    }
+  },
+  "center": [
+    13.418056,
+    52.499167
+  ],
+  "zoom": 14,
+  "sources": {
+    "maplibre": {
+      "type": "vector",
+      "maxzoom": 14,
+      "bounds": [
+        13.3,
+        52.4,
+        13.5,
+        52.6
+      ],
+      "tiles": [
+        "local://tiles/{z}-{x}-{y}.mvt"
+      ]
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#33475b"
+      }
+    },
+    {
+      "id": "glow",
+      "type": "line",
+      "source": "maplibre",
+      "source-layer": "road",
+      "layout": {
+        "line-join": "round",
+        "line-cap": "round"
+      },
+      "paint": {
+        "line-color": "#ffffff",
+        "line-width": 10,
+        "line-opacity": 0.8,
+        "line-glow-radius": 10
+      }
+    },
+    {
+      "id": "line",
+      "type": "line",
+      "source": "maplibre",
+      "source-layer": "road",
+      "paint": {
+        "line-color": "#e8452c",
+        "line-width": 2
+      }
+    }
+  ]
+}

@@ -4,5 +4,8 @@
     "render-tests/icon-text-fit/textFit-grid-long": "Needs investigation (Diff: 0.00507716049382716)",
     "render-tests/regressions/mapbox-gl-js#5642": "Needs investigation (Diff: 0.01416015625)",
     "render-tests/regressions/mapbox-gl-js#7066": "Needs investigation (Diff: 0.0002777777777777778)",
-    "render-tests/line-glow-radius/zigzag": "Viatrail: line-glow-radius has Metal and OpenGL shaders only"
+    "render-tests/line-glow-radius/zigzag": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/filter-after-load": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/visibility-toggle": "Viatrail: line-glow-radius has Metal and OpenGL shaders only",
+    "render-tests/line-glow-radius/no-tiles-frame": "Viatrail: line-glow-radius has Metal and OpenGL shaders only"
 }
