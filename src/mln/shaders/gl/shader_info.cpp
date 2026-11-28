@@ -261,6 +261,19 @@ const std::vector<TextureInfo> HeatmapTextureShaderInfo::textures = {
     TextureInfo{"u_color_ramp", idHeatmapColorRampTexture},
 };
 
+// Line glow blur (Viatrail line-glow-radius)
+using LineGlowBlurShaderInfo = ShaderInfo<BuiltIn::LineGlowBlurShader, gfx::Backend::Type::OpenGL>;
+
+const std::vector<UniformBlockInfo> LineGlowBlurShaderInfo::uniformBlocks = {
+    UniformBlockInfo{"LineGlowBlurUBO", idLineGlowBlurUBO},
+};
+const std::vector<AttributeInfo> LineGlowBlurShaderInfo::attributes = {
+    AttributeInfo{"a_pos", idLineGlowPosVertexAttribute},
+};
+const std::vector<TextureInfo> LineGlowBlurShaderInfo::textures = {
+    TextureInfo{"u_image", idLineGlowImageTexture},
+};
+
 // Hillshade Prepare
 using HillshadePrepareShaderInfo = ShaderInfo<BuiltIn::HillshadePrepareShader, gfx::Backend::Type::OpenGL>;
 

@@ -1,0 +1,3 @@
+{
+    "render-tests/line-glow-radius/zigzag": "Viatrail: line-glow-radius has Metal and OpenGL shaders only"
+}

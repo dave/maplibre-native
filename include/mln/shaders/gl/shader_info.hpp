@@ -136,6 +136,13 @@ struct ShaderInfo<BuiltIn::HeatmapTextureShader, gfx::Backend::Type::OpenGL> {
 };
 
 template <>
+struct ShaderInfo<BuiltIn::LineGlowBlurShader, gfx::Backend::Type::OpenGL> {
+    static const std::vector<AttributeInfo> attributes;
+    static const std::vector<UniformBlockInfo> uniformBlocks;
+    static const std::vector<TextureInfo> textures;
+};
+
+template <>
 struct ShaderInfo<BuiltIn::HillshadePrepareShader, gfx::Backend::Type::OpenGL> {
     static const std::vector<AttributeInfo> attributes;
     static const std::vector<UniformBlockInfo> uniformBlocks;

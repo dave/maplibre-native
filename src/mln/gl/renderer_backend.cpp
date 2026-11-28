@@ -133,6 +133,7 @@ void RendererBackend::initShaders(gfx::ShaderRegistry& shaders, const ProgramPar
                   shaders::BuiltIn::FillExtrusionPatternShader,
                   shaders::BuiltIn::HeatmapShader,
                   shaders::BuiltIn::HeatmapTextureShader,
+                  shaders::BuiltIn::LineGlowBlurShader,
                   shaders::BuiltIn::HillshadePrepareShader,
                   shaders::BuiltIn::HillshadeShader,
                   shaders::BuiltIn::ColorReliefShader,
