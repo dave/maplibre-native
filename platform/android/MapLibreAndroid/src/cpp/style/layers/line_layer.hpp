@@ -76,6 +76,10 @@ public:
 
     jni::Local<jni::Object<jni::ObjectTag>> getLineGradient(jni::JNIEnv&);
 
+    jni::Local<jni::Object<jni::ObjectTag>> getLineGlowRadius(jni::JNIEnv&);
+    void setLineGlowRadiusTransition(jni::JNIEnv&, jlong duration, jlong delay);
+    jni::Local<jni::Object<TransitionOptions>> getLineGlowRadiusTransition(jni::JNIEnv&);
+
 }; // class LineLayer
 
 class LineJavaLayerPeerFactory final : public JavaLayerPeerFactory, public mln::LineLayerFactory {

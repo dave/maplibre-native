@@ -441,6 +441,26 @@ public class PropertyFactory {
   }
 
   /**
+   * When above 0, the layer draws its lines into an offscreen image and blurs it with a Gaussian of this radius (sigma = radius / 2), in density-independent pixels, instead of drawing the lines directly. Line color, width and opacity apply. Overlapping parts of the line do not add up.
+   *
+   * @param value a Float value
+   * @return property wrapper around Float
+   */
+  public static PropertyValue<Float> lineGlowRadius(Float value) {
+    return new PaintPropertyValue<>("line-glow-radius", value);
+  }
+
+  /**
+   * When above 0, the layer draws its lines into an offscreen image and blurs it with a Gaussian of this radius (sigma = radius / 2), in density-independent pixels, instead of drawing the lines directly. Line color, width and opacity apply. Overlapping parts of the line do not add up.
+   *
+   * @param expression an expression statement
+   * @return property wrapper around an expression statement
+   */
+  public static PropertyValue<Expression> lineGlowRadius(Expression expression) {
+    return new PaintPropertyValue<>("line-glow-radius", expression);
+  }
+
+  /**
    * The opacity at which the icon will be drawn.
    *
    * @param value a Float value

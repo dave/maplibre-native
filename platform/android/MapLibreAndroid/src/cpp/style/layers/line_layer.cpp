@@ -372,6 +372,36 @@ jni::Local<jni::Object<>> LineLayer::getLineGradient(jni::JNIEnv& env) {
     return std::move(*convert<jni::Local<jni::Object<>>>(env, toLineLayer(*layer).getLineGradient()));
 }
 
+jni::Local<jni::Object<>> LineLayer::getLineGlowRadius(jni::JNIEnv& env) {
+    using namespace mln::android::conversion;
+    auto layer = layerPtr.get();
+    if (!layer) {
+        return std::move(*convert<jni::Local<jni::Object<>>>(env, style::LineLayer::getDefaultLineGlowRadius()));
+    }
+    return std::move(*convert<jni::Local<jni::Object<>>>(env, toLineLayer(*layer).getLineGlowRadius()));
+}
+
+jni::Local<jni::Object<TransitionOptions>> LineLayer::getLineGlowRadiusTransition(jni::JNIEnv& env) {
+    using namespace mln::android::conversion;
+    auto layer = layerPtr.get();
+    if (!layer) {
+        return std::move(*convert<jni::Local<jni::Object<TransitionOptions>>>(env, mln::style::TransitionOptions()));
+    }
+    mln::style::TransitionOptions options = toLineLayer(*layer).getLineGlowRadiusTransition();
+    return std::move(*convert<jni::Local<jni::Object<TransitionOptions>>>(env, options));
+}
+
+void LineLayer::setLineGlowRadiusTransition(jni::JNIEnv&, jlong duration, jlong delay) {
+    auto layer = layerPtr.get();
+    if (!layer) {
+        return;
+    }
+    mln::style::TransitionOptions options;
+    options.duration.emplace(mln::Milliseconds(duration));
+    options.delay.emplace(mln::Milliseconds(delay));
+    toLineLayer(*layer).setLineGlowRadiusTransition(options);
+}
+
 // LineJavaLayerPeerFactory
 
 LineJavaLayerPeerFactory::~LineJavaLayerPeerFactory() = default;
@@ -445,7 +475,10 @@ void LineJavaLayerPeerFactory::registerNative(jni::JNIEnv& env) {
         METHOD(&LineLayer::getLinePatternTransition, "nativeGetLinePatternTransition"),
         METHOD(&LineLayer::setLinePatternTransition, "nativeSetLinePatternTransition"),
         METHOD(&LineLayer::getLinePattern, "nativeGetLinePattern"),
-        METHOD(&LineLayer::getLineGradient, "nativeGetLineGradient"));
+        METHOD(&LineLayer::getLineGradient, "nativeGetLineGradient"),
+        METHOD(&LineLayer::getLineGlowRadiusTransition, "nativeGetLineGlowRadiusTransition"),
+        METHOD(&LineLayer::setLineGlowRadiusTransition, "nativeSetLineGlowRadiusTransition"),
+        METHOD(&LineLayer::getLineGlowRadius, "nativeGetLineGlowRadius"));
 }
 
 } // namespace android

@@ -558,6 +558,39 @@ public class LineLayer extends Layer {
     }
   }
 
+  /**
+   * Get the LineGlowRadius property
+   *
+   * @return property wrapper value around Float
+   */
+  @NonNull
+  @SuppressWarnings("unchecked")
+  public PropertyValue<Float> getLineGlowRadius() {
+    checkThread();
+    return (PropertyValue<Float>) new PropertyValue("line-glow-radius", nativeGetLineGlowRadius());
+  }
+
+  /**
+   * Get the LineGlowRadius property transition options
+   *
+   * @return transition options for Float
+   */
+  @NonNull
+  public TransitionOptions getLineGlowRadiusTransition() {
+    checkThread();
+    return nativeGetLineGlowRadiusTransition();
+  }
+
+  /**
+   * Set the LineGlowRadius property transition options
+   *
+   * @param options transition options for Float
+   */
+  public void setLineGlowRadiusTransition(@NonNull TransitionOptions options) {
+    checkThread();
+    nativeSetLineGlowRadiusTransition(options.getDuration(), options.getDelay());
+  }
+
   @NonNull
   @Keep
   private native Object nativeGetLineCap();
@@ -684,6 +717,17 @@ public class LineLayer extends Layer {
   @NonNull
   @Keep
   private native Object nativeGetLineGradient();
+
+  @NonNull
+  @Keep
+  private native Object nativeGetLineGlowRadius();
+
+  @NonNull
+  @Keep
+  private native TransitionOptions nativeGetLineGlowRadiusTransition();
+
+  @Keep
+  private native void nativeSetLineGlowRadiusTransition(long duration, long delay);
 
   @Override
   @Keep

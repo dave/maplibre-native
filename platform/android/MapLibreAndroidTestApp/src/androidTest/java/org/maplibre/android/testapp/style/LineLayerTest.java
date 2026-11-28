@@ -592,4 +592,29 @@ public class LineLayerTest extends BaseLayerTest {
     layer.setProperties(linePattern(expression));
     assertEquals(layer.getLinePattern().getExpression(), expression);
   }
+
+  @Test
+  @UiThreadTest
+  public void testLineGlowRadiusTransition() {
+    Timber.i("line-glow-radiusTransitionOptions");
+    assertNotNull(layer);
+
+    // Set and Get
+    TransitionOptions options = new TransitionOptions(300, 100);
+    layer.setLineGlowRadiusTransition(options);
+    assertEquals(layer.getLineGlowRadiusTransition(), options);
+  }
+
+  @Test
+  @UiThreadTest
+  public void testLineGlowRadiusAsConstant() {
+    Timber.i("line-glow-radius");
+    assertNotNull(layer);
+    assertNull(layer.getLineGlowRadius().getValue());
+
+    // Set and Get
+    Float propertyValue = 0.3f;
+    layer.setProperties(lineGlowRadius(propertyValue));
+    assertEquals(layer.getLineGlowRadius().getValue(), propertyValue);
+  }
 }
